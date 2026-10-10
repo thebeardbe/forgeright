@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in - forgeright</title>
+    <style>
+        :root {
+            --ink: #14181f;
+            --muted: #6b7280;
+            --line: #e5e7eb;
+            --accent: #1f6feb;
+            --bg: #f7f8fa;
+            --warn-bg: #fffbeb;
+            --warn-line: #fcd34d;
+            --warn-ink: #78350f;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg); color: var(--ink); line-height: 1.55;
+        }
+        .wrap { max-width: 460px; margin: 8vh auto 0; padding: 0 16px 100px; }
+        .eyebrow {
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.14em; color: var(--accent); margin: 0 0 4px;
+        }
+        h1 { font-size: 1.4rem; margin: 0 0 6px; }
+        .intro { color: var(--muted); font-size: 0.92rem; margin: 0 0 18px; }
+        .card {
+            background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px;
+        }
+        label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 6px; }
+        input[type="email"] {
+            width: 100%; padding: 11px 13px; font-size: 1rem; font-family: inherit;
+            border: 1px solid var(--line); border-radius: 8px; background: #fff;
+        }
+        input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+        button {
+            margin-top: 12px; width: 100%; padding: 12px 18px; font-size: 0.95rem;
+            font-weight: 700; border: none; border-radius: 8px; background: var(--accent);
+            color: #fff; cursor: pointer; font-family: inherit;
+        }
+        button:hover { filter: brightness(1.08); }
+        .note { color: var(--muted); font-size: 0.8rem; margin: 12px 0 0; }
+        .notice {
+            padding: 11px 13px; border-radius: 8px; font-size: 0.88rem; margin-bottom: 14px;
+            background: #eef4ff; border: 1px solid #c7dbfb;
+        }
+        .problem {
+            padding: 11px 13px; border-radius: 8px; font-size: 0.88rem; margin-bottom: 14px;
+            background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink);
+        }
+
+        /* Cookie banner: fixed to the bottom, visible until answered. */
+        .cookie-banner {
+            position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+            background: #fff; border-top: 1px solid var(--line);
+            padding: 14px 16px; font-size: 0.85rem;
+            box-shadow: 0 -2px 12px rgba(20, 24, 31, 0.06);
+        }
+        .cookie-inner { max-width: 460px; margin: 0 auto; }
+        .cookie-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        .cookie-actions button { width: auto; margin: 0; padding: 9px 16px; font-size: 0.85rem; }
+        .cookie-actions button.secondary {
+            background: #fff; color: var(--ink); border: 1px solid var(--line);
+        }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <p class="eyebrow">forgeright</p>
+    <h1>Admin sign in</h1>
+    <p class="intro">Enter your email address and we will send you a link. There is no password.</p>
+
+    <div class="card">
+        <% if (sent) { %>
+            <div class="notice">If that address can sign in, a link is on its way. It works once and expires in <%= ttlMinutes %> minutes.</div>
+        <% } %>
+        <% if (error === 'invalid_email') { %>
+            <div class="problem">That does not look like an email address. Check it and try again.</div>
+        <% } %>
+        <% if (error === 'link_invalid') { %>
+            <div class="problem">That sign-in link is not usable. It may have been used already, or it may have expired. Request a new one below.</div>
+        <% } %>
+        <% if (error === 'send_failed') { %>
+            <div class="problem">The sign-in link could not be sent. This is a problem on our side; please try again shortly.</div>
+        <% } %>
+        <% if (error === 'too_many_requests') { %>
+            <div class="problem">Too many sign-in requests. Wait a few minutes, then try again.</div>
+        <% } %>
+
+        <form method="post" action="/admin/login">
+            <label for="email">Email address</label>
+            <input type="email" id="email" name="email" required autocomplete="email"
+                   placeholder="you@example.com" autofocus>
+            <button type="submit">Send sign-in link</button>
+        </form>
+        <p class="note">The link opens once and expires after <%= ttlMinutes %> minutes.</p>
+    </div>
+</div>
+
+<!--
+    The session cookie is ESSENTIAL: it is what keeps you signed in, so declining
+    it does not stop it being set. The banner says so plainly rather than offering
+    a choice it will not honour. "Essential only" is the honest label for the only
+    state this page has.
+-->
+<div id="cookie-banner" class="cookie-banner hidden">
+    <div class="cookie-inner">
+        <strong>This site stores one cookie.</strong>
+        It is the session cookie that keeps you signed in to the admin console. It is essential, so it is
+        set whether or not you accept anything else. There are no analytics and no advertising cookies.
+        <div class="cookie-actions">
+            <button id="cookie-ok">Understood</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // The banner records only that it was seen, in localStorage rather than a
+    // cookie, so acknowledging it does not itself set a cookie. Login does not
+    // depend on this running: the banner is hidden until the script shows it.
+    (function () {
+        try {
+            var seen = localStorage.getItem('fr_cookie_notice');
+            if (!seen) document.getElementById('cookie-banner').classList.remove('hidden');
+        } catch (err) {
+            // localStorage can be unavailable (private mode, disabled storage).
+            // The safe degradation is to show the notice, not to hide it.
+            document.getElementById('cookie-banner').classList.remove('hidden');
+        }
+        document.getElementById('cookie-ok').addEventListener('click', function () {
+            try { localStorage.setItem('fr_cookie_notice', '1'); } catch (err) { /* storage unavailable; banner returns next visit */ }
+            document.getElementById('cookie-banner').classList.add('hidden');
+        });
+    })();
+</script>
+</body>
+</html>

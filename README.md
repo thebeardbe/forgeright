@@ -16,6 +16,7 @@ V1, under construction. Running end to end with a mock AI provider.
 | :--- | :--- |
 | Server, routes, trilingual UI | working (NL/EN prompts; FR falls back to EN) |
 | Questionnaire flow | working |
+| Admin sign-in (magic link, session cookie) | working, tested |
 | AI providers: mock, Gemini, DeepSeek | working |
 | Scoring and aggregation | working, tested |
 | Input guardrails | working, tested |
@@ -36,10 +37,16 @@ until that list is empty.
 
 ```bash
 npm install
-cp .env.example .env      # then set AUDIT_ACCESS_CODE
+cp .env.example .env      # then set AUDIT_ACCESS_CODE and SESSION_SECRET
+openssl rand -hex 32      # paste this as SESSION_SECRET
 npm start                 # http://localhost:3000
 npm test
 ```
+
+`SESSION_SECRET` is required: the server refuses to start without it, rather than
+generating one per process, because that would invalidate every admin session on
+restart and look like a broken login. The sign-in link is printed to the terminal
+(`MAIL_SENDER=console`), so the admin flow works locally with no mail account.
 
 The default provider is `mock`, which needs no API key and no network. The whole
 flow works with it, which is what makes the UI and the scoring layer developable
@@ -104,7 +111,15 @@ ai/security.js             input sanitising, injection detection
 ai/fixtures/mock-audit.js  illustrative audit data
 lib/scoring.js             scoring and aggregation (pure, tested)
 lib/strings.js             UI copy, trilingual
-views/audit.ejs            the page
+lib/store/                 per-organisation storage (step 1)
+lib/auth/tokens.js         admin sign-in links: hashed, single use, expiring
+lib/auth/session.js        signed session cookie, and the SESSION_SECRET check
+lib/auth/routes.js         /admin login, logout, console, session guard
+lib/auth/rate-limit.js     in-memory limits on the login request
+lib/mail/                  mail sending behind one interface (console, proton)
+views/audit.ejs            the questionnaire page
+views/admin-login.ejs      the sign-in page and the cookie notice
+views/admin-console.ejs    where signing in lands; the real console is step 3
 public/js/audit.js         chat and analysis rendering
 test/                      tests, written independently of the builder
 ```
@@ -146,8 +161,35 @@ response; it never overwrites an earlier round.
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
 | `ALLOWED_HOST` | empty | Hosts this instance answers on, comma-separated (`localhost,127.0.0.1,forgeright.bunkens.be`). Empty accepts any host, for development. Compared on hostname only, case-insensitively; empty entries are ignored. |
+| `SESSION_SECRET` | none | Signs the admin session cookie. **Required**: the server refuses to start without it, because a per-process secret would invalidate every session on restart and look like a broken login. |
+| `PUBLIC_BASE_URL` | none | Base URL for mailed sign-in links. Must be set outside local development: a link built from the request would let a forged `Host` header choose where it points. |
+| `LOGIN_LINK_TTL_MINUTES` | `15` | How long a sign-in link stays valid. A link is single-use regardless. |
+| `SESSION_TTL_HOURS` | `12` | How long an admin session lasts. |
+| `MAIL_SENDER` | `console` | `console` prints the message to stdout (no credentials); `proton` sends through `proton-cli`. An unknown value refuses to start rather than silently falling back. |
+| `MAIL_PROTON_PROFILE` | `jobsearch` | The `proton-cli` profile to send from when `MAIL_SENDER=proton`. |
 | `STORE_DIR` | `data/store` | Where the databases live. Point at a volume in production. |
 | `STORE_BUSY_TIMEOUT_MS` | `2000` | How long a write waits for another writer's lock. Empty is treated as unset. Clamped to 60s. An explicit `0` is honoured. |
+
+### Mail
+
+Magic links and invitations are sent through one `send({ to, subject, body })`
+interface, so the mechanism is testable without a mailbox and the transport can be
+swapped without touching the login flow.
+
+**Development and testing send from `beard_jobagent@proton.me`** (the `jobsearch`
+profile). That mailbox is disposable on purpose: a bug here costs nothing, which
+is not true of the address a client would see.
+
+**Production will send from a `bunkens.be` address.** The transport, the profile
+and the address are all configuration, so switching is an environment change
+rather than a code change.
+
+Two things to get right when this runs unattended, because both fail quietly:
+
+- A Proton session can expire. If it has, the sender must fail loudly rather than
+  the message simply never arriving.
+- The sending address must not be hardcoded, so the change from the test mailbox
+  to the business one is deliberate and visible.
 
 ## Deployment
 
@@ -162,8 +204,15 @@ proxy config and in `.env`, never hardcoded in the application.
 - The guardrail demonstration is not built.
 - The store exists but the questionnaire does not use it yet. There is no route
   that writes a response, so nothing a participant does is currently persisted.
-- No accounts, no per-organisation links, and no admin console. Building those is
-  step 2 and step 3.
+- Admin sign-in exists (step 2): an emailed magic link, a signed session cookie,
+  and a login page. **The console behind it is a placeholder** that shows who is
+  signed in; listing organisations and their progress is step 3.
+- **Any well-formed address can request a sign-in link.** There is no allow-list
+  yet, so the admin console is not restricted to particular people. Adding one is
+  part of step 3, and the login response is already identical for a known and an
+  unknown address so that adding it does not change observable behaviour.
+- **Rate limiting is in memory, per process.** It stops a loop or a script
+  filling an inbox; it is not a distributed quota, and a restart clears it.
 - The mock provider's scripted flow ignores the participant's actual answers.
   That is fine for developing the UI, but it means the mock proves nothing about
   question quality. Only a real provider can do that.

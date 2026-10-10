@@ -1,8 +1,12 @@
 node_modules/
 logs/
 .env
-# One SQLite file per organisation. The schema is source and IS committed.
+# SQLite data files. The schemas are source and ARE committed; the databases are
+# not, per-installation or per-organisation.
 data/store/orgs/
+data/store/admin.db
+data/store/admin.db-wal
+data/store/admin.db-shm
 .scratch/
 *.log
 .DS_Store

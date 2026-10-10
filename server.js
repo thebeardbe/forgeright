@@ -10,6 +10,7 @@
  *   POST /api/chat        -> one turn of the intake conversation
  *   POST /api/score       -> score a completed audit
  *   GET  /healthz         -> liveness
+ *   /admin/*              -> admin sign-in and console (see lib/auth/routes.js)
  */
 import 'dotenv/config';
 import path from 'node:path';
@@ -20,11 +21,21 @@ import { aggregate } from './lib/scoring.js';
 import { stringsFor, SUPPORTED_LANGS, DEFAULT_LANG } from './lib/strings.js';
 import { DEFAULT_TOOL_ID, getTool } from './config/tools.js';
 import { loadAiConfig } from './ai/config.js';
+import { assertSessionSecretConfigured } from './lib/auth/session.js';
+import { cookieReader, router as adminRouter } from './lib/auth/routes.js';
+import { assertMailSenderUsable } from './lib/mail/index.js';
+import { closeAll } from './lib/store/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 const PORT = Number(process.env.PORT) || 3000;
+
+// Fail before serving anything, rather than at the first sign-in attempt. A
+// missing SESSION_SECRET would otherwise surface as "login is broken", which is
+// the hardest kind of misconfiguration to diagnose from the outside.
+assertSessionSecretConfigured();
+assertMailSenderUsable();
 
 /**
  * Hostnames this instance answers on, from a comma-separated ALLOWED_HOST.
@@ -45,12 +56,17 @@ const ALLOWED_HOSTS = (process.env.ALLOWED_HOST || '')
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.json({ limit: '256kb' }));
+app.use(express.urlencoded({ extended: false, limit: '64kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 /**
  * Restricts the Host header when ALLOWED_HOST is set. The hostname belongs in
  * the environment and on the proxy, never hardcoded in the application, so the
  * same image runs locally and on the VPS.
+ *
+ * Mounted BEFORE the admin router and every other route. Order matters here: a
+ * router mounted earlier would run first and let a request from an unlisted host
+ * reach a route, which is the whole thing this guard exists to stop.
  */
 app.use((req, res, next) => {
     if (ALLOWED_HOSTS.length === 0) return next();
@@ -81,6 +97,13 @@ app.use((req, res, next) => {
     );
     res.status(421).send('Misdirected request.');
 });
+
+// The admin routes need cookies; this reads the header into req.cookies for the
+// whole app, because the reader is cheap and mounts before any route. It sets no
+// cookie itself. Mounted after the host guard, so an unlisted host cannot reach
+// a route at all.
+app.use(cookieReader);
+app.use('/admin', adminRouter);
 
 /** Resolves the UI language from ?lang= or Accept-Language. */
 function resolveLang(req) {
@@ -178,6 +201,7 @@ const server = app.listen(PORT, () => {
     const config = loadAiConfig();
     console.log(`[server] listening on http://localhost:${PORT}`);
     console.log(`[server] AI provider: ${config.name} (${config.type})`);
+    console.log(`[server] mail sender: ${process.env.MAIL_SENDER || 'console'} (default console)`);
     if (!process.env.AUDIT_ACCESS_CODE) {
         console.warn('[server] WARNING: AUDIT_ACCESS_CODE is unset, every request will be rejected.');
     }
@@ -186,12 +210,24 @@ const server = app.listen(PORT, () => {
     } else {
         console.log(`[server] accepting hosts: ${ALLOWED_HOSTS.join(', ')}`);
     }
+    if (!process.env.PUBLIC_BASE_URL) {
+        console.warn(
+            '[server] PUBLIC_BASE_URL is unset: sign-in links will point at http://localhost:' + PORT + '. ' +
+            'Set it to the public URL before anyone relies on a mailed link.'
+        );
+    }
 });
 
-// Leave no orphan processes, and say why we are stopping.
+// Leave no orphan processes, and say why we are stopping. Store connections are
+// closed too: an open SQLite handle keeps a write lock and the -wal file around,
+// so dropping it cleanly is part of not leaving a mess behind.
 for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
         console.log(`[server] received ${signal}, shutting down`);
-        server.close(() => process.exit(0));
+        server.close(() => {
+            const closed = closeAll();
+            console.log(`[server] closed ${closed} store connection(s)`);
+            process.exit(0);
+        });
     });
 }
