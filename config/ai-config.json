@@ -1,0 +1,28 @@
+{
+  "defaultProvider": "mock",
+  "providers": {
+    "mock": {
+      "active": true,
+      "type": "mock",
+      "description": "Canned responses for local development. No key, no network."
+    },
+    "gemini": {
+      "active": true,
+      "type": "gemini",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "baseUrl": "https://generativelanguage.googleapis.com",
+      "apiVersion": "v1beta",
+      "defaultModel": "gemini-2.5-flash",
+      "fallbackModels": ["gemini-3.1-flash-lite-preview"]
+    },
+    "deepseek": {
+      "active": true,
+      "type": "openai-compatible",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "baseUrl": "https://api.deepseek.com",
+      "apiVersion": "v1",
+      "defaultModel": "deepseek-chat",
+      "fallbackModels": []
+    }
+  }
+}

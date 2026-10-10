@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="<%= lang %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= strings.pageTitle %></title>
+    <style>
+        :root {
+            --ink: #14181f;
+            --muted: #6b7280;
+            --line: #e5e7eb;
+            --accent: #1f6feb;
+            --do-first: #047857;
+            --do-later: #b45309;
+            --judgement: #6b7280;
+            --bg: #f7f8fa;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--ink);
+            line-height: 1.55;
+        }
+        .wrap { max-width: 780px; margin: 0 auto; padding: 24px 16px 64px; }
+        header { padding: 8px 0 20px; }
+        .eyebrow {
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.14em; color: var(--accent); margin: 0 0 4px;
+        }
+        h1 { font-size: 1.6rem; margin: 0 0 8px; letter-spacing: -0.01em; }
+        .intro { color: var(--muted); font-size: 0.95rem; margin: 0; }
+        .card {
+            background: #fff; border: 1px solid var(--line); border-radius: 10px;
+            padding: 18px; margin-bottom: 16px;
+        }
+        .lang-switch { float: right; font-size: 0.8rem; }
+        .lang-switch a { color: var(--muted); text-decoration: none; margin-left: 8px; }
+        .lang-switch a.active { color: var(--accent); font-weight: 700; }
+
+        /* Unlock */
+        .row { display: flex; gap: 8px; flex-wrap: wrap; }
+        input[type="password"], input[type="text"] {
+            flex: 1 1 200px; min-width: 0; padding: 11px 13px; font-size: 1rem;
+            border: 1px solid var(--line); border-radius: 8px; background: #fff;
+            font-family: inherit;
+        }
+        input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+        button {
+            padding: 11px 18px; font-size: 0.9rem; font-weight: 700;
+            border: none; border-radius: 8px; background: var(--accent); color: #fff;
+            cursor: pointer; font-family: inherit;
+        }
+        button:hover { filter: brightness(1.08); }
+        button:disabled { opacity: 0.55; cursor: default; }
+        button.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+
+        /* Chat */
+        .history {
+            height: 360px; overflow-y: auto; padding: 14px;
+            background: #0f1319; border-radius: 8px; margin-bottom: 12px;
+            scroll-behavior: smooth;
+        }
+        /* On a phone the conversation is the main thing on screen, so give it
+           more height rather than showing two messages at a time. */
+        @media (max-width: 520px) {
+            .history { height: 52vh; }
+        }
+        .msg { margin-bottom: 14px; }
+        .msg .label {
+            font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em;
+            color: #9aa4b2; margin-bottom: 3px;
+        }
+        .msg .body {
+            display: inline-block; padding: 9px 12px; border-radius: 8px;
+            max-width: 88%; white-space: pre-wrap; font-size: 0.9rem;
+        }
+        .msg.ai .body { background: #1a2432; color: #dbe4f0; }
+        .msg.user { text-align: right; }
+        .msg.user .body { background: #2563eb; color: #fff; text-align: left; }
+        .typing span {
+            display: inline-block; width: 6px; height: 6px; margin: 0 2px;
+            background: #93b4e8; border-radius: 50%; animation: blink 1s infinite;
+        }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink { 0%, 100% { opacity: 0.25 } 50% { opacity: 1 } }
+
+        /* Analysis */
+        .banner {
+            background: #fffbeb; border: 1px solid #fcd34d; color: #78350f;
+            padding: 11px 13px; border-radius: 8px; font-size: 0.85rem; margin-bottom: 14px;
+        }
+        .bucket { margin-bottom: 18px; }
+        .bucket h3 {
+            font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em;
+            margin: 0 0 8px;
+        }
+        .bucket.do_first h3 { color: var(--do-first); }
+        .bucket.do_later h3 { color: var(--do-later); }
+        .bucket.judgement_bound h3 { color: var(--judgement); }
+        .wf {
+            border: 1px solid var(--line); border-left-width: 4px; border-radius: 6px;
+            padding: 10px 12px; margin-bottom: 8px; background: #fff;
+        }
+        .bucket.do_first .wf { border-left-color: var(--do-first); }
+        .bucket.do_later .wf { border-left-color: var(--do-later); }
+        .bucket.judgement_bound .wf { border-left-color: var(--judgement); }
+        .wf-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+        .wf-title { font-weight: 600; font-size: 0.92rem; flex: 1 1 60%; }
+        .wf-score { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; flex: 0 0 auto; }
+        .wf-meta { color: var(--muted); font-size: 0.78rem; margin-top: 3px; }
+        .total {
+            font-size: 0.9rem; padding: 11px 13px; background: #eef4ff;
+            border-radius: 8px; margin-bottom: 14px;
+        }
+        .total strong { font-size: 1.15rem; }
+
+        .hidden { display: none !important; }
+        .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        @media (max-width: 520px) {
+            h1 { font-size: 1.35rem; }
+            .wf-title { flex-basis: 100%; }
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <div class="lang-switch">
+            <% supportedLangs.forEach(function(code, i) { %><% if (i > 0) { %>·<% } %><a href="?lang=<%= code %>" class="<%= code === lang ? 'active' : '' %>"><%= code.toUpperCase() %></a><% }); %>
+        </div>
+        <p class="eyebrow"><%= strings.subtitle %></p>
+        <h1><%= strings.heading %></h1>
+        <p class="intro"><%= strings.intro %></p>
+    </header>
+
+    <div class="card">
+        <div id="unlock" class="row">
+            <input type="password" id="pass" placeholder="<%= strings.unlockPlaceholder %>">
+            <button id="start-btn"><%= strings.startButton %></button>
+        </div>
+
+        <div id="conversation" class="hidden">
+            <div id="history" class="history"></div>
+            <div id="input-area" class="row">
+                <input type="text" id="input" placeholder="<%= strings.inputPlaceholder %>">
+                <button id="send-btn">&#10148;</button>
+            </div>
+            <div id="actions" class="actions hidden">
+                <button id="download-md" class="secondary"><%= strings.downloadMarkdown %></button>
+            </div>
+        </div>
+    </div>
+
+    <div id="analysis" class="card hidden">
+        <h2 id="analysis-heading" style="font-size:1.1rem;margin:0 0 14px;"><%= strings.analysisTitle %></h2>
+        <div id="analysis-body"></div>
+    </div>
+</div>
+
+<script>
+    window.AUDIT_CONFIG = {
+        toolId: "<%= toolId %>",
+        lang: "<%= lang %>",
+        strings: <%- JSON.stringify(strings) %>
+    };
+</script>
+<script src="/js/audit.js"></script>
+</body>
+</html>
