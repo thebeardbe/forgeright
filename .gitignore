@@ -1,7 +1,8 @@
 node_modules/
 logs/
 .env
-data/store/
+# One SQLite file per organisation. The schema is source and IS committed.
+data/store/orgs/
 .scratch/
 *.log
 .DS_Store
