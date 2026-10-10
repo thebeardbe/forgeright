@@ -1,9 +1,9 @@
 {
-  "name": "roadmap-builder",
+  "name": "forgeright",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Workflow audit tool: intake questionnaire, scoring, and an AI roadmap.",
+  "description": "Workflow audit: find the processes worth automating, and the ones that are not",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
