@@ -25,7 +25,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 const PORT = Number(process.env.PORT) || 3000;
-const ALLOWED_HOST = process.env.ALLOWED_HOST || '';
+
+/**
+ * Hostnames this instance answers on, from a comma-separated ALLOWED_HOST.
+ *
+ * An empty or unset value means "accept any host", which is the local
+ * development default. Each entry is trimmed and lowercased once, here, so the
+ * per-request comparison does no work beyond a lookup.
+ *
+ * Empty entries are dropped. A trailing comma ("localhost,") would otherwise
+ * add "" as a valid entry, and an empty entry matches a request with no Host
+ * header, which is exactly the request that should be refused.
+ */
+const ALLOWED_HOSTS = (process.env.ALLOWED_HOST || '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -38,10 +53,32 @@ app.use(express.static(path.join(__dirname, 'public')));
  * same image runs locally and on the VPS.
  */
 app.use((req, res, next) => {
-    if (!ALLOWED_HOST) return next();
-    const host = (req.headers.host || '').split(':')[0];
-    if (host === ALLOWED_HOST) return next();
-    console.warn(`[host] rejected request for host "${host}" (expected "${ALLOWED_HOST}")`);
+    if (ALLOWED_HOSTS.length === 0) return next();
+
+    // Strip the port, then lowercase. A Host header is case-insensitive, and an
+    // operator who typed "Localhost" should not be locked out.
+    //
+    // The raw header is used rather than Express's req.hostname, because
+    // req.hostname is derived and can normalise a bracketed IPv6 form. Splitting
+    // the header ourselves keeps one rule for what is compared.
+    //
+    // Edge cases, both of which must NOT pass by accident:
+    //   - a missing Host header yields "", which matches no configured entry,
+    //     because empty entries were filtered out above
+    //   - an IPv6 host like "[::1]:3000" splits on the first colon to "[", which
+    //     matches no configured entry. A bracketed IPv6 literal is therefore
+    //     refused even if it is written in ALLOWED_HOST, because every form of
+    //     it reduces to "[". IPv6 literals are not supported by this check; the
+    //     deployment is a named subdomain behind a proxy. The failure direction
+    //     is safe (refused, not accepted), and this is stated rather than
+    //     implied.
+    const host = (req.headers.host || '').split(':')[0].trim().toLowerCase();
+    if (ALLOWED_HOSTS.includes(host)) return next();
+
+    console.warn(
+        `[host] rejected request for host "${host}" ` +
+        `(allowed: ${ALLOWED_HOSTS.join(', ')})`
+    );
     res.status(421).send('Misdirected request.');
 });
 
@@ -144,8 +181,10 @@ const server = app.listen(PORT, () => {
     if (!process.env.AUDIT_ACCESS_CODE) {
         console.warn('[server] WARNING: AUDIT_ACCESS_CODE is unset, every request will be rejected.');
     }
-    if (!ALLOWED_HOST) {
+    if (ALLOWED_HOSTS.length === 0) {
         console.warn('[server] ALLOWED_HOST is unset: accepting any host (development only).');
+    } else {
+        console.log(`[server] accepting hosts: ${ALLOWED_HOSTS.join(', ')}`);
     }
 });
 

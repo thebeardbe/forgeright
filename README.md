@@ -145,6 +145,7 @@ response; it never overwrites an earlier round.
 
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
+| `ALLOWED_HOST` | empty | Hosts this instance answers on, comma-separated (`localhost,127.0.0.1,forgeright.bunkens.be`). Empty accepts any host, for development. Compared on hostname only, case-insensitively; empty entries are ignored. |
 | `STORE_DIR` | `data/store` | Where the databases live. Point at a volume in production. |
 | `STORE_BUSY_TIMEOUT_MS` | `2000` | How long a write waits for another writer's lock. Empty is treated as unset. Clamped to 60s. An explicit `0` is honoured. |
 
