@@ -111,16 +111,21 @@ inspected and tested directly.
 ```
 effortHoursPerWeek = frequency * minutes * people / 60
 score              = effortHoursPerWeek * automabilityFactor
-automabilityFactor = RULES_FACTOR[judgementScore] * (stepsConsistent ? 1 : 0.7)
+automabilityFactor = RULES_FACTOR[band]   from the per-step needsReasoning flags
 ```
 
 **The unit is person-hours per week, not recovered hours.** `peopleAffected`
 multiplies the effort, so one workflow at 40x/week, 60 minutes, 6 people reports
 240 hours per week. That is the sum across everyone involved.
 
-`RULES_FACTOR` runs 0.15 (pure judgement) to 1.00 (pure rules). The judgement
-question is the discriminator between automatable work and work that merely looks
-automatable.
+**The judgement input changed shape.** The interview no longer asks whether work
+needs judgement; it asks **on what basis the participant decides** (`decidedHow`)
+and the model derives a `needsReasoning` flag **per step**. `judgementBandFor`
+reduces those flags to a band 1–5, and `RULES_FACTOR` runs 0.15 to 1.00 from it.
+
+**Per step, not per process, and that is the point.** A chain of five mechanical
+steps with one judgement call in the middle reads as five automatable steps with a
+known boundary, rather than as a whole process that needs a person.
 
 Buckets: do first, do later, do not automate. Judgement-bound work is separated
 before the score threshold is applied, because a high-effort task needing
@@ -140,6 +145,13 @@ Records describing one workflow are collapsed into a single scored entry at the
 - **`judgementScore` and `stepsConsistent` are compared too**, and reported as
   `bucketDisagreements`. They are not effort, but they decide the bucket, so a
   disagreement there can move a task between "do first" and "do not automate".
+
+  **Note as of the matrix work:** the interview no longer produces either field. It
+  records `needsReasoning` per step, and `stepsConsistent` is now supplied by
+  nothing. This comparison path still works for a payload that carries them, and
+  is inert for the matrix shape — which is why the sample headline moved from 55.5
+  to 74.78. Workflow 3 replaces this scorer and restates the rule in terms of the
+  per-step flags.
   The merged record takes the **lowest** judgement rating and treats steps as
   varying if any respondent said they vary. Both push away from a
   recommendation, which is the safer error for a document that is also a sales

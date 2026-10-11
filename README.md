@@ -73,14 +73,26 @@ effortHoursPerWeek = frequencyPerWeek * minutesPerInstance * peopleAffected / 60
 score              = effortHoursPerWeek * automabilityFactor
 ```
 
-`automabilityFactor` is derived from the judgement question (1 = needs a person's
-judgement every time, 5 = follows fixed rules) and is discounted further when the
-steps vary. **This factor is the point of the tool.** Effort alone ranks the
-longest task first, which produces a wish list: contract review takes 75 minutes
-a time and is the worst automation candidate in the sample data, not the best.
+`automabilityFactor` is **derived from the per-step `needsReasoning` flags**, not
+from anything the participant is asked. A band runs 1 (needs a person) to 5
+(follows rules), and the factor runs 0.15 to 1.00 from it. **This factor is the
+point of the tool.** Effort alone ranks the longest task first, which produces a
+wish list: contract review takes 75 minutes a time and is the worst automation
+candidate in the sample data, not the best.
+
+**The interview never asks whether work needs judgement**, because that asks a
+participant to assess automability and they are not placed to know. It asks **on
+what basis they decide** (`decidedHow`, their words) and the model derives the
+flag from that. See `SPEC-three-workflows.md` for the interview.
 
 Results are bucketed into do first, do later, and do not automate. Only the
 do-first bucket counts toward the headline total.
+
+**Two caveats while workflow 3 is unbuilt.** The `stepsConsistent` variation
+discount is currently inapplicable, because nothing supplies that field any more —
+so the sample headline sits at 74.78 rather than the 55.5 it was. And
+`timePerPeriod`, which the interview accepts for continuous work, does not yet
+contribute hours to the score; see `NOTES.md`.
 
 ### Conflicting answers
 
