@@ -58,7 +58,17 @@
                 <span class="summary-main">
                     <strong><%= process.name %></strong>
                     <div class="meta">
+                        <%# AN EMPTY PROCESS IS A REAL STATE, NOT BROKEN DATA: it is what a
+                            process becomes when the only person behind it was regrouped
+                            elsewhere. "described by 0 people" on its own reads as a fault,
+                            so the state explains itself. The process is kept rather than
+                            deleted because an admin's rejudge should not destroy a process
+                            they might still be discussing. %>
+                        <% if (responses.length === 0) { %>
+                            <span class="tag">nothing behind it now</span>
+                        <% } else { %>
                         described by <%= responses.length %> <%= responses.length === 1 ? 'person' : 'people' %>
+                        <% } %>
                         <% if (describedBy.length > 0) { %>
                             &middot; <%= describedBy.map(function (pair) { return pair[0] + ' ' + pair[1]; }).join(', ') %>
                         <% } %>
@@ -170,7 +180,13 @@
 
                 <h3>The answers behind it</h3>
                 <% if (responses.length === 0) { %>
-                    <p class="empty">No answers are linked to this process.</p>
+                    <p class="empty">
+                        Everyone who described this process has since been regrouped
+                        elsewhere, so nobody is behind it now. Nothing was deleted: the
+                        process is kept in case the regrouping is reversed. Rejudging it
+                        again will re-identify from its remaining answers, and there are
+                        none, so it will stay as it is until something joins it.
+                    </p>
                 <% } %>
                 <% responses.forEach(function (response) { %>
                     <p class="meta">

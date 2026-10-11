@@ -55,9 +55,25 @@ are different processes: the first is bookkeeping, the second is collections,
 and automating one does not touch the other. Sharing the word "invoice" means
 nothing.
 
-**When you are genuinely unsure, report it as a match with low confidence.** A
-wrong merge is visible and can be challenged; a silent split invents a process
-that does not exist.
+**When you are genuinely unsure, report `matches: null` and treat it as a new
+process.** Do not merge on a maybe.
+
+The two mistakes are NOT equally cheap, and an earlier version of this prompt had
+them the wrong way round:
+
+- **A wrong merge hides work.** One person's job ends up inside someone else's
+  description, and the merged step list is a union of two different jobs. Nothing
+  on the roadmap shows that two things were combined, so a reader cannot tell.
+- **A wrong split is visible.** The response becomes its own entry with its own
+  steps, in plain sight, where it can be challenged and merged later. The work is
+  still there, described properly, just in its own process.
+
+And the count is not neutral: "described by N people" adds up the participants
+behind a process, and that figure feeds the score. Merging two different jobs
+inflates the number for the thing that hid the other one.
+
+So **only merge when you can name what makes it the same work.** A shared word, a
+shared department and a shared system are not that, as the examples above show.
 
 ## Naming
 
@@ -119,10 +135,15 @@ useless: "These are the same because the task and trigger match."
 useless: "This response describes matching invoices."
 ```
 
-`confidence` is `high`, `medium` or `low`. **Be honest rather than consistent**: a
-merge you had to think about is `medium`, and one that turns on a judgement call is
-`low`. Nothing filters on this value, so a low confidence costs you nothing and
-tells a reader something true.
+`confidence` is `high`, `medium` or `low`, and it describes how sure you are of
+the answer you gave. **Be honest rather than consistent.** Nothing filters on this
+value and nothing acts on it, so it is a record for a reader, not a signal to the
+system: a `low` confidence does not send the response anywhere different.
+
+Because of that, `low` is NOT a way to say "this might be either". If you are
+genuinely unsure whether it is the same work, that is `matches: null` above, not a
+low-confidence match: a match is a decision, and a decision you do not believe is
+worse than reporting a new process a reader can merge later.
 
 `contributed` lists **which fields of the new response carried the grouping**: the
 fields that made this the same work, or that a merged process should take from this

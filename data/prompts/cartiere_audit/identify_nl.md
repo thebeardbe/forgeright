@@ -56,9 +56,27 @@ opvolgen" zijn verschillende processen: het eerste is boekhouding, het tweede is
 inning, en het automatiseren van het ene raakt het andere niet. Het woord "factuur"
 delen betekent niets.
 
-**Als je werkelijk twijfelt, meld het dan als match met lage betrouwbaarheid.** Een
-verkeerde samenvoeging is zichtbaar en kan aangevochten worden; een stille splitsing
-verzint een proces dat niet bestaat.
+**Als je werkelijk twijfelt, meld dan `matches: null` en behandel het als een nieuw
+proces.** Voeg niet samen op een misschien.
+
+De twee fouten zijn NIET even duur, en een eerdere versie van deze prompt had ze
+omgekeerd:
+
+- **Een verkeerde samenvoeging verbergt werk.** Het werk van de ene persoon komt
+  terecht in de beschrijving van iemand anders, en de samengevoegde stappenlijst is
+  een samenraapsel van twee verschillende taken. Niets op de roadmap laat zien dat er
+  twee dingen zijn samengevoegd, dus een lezer kan het niet zien.
+- **Een verkeerde splitsing is zichtbaar.** Het antwoord wordt een eigen item met
+  zijn eigen stappen, in het volle zicht, waar het aangevochten en later samengevoegd
+  kan worden. Het werk is er nog, goed beschreven, alleen in zijn eigen proces.
+
+En het aantal is niet neutraal: "beschreven door N personen" telt de deelnemers
+achter een proces op, en dat cijfer voedt de score. Twee verschillende taken
+samenvoegen blaast het cijfer op voor het ding dat het andere verstopte.
+
+Dus **voeg alleen samen wanneer je kunt benoemen wat het hetzelfde werk maakt.** Een
+gedeeld woord, een gedeelde afdeling en een gedeeld systeem zijn dat niet, zoals de
+voorbeelden hierboven laten zien.
 
 ## Naamgeving
 
@@ -122,10 +140,17 @@ nutteloos: "Deze zijn hetzelfde omdat taak en trigger overeenkomen."
 nutteloos: "Dit antwoord beschrijft het matchen van facturen."
 ```
 
-`confidence` is `high`, `medium` of `low`. **Wees eerlijk in plaats van consistent**:
-een samenvoeging waarover je moest nadenken is `medium`, en een die van een
-beoordeling afhangt is `low`. Niets filtert op deze waarde, dus een lage
-betrouwbaarheid kost je niets en vertelt een lezer iets waars.
+`confidence` is `high`, `medium` of `low`, en beschrijft hoe zeker je bent van het
+antwoord dat je gaf. **Wees eerlijk in plaats van consistent.** Niets filtert op
+deze waarde en niets handelt ernaar, dus het is een aantekening voor een lezer, geen
+signaal aan het systeem: een `low` betrouwbaarheid stuurt het antwoord niet ergens
+anders heen.
+
+Daarom is `low` GEEN manier om te zeggen "het zou beide kunnen zijn". Als je
+werkelijk twijfelt of het hetzelfde werk is, dan is dat `matches: null` hierboven,
+geen match met lage betrouwbaarheid: een match is een beslissing, en een beslissing
+waar je niet achter staat is erger dan een nieuw proces melden dat een lezer later
+kan samenvoegen.
 
 `contributed` somt **op welke velden van het nieuwe antwoord de groepering
 droegen**: de velden die dit hetzelfde werk maakten, of die een samengevoegd proces

@@ -23,6 +23,25 @@
             <% } else if (notice.note) { %>
                 <%= notice.note %>
             <% } %>
+            <%# A MOVE CHANGES TWO PROCESSES, and the admin is looking at one of them.
+                Without this the other one changes silently, and its score may have
+                gone, which is exactly the sort of quiet change a reader must be told
+                about rather than discover. The name is a model-supplied string and
+                goes through the escaping tag like every other value here. %>
+            <% if (notice.moved) { %>
+                It moved out of &ldquo;<%= notice.moved %>&rdquo;.
+                <%# THE REASON REPLACES THE SUMMARY, NOT BOTH. When the source could
+                    not be reweighed, `leftNote` already explains that it now has no
+                    score and why; saying it twice read as two separate faults. With no
+                    note, the short clause is the whole story. %>
+                <% if (notice.leftWeighed) { %>
+                    That process was reweighed as well.
+                <% } else if (notice.leftNote) { %>
+                    <%= notice.leftNote %>
+                <% } else { %>
+                    That process now has no score.
+                <% } %>
+            <% } %>
         </div>
     <% } else if (notice.note) { %>
         <div class="notice"><%= notice.note %></div>
