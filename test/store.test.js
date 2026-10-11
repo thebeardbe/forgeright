@@ -423,18 +423,36 @@ test('the attribution guarantee holds across several participants and several re
     }
 });
 
-test('the analysis shape is stable: data, department, id and timestamps only', () => {
+test('the analysis shape is stable: data, transcript, department, id and timestamps only', () => {
     const org = newOrg('Shape');
     const inv = invite(org.id, 'shape@example.com');
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { a: 1 } });
 
     const row = store.getResponsesForAnalysis(org.id)[0];
+    // An exact key set on purpose: it is what stops a field the admin path must
+    // never carry being added silently. `transcript` is the raw conversation,
+    // which belongs here, and `invitation_id` and `email` must never appear.
     assert.deepEqual(
         Object.keys(row).sort(),
-        ['created_at', 'data', 'department', 'id', 'submitted_at', 'unreadable', 'updated_at']
+        ['created_at', 'data', 'department', 'id', 'submitted_at', 'transcript', 'unreadable', 'updated_at']
     );
     assert.equal(row.department, 'Finance');
     assert.deepEqual(row.data, { a: 1 });
+});
+
+test('the analysis shape carries no invitation id and no email', () => {
+    // The attribution guarantee, restated as a shape check so a new field that
+    // reintroduced either would fail here rather than in an audit.
+    const org = newOrg('Shape attribution');
+    const inv = invite(org.id, 'shape-attr@example.com');
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { a: 1 } });
+
+    const row = store.getResponsesForAnalysis(org.id)[0];
+    const serialised = JSON.stringify(row);
+    assert.equal('invitation_id' in row, false);
+    assert.equal('email' in row, false);
+    assert.equal(serialised.includes(inv.id), false, 'the invitation id appears nowhere in the row');
+    assert.equal(serialised.includes('shape-attr@example.com'), false, 'the email appears nowhere in the row');
 });
 
 test('getResponsesForAnalysis returns an empty array, not null, for a fresh organisation', () => {
@@ -1024,15 +1042,42 @@ test('listOrganisationIds lists every created organisation and nothing else', ()
     assert.ok(!ids.includes('not-an-organisation'), 'a bogus id is not listed');
 });
 
-test('a corrupt schema version is refused rather than read with the wrong queries', () => {
+test('a file at an older schema version is refused, and is NOT rewritten', () => {
+    // The requirement: a file this code does not understand is refused rather
+    // than read with queries that do not match it, and it is left exactly as it
+    // was, so the data in it is still recoverable by hand. There is no upgrade
+    // path, and rewriting the file would be one.
+    //
+    // Written against the requirement, not the message: a copy edit must not
+    // break this, so the refusal is asserted by the throw and the not-rewritten
+    // property by the file's bytes.
     const org = newOrg('Version check');
+    const inv = invite(org.id, 'version@example.com');
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { keep: 'me' } });
     store.closeAll();
 
-    const db = new DatabaseSync(store.orgDbPath(org.id));
-    db.exec("UPDATE schema_meta SET value = '2' WHERE key = 'schema_version'");
+    const dbPath = store.orgDbPath(org.id);
+    const db = new DatabaseSync(dbPath);
+    db.exec("UPDATE schema_meta SET value = '3' WHERE key = 'schema_version'");
     db.close();
 
-    assert.throws(() => store.getOrganisation(org.id), /Schema version mismatch/);
+    const bytesBefore = fs.readFileSync(dbPath);
+
+    assert.throws(() => store.getOrganisation(org.id), /schema version|no upgrade path/i, 'the file is refused');
+
+    // THE PROPERTY WORTH PINNING: the file was not touched.
+    const bytesAfter = fs.readFileSync(dbPath);
+    assert.ok(bytesBefore.equals(bytesAfter), 'the refused file must not be rewritten');
+
+    // And the data and the recorded version are still what they were, so an
+    // operator can export from the file.
+    const check = new DatabaseSync(dbPath);
+    try {
+        assert.equal(check.prepare("SELECT value FROM schema_meta WHERE key = 'schema_version'").get().value, '3');
+        assert.equal(check.prepare('SELECT COUNT(*) AS n FROM response').get().n, 1, 'the answers are still there');
+    } finally {
+        check.close();
+    }
 });
 
 // ===========================================================================
