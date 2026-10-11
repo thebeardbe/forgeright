@@ -564,3 +564,238 @@ test('the mock\'s reply survives parseModelResponse as complete with a normalise
     assert.ok(Array.isArray(parsed.audit?.workflows) && parsed.audit.workflows.length > 0);
     assert.equal(parsed.audit.illustrative, true, 'the illustrative flag survives normalisation');
 });
+
+// ===========================================================================
+// THE PAYLOAD IS RESOLVED BY CONTENT, NOT BY NULLNESS
+// ===========================================================================
+//
+// THE DANGEROUS SHAPE IS A COMPLETE `processes` BESIDE A DEGENERATE `audit`. The
+// older `parsed.audit ?? normalise(processes)` kept `parsed.audit` whenever it was
+// merely non-null, so an empty, wrong-typed or stale one won over a good
+// `processes`: the client received an empty list, /api/score rejected it, and the
+// participant saw the scoring-failed panel after a successful interview.
+//
+// Tested THROUGH parseModelResponse, on `result.audit.workflows`, because that is
+// the field the client reads and the one that was broken. The mock cannot produce
+// this shape (it emits `processes` only), so every case here is a literal payload.
+
+test('a complete processes beats an EMPTY audit.workflows', () => {
+    const result = completeWith([completeProcess()], { audit: { workflows: [] } });
+
+    assert.equal(result.status, 'complete');
+    assert.ok(Array.isArray(result.audit.workflows), 'the client still receives a workflows array');
+    assert.equal(result.audit.workflows.length, 1, 'the processes are used, not the empty audit');
+    assert.equal(result.audit.workflows[0].id, 'process-1');
+});
+
+test('a complete processes beats a WRONG-TYPED audit.workflows', () => {
+    for (const bad of ['oops', {}, 42, null]) {
+        const result = completeWith([completeProcess()], { audit: { workflows: bad } });
+
+        assert.equal(result.status, 'complete', `audit.workflows=${JSON.stringify(bad)} must not break completion`);
+        assert.equal(result.audit.workflows.length, 1, `the processes win over ${JSON.stringify(bad)}`);
+        assert.equal(result.audit.workflows[0].id, 'process-1');
+    }
+});
+
+test('a complete processes beats an audit with NO workflows key', () => {
+    const result = completeWith([completeProcess()], { audit: {} });
+
+    assert.equal(result.status, 'complete');
+    assert.equal(result.audit.workflows.length, 1);
+    assert.equal(result.audit.workflows[0].id, 'process-1');
+});
+
+test('a complete processes beats a STALE audit.workflows carrying an older entry', () => {
+    // The subtle one: audit.workflows is a valid array, but it is not what the
+    // model just produced. Content wins, so the stale entry does not reach the client.
+    const result = completeWith([completeProcess()], {
+        audit: { workflows: [{ id: 'a-stale-entry', title: 'From an earlier turn' }] }
+    });
+
+    assert.equal(result.status, 'complete');
+    assert.equal(result.audit.workflows.length, 1);
+    assert.equal(result.audit.workflows[0].id, 'process-1', 'the fresh processes win, not the stale audit');
+    assert.equal(
+        result.audit.workflows.some((w) => w.id === 'a-stale-entry'),
+        false,
+        'the stale entry is not in the payload the client reads'
+    );
+});
+
+test('an audit.workflows still resolves when there are NO processes', () => {
+    // The other direction must not regress: the single-shot shape still works.
+    const result = parseModelResponse(JSON.stringify({
+        status: 'complete',
+        content: 'done',
+        audit: { workflows: [{ id: 'w1', title: 'From the single-shot shape' }] }
+    }));
+
+    assert.equal(result.status, 'complete');
+    assert.deepEqual(result.audit.workflows, [{ id: 'w1', title: 'From the single-shot shape' }]);
+});
+
+test('the illustrative and note flags are still taken from either place', () => {
+    // The envelope is not preferred for the WORKFLOWS, but its labels are still
+    // worth taking rather than dropping.
+    const fromRoot = completeWith([completeProcess()], { illustrative: true, note: 'at the root' });
+    assert.equal(fromRoot.audit.illustrative, true);
+    assert.equal(fromRoot.audit.note, 'at the root');
+
+    const fromEnvelope = completeWith([completeProcess()], { audit: { workflows: [], illustrative: true, note: 'in the envelope' } });
+    assert.equal(fromEnvelope.audit.illustrative, true);
+    assert.equal(fromEnvelope.audit.note, 'in the envelope');
+});
+
+// ===========================================================================
+// frequencyPerWeek: 0 ASKS AGAIN; mistakesPerPeriod: 0 IS AN ANSWER
+// ===========================================================================
+
+test('frequencyPerWeek: 0 asks again, and names the field', () => {
+    // Zero does not mean "rare", it means the process does not happen, and a model
+    // that did not get an answer can fill it as a placeholder.
+    const result = completeWith([completeProcess({ frequencyPerWeek: 0 })]);
+
+    assert.equal(result.status, 'asking');
+    assert.ok(result.missing.includes('frequencyPerWeek'), `the field is named, got ${JSON.stringify(result.missing)}`);
+});
+
+test('any NON-ZERO frequency counts, so the intended range is preserved', () => {
+    // The boundary is exclusive: 0.25 is monthly work and must work, and 0.01 must
+    // not be rounded away by a minimum of 1.
+    for (const frequency of [0.01, 0.08, 0.25, 1, 52]) {
+        const result = completeWith([completeProcess({ frequencyPerWeek: frequency })]);
+        assert.equal(result.status, 'complete', `frequency ${frequency} must count as supplied`);
+        assert.equal(result.missing.includes('frequencyPerWeek'), false, `frequency ${frequency} must not be missing`);
+    }
+});
+
+test('a NEGATIVE frequency is refused, as a count cannot be negative', () => {
+    for (const frequency of [-1, -0.5, -52]) {
+        const result = completeWith([completeProcess({ frequencyPerWeek: frequency })]);
+        assert.equal(result.status, 'asking', `frequency ${frequency} must be refused`);
+        assert.ok(result.missing.includes('frequencyPerWeek'));
+    }
+});
+
+test('mistakesPerPeriod: 0 is STILL SUPPLIED, because "it never goes wrong" is an answer', () => {
+    // The owner drew this distinction explicitly, and it is the reason the minimum
+    // is per field rather than a change to the `count` shape. Pinned beside the
+    // frequency case so a future change cannot collapse them into one rule.
+    const result = completeWith([completeProcess({ mistakesPerPeriod: 0 })]);
+
+    assert.equal(result.status, 'complete', 'a process that never goes wrong is a complete answer');
+    assert.equal(result.missing.includes('mistakesPerPeriod'), false);
+});
+
+test('the two zero rules are DIFFERENT, asserted together', () => {
+    // Same value (0), same shape (count), opposite outcomes, because the fields
+    // carry different information.
+    const frequencyZero = completeWith([completeProcess({ frequencyPerWeek: 0 })]);
+    const mistakesZero = completeWith([completeProcess({ mistakesPerPeriod: 0 })]);
+
+    assert.equal(frequencyZero.status, 'asking', 'frequency 0 is a gap');
+    assert.equal(mistakesZero.status, 'complete', 'mistakes 0 is a fact');
+    assert.notEqual(frequencyZero.status, mistakesZero.status);
+});
+
+test('a negative mistakesPerPeriod is still refused, only zero is special', () => {
+    const result = completeWith([completeProcess({ mistakesPerPeriod: -1 })]);
+    assert.equal(result.status, 'asking');
+    assert.ok(result.missing.includes('mistakesPerPeriod'));
+});
+
+// ===========================================================================
+// reasoningBasis IS OPTIONAL, AND THAT IS THE TRADE
+// ===========================================================================
+
+test('a step WITHOUT reasoningBasis still completes the interview', () => {
+    // Requiring it would let a model that forgot the quotation stall an otherwise
+    // complete interview forever, which is a worse failure than a flag shown
+    // without its evidence.
+    const step = completeStep();
+    assert.equal(step.reasoningBasis, undefined, 'the builder does not set it');
+
+    const result = completeWith([completeProcess({ steps: [step] })]);
+    assert.equal(result.status, 'complete', 'an optional field cannot gate completion');
+    assert.deepEqual(result.missing, []);
+});
+
+test('a PRESENT reasoningBasis must be real prose, or the step is incomplete', () => {
+    // Absent is fine; present-and-wrong is not, because a blank quotation beside the
+    // flag reads as the model having nothing to say.
+    for (const bad of ['', '   ', '\t\n', 42, {}, []]) {
+        const result = completeWith([completeProcess({ steps: [completeStep({ reasoningBasis: bad })] })]);
+        assert.equal(result.status, 'asking', `reasoningBasis ${JSON.stringify(bad)} must not count`);
+        assert.ok(result.missing.includes('steps'), 'the step is missing');
+    }
+});
+
+test('a null or undefined reasoningBasis is treated as absent, not as wrong', () => {
+    for (const absent of [null, undefined]) {
+        const result = completeWith([completeProcess({ steps: [completeStep({ reasoningBasis: absent })] })]);
+        assert.equal(result.status, 'complete', `reasoningBasis ${String(absent)} is simply not there`);
+    }
+});
+
+test('a well-formed reasoningBasis completes and is kept', () => {
+    const step = completeStep({ reasoningBasis: 'if stock is under ten' });
+    const result = completeWith([completeProcess({ steps: [step] })]);
+
+    assert.equal(result.status, 'complete');
+    assert.equal(result.audit.workflows[0].steps[0].reasoningBasis, 'if stock is under ten');
+});
+
+// ===========================================================================
+// THE BAND'S DILUTION, INCLUDING WHERE IT FLATTENS
+// ===========================================================================
+
+test('the band distinguishes one judgement in six from six mechanical', () => {
+    // The doc's claim: five mechanical plus one judgement reads differently from six
+    // mechanical, so a chain with a single boundary is not collapsed into "all rules".
+    const oneOfSix = judgementBandFor({ steps: [...Array(1)].map(() => ({ needsReasoning: true })).concat([...Array(5)].map(() => ({ needsReasoning: false }))) });
+    const zeroOfSix = judgementBandFor({ steps: [...Array(6)].map(() => ({ needsReasoning: false })) });
+
+    assert.equal(oneOfSix, 4, 'one judgement in six is band 4');
+    assert.equal(zeroOfSix, 5, 'six mechanical is band 5');
+    assert.notEqual(oneOfSix, zeroOfSix);
+});
+
+test('THE FLATTENING POINT: one judgement in EIGHT reads the same as none', () => {
+    // The dilution the doc mentions, pinned so the claim and the arithmetic cannot
+    // drift: 1/8 = 0.125, 5 - 0.125*4 = 4.5, which rounds to 5. So at eight steps
+    // the boundary vanishes and a single judgement step is indistinguishable from
+    // none. Recorded as measured behaviour, not endorsed as correct.
+    const oneOfEight = judgementBandFor({ steps: [...Array(1)].map(() => ({ needsReasoning: true })).concat([...Array(7)].map(() => ({ needsReasoning: false }))) });
+    const zeroOfEight = judgementBandFor({ steps: [...Array(8)].map(() => ({ needsReasoning: false })) });
+
+    assert.equal(oneOfEight, 5, 'one judgement in eight rounds up to band 5');
+    assert.equal(zeroOfEight, 5, 'and so does none');
+    assert.equal(oneOfEight, zeroOfEight, 'the boundary is invisible at this length');
+});
+
+test('one judgement in SEVEN is still band 4, so the flattening starts at eight', () => {
+    const oneOfSeven = judgementBandFor({ steps: [...Array(1)].map(() => ({ needsReasoning: true })).concat([...Array(6)].map(() => ({ needsReasoning: false }))) });
+    assert.equal(oneOfSeven, 4, 'seven is the last length where one judgement is visible');
+});
+
+test('the band monotonicity holds: more reasoning steps never raises the band', () => {
+    // The direction, across a spread of lengths and counts, so the arithmetic on one
+    // case cannot hide a reversed comparison.
+    for (const total of [2, 3, 5, 6, 8, 10]) {
+        let previous = 6;
+        for (let reasoning = 0; reasoning <= total; reasoning += 1) {
+            const steps = [...Array(reasoning)].map(() => ({ needsReasoning: true }))
+                .concat([...Array(total - reasoning)].map(() => ({ needsReasoning: false })));
+            const band = judgementBandFor({ steps });
+            assert.ok(band <= previous, `${reasoning}/${total} must not be higher than ${reasoning - 1}/${total}`);
+            previous = band;
+        }
+        assert.equal(judgementBandFor({ steps: [...Array(total)].map(() => ({ needsReasoning: true })) }), 1, `all judgement of ${total} is band 1`);
+    }
+});
+
+test('an explicit judgementScore still wins, and the flags are then ignored', () => {
+    const withFlags = { judgementScore: 2, steps: [...Array(6)].map(() => ({ needsReasoning: false })) };
+    assert.equal(judgementBandFor(withFlags), 2, 'the explicit score is used');
+});

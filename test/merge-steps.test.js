@@ -350,3 +350,75 @@ test('the merge is pure: no store, no connection, no org id', async () => {
     const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]);
     assert.deepEqual(imports, ['./matrix.js'], 'the only dependency is ai/matrix.js');
 });
+
+// ===========================================================================
+// reasoningBasis SURVIVES THE MERGE — FIRST NON-EMPTY WINS, EITHER ORDER
+// ===========================================================================
+//
+// The quote behind a step's `needsReasoning` flag. This had a bug: the merge
+// carried it only when the FIRST account had one, so a second account's evidence
+// was dropped. Both orders are tested, because that bug was order-dependent.
+
+test('the quote survives when the FIRST account has it and the second does not', () => {
+    const merged = mergeProcessSteps([
+        response([{ name: 'Match', whatHappens: 'compare', decidedHow: 'depends', needsReasoning: true, reasoningBasis: 'first evidence' }]),
+        response([{ name: 'Match', whatHappens: 'compare totals', decidedHow: 'depends', needsReasoning: true }])
+    ]);
+
+    assert.equal(merged.steps.length, 1);
+    assert.equal(merged.steps[0].reasoningBasis, 'first evidence');
+});
+
+test('the quote survives when the SECOND account has it and the first does not', () => {
+    // THE ORDER THAT WAS BROKEN: the first account had no quote, so the second
+    // account's evidence was dropped.
+    const merged = mergeProcessSteps([
+        response([{ name: 'Match', whatHappens: 'compare', decidedHow: 'depends', needsReasoning: true }]),
+        response([{ name: 'Match', whatHappens: 'compare totals', decidedHow: 'depends', needsReasoning: true, reasoningBasis: 'second evidence' }])
+    ]);
+
+    assert.equal(merged.steps.length, 1);
+    assert.equal(merged.steps[0].reasoningBasis, 'second evidence', 'the second account\'s evidence is not dropped');
+});
+
+test('the FIRST non-empty quote wins when both accounts have one', () => {
+    // Like `decidedHow`: a quotation is a quotation, and the first account to give
+    // one is not made wrong by a second.
+    const merged = mergeProcessSteps([
+        response([{ name: 'Match', whatHappens: 'a', decidedHow: 'd', needsReasoning: true, reasoningBasis: 'AAA the first quote' }]),
+        response([{ name: 'Match', whatHappens: 'bb', decidedHow: 'd', needsReasoning: true, reasoningBasis: 'BBB the second quote' }])
+    ]);
+
+    assert.equal(merged.steps[0].reasoningBasis, 'AAA the first quote');
+});
+
+test('an EMPTY quote in the first account is skipped for a real one in the second', () => {
+    // "First non-empty", not "first present": an empty string is not evidence.
+    const merged = mergeProcessSteps([
+        response([{ name: 'Match', whatHappens: 'a', decidedHow: 'd', needsReasoning: true, reasoningBasis: '' }]),
+        response([{ name: 'Match', whatHappens: 'b', decidedHow: 'd', needsReasoning: true, reasoningBasis: 'the real quote' }])
+    ]);
+
+    assert.equal(merged.steps[0].reasoningBasis, 'the real quote');
+});
+
+test('the quote is absent when NO account gave one, rather than invented', () => {
+    const merged = mergeProcessSteps([
+        response([{ name: 'Match', whatHappens: 'a', decidedHow: 'd', needsReasoning: true }]),
+        response([{ name: 'Match', whatHappens: 'b', decidedHow: 'd', needsReasoning: true }])
+    ]);
+
+    assert.equal(merged.steps[0].reasoningBasis, undefined, 'absence is shown as absence');
+});
+
+test('the quote does not affect the pessimistic flag', () => {
+    // The flag and its evidence are independent: a quote from one account does not
+    // change what the other said about judgement.
+    const merged = mergeProcessSteps([
+        response([{ name: 'Match', whatHappens: 'a', decidedHow: 'd', needsReasoning: false, reasoningBasis: 'a threshold rule' }]),
+        response([{ name: 'Match', whatHappens: 'b', decidedHow: 'd', needsReasoning: true }])
+    ]);
+
+    assert.equal(merged.steps[0].needsReasoning, true, 'the pessimistic reading stands');
+    assert.equal(merged.steps[0].reasoningBasis, 'a threshold rule', 'and the quote is kept');
+});
