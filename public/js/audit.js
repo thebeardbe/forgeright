@@ -166,10 +166,33 @@
             // the parser demanded `audit` while the prompt had moved to
             // `processes`. Reading both here means a future change to the
             // server's normalisation cannot silently break the page.
-            const payload = data.audit
-                || (Array.isArray(data.processes) && data.processes.length > 0
-                    ? { workflows: data.processes, illustrative: data.illustrative, note: data.note }
-                    : null);
+            //
+            // USABILITY, NOT TRUTHINESS. This was `data.audit || ...`, which
+            // short-circuits on a truthy-but-unusable `audit`: an empty object or
+            // an empty `workflows` array is truthy, so a perfectly good `processes`
+            // array BESIDE it was discarded, the interview closed, an empty payload
+            // was saved and scoring ran against nothing. The fallback exists to
+            // survive a server that changes shape; a truthiness test survives
+            // nothing, and it stopped anyone looking because it read as defence.
+            const usable = (candidate) => (
+                candidate && Array.isArray(candidate.workflows) && candidate.workflows.length > 0
+                    ? candidate
+                    : null
+            );
+
+            // `illustrative` and `note` come from the source that wins: a usable
+            // `audit` already carries its own, and the `processes` fallback reads
+            // them from the top level of the reply, which is where the server puts
+            // them. The trailing `null` is kept: a reply with neither usable source
+            // must leave the caller's `if (status === 'complete' && payload)` false
+            // rather than close the interview on nothing.
+            const payload = usable(data.audit)
+                || usable({
+                    workflows: data.processes,
+                    illustrative: data.illustrative,
+                    note: data.note
+                })
+                || null;
 
             if (data.status === 'complete' && payload) {
                 state.audit = payload;
