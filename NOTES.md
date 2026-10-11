@@ -395,3 +395,24 @@ before it, so nothing waits on anything and each step leaves a commit behind.
 
 When the reviewer finds something: fix via the builder or test-writer, commit,
 and push again on green. That push gets reviewed in turn.
+
+## Never end a turn with work queued and unsent
+
+A subagent goes **idle the moment it reports**. A report means it is finished and
+waiting to be told what to do next, not that it is continuing.
+
+This stalled twice in one session. The shape both times:
+
+1. the agent reports a section
+2. the parent commits it and answers the user
+3. **the parent never sends the next instruction**
+4. the parent waits for a report that will not come, while `status` shows idle
+
+The parent had read "proceeding to section N" from the agent's report as if it
+described work in flight. It described work the agent was going to do *if asked*.
+
+**The rule: after committing a section, send the next one in the same turn.** If
+there is genuinely nothing to send, say so rather than leaving a queue.
+
+And do not trust `status` to reveal this: it only reports whether a run is in
+progress, so idle-and-waiting looks the same as idle-and-done. Check the tree.
