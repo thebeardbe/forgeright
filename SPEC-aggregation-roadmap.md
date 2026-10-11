@@ -1,10 +1,12 @@
 # Spec: aggregation, weighting, grouping, and the roadmap
 
-For inspection before anything is built. This is the business logic, the part the
-tool exists for: everything below it currently collects answers and does nothing
-with them.
+**Revision 2**, after Filip's corrections. Written for inspection before anything
+is built.
 
-**Status:** draft for Filip to correct. Open questions are marked **Q** and are not
+Everything below the store currently collects answers and does nothing with them.
+This is the business logic, and it is the part the tool exists for.
+
+**Status:** draft for correction. Open questions are marked **Q** and are not
 guesses.
 
 ---
@@ -13,94 +15,163 @@ guesses.
 
 ```
 raw responses  ->  AGGREGATION  ->  WEIGHTING  ->  GROUPING  ->  ROADMAP
-   (stored)         LLM decides     arithmetic      arithmetic     LLM synthesis
-                     sameness       on the LLM's    on the LLM's   of all three
-                     and naming     grouping        grouping
+   (stored)         the model       arithmetic      arithmetic     the model
+                    groups and     over the        over the       synthesises
+                    names          grouping        grouping
 ```
 
 **The division of labour, which is the point:**
 
-- **The model reasons about language.** Which descriptions mean the same task.
-  What to call it. Which department a phrase refers to. Nothing else can do this:
+- **The model reasons about language.** Which descriptions mean the same task,
+  what to call it, which department a phrase refers to. No script can do this:
   "invoice intake", "processing incoming invoices" and "AP document handling" are
-  one task, and no script knows that.
-- **The script counts.** How many people mentioned it, how many departments, what
-  the ratio is. Counting is not a language task, and a model doing arithmetic is
-  a source of quiet errors.
-- **The model writes the roadmap**, from the three analyses' output.
+  one task.
+- **The script counts.** How many people mentioned it, how many departments, the
+  ratios. Arithmetic is not a language task and a model doing it is a source of
+  quiet errors.
+- **The model writes the roadmap**, from the three analyses.
 
 ---
 
-## 1. Aggregation
+## 0. Two matrices, and keeping them apart
 
-**Input:** every response for one organisation. Each is a participant's answer
-about one or more processes, as natural language.
+They were confused in the first draft. They are unrelated and belong to different
+phases.
 
-**Output:** a list of **processes**, each with the responses that described it.
+| | **Completeness matrix** | **Scoring matrix** |
+| :--- | :--- | :--- |
+| Where | the interview | the roadmap |
+| Decides | is this answer complete enough to score? | what ranks highest? |
+| Who uses it | the model, mid-questionnaire | the reader, in the console |
+| **This phase?** | **yes** | provisional; fine-tuned later |
+
+---
+
+## 1. The questionnaire's completeness matrix
+
+**This is already the design of the intake; it needs its fields settled and
+stated.**
+
+The model must fill an agreed set of fields from what the participant says. It
+reports which it has and which are missing, and asks only for the missing ones.
+
+**It keeps asking until every field is extractable from the answers.** A
+participant who describes the process, its steps, the departments involved and
+the effort it takes has satisfied everything, and the model says so: *"thank you,
+is there another process you would like to improve?"*
+
+**The fields, per process:**
+
+```
+task, trigger, steps[], frequencyPerWeek OR timePerPeriod,
+peopleAffected, handoffTo[], waitsFor[], dependsOn[],
+judgement per step, stepsConsistent, systems[],
+mistakesPerPeriod, mistakeConsequence, touchedDepartments[],
+currentState, frustration
+```
+
+**Judgement is recorded per step, not per process.** That is the correction that
+matters: a chain can be almost entirely mechanical with one judgement step in the
+middle, and that step is the automation boundary. Scores at process level would
+mark the whole chain as needing a person and automate none of it.
+
+**Q1.** Is that field list right, and is anything missing or superfluous? It is
+the contract the model works to and the shape the scoring reads.
+
+---
+
+## 2. Aggregation
+
+**Input:** every response for one organisation, in natural language.
+
+**Output:** a list of **processes**, each with the responses that described it and
+the participant who gave each.
 
 **What the model does:**
 
-1. **Decides sameness.** Two responses describing the same underlying task become
-   one process, even when the wording differs completely. Three people describing
-   the order-to-supplier chain are one process, not three.
-2. **Decides the boundary.** Where one description contains more than one thing
-   worth acting on, it may split — the job-search example was three tasks
-   (classify mail, write the record, answer "have I applied here before"), each
-   with a different verdict.
-3. **Names it**, in the language of the responses, as a task a person would
-   recognise. Not a category, the actual work.
-4. **Reports its confidence and its reasoning** for a merge, so a human can
-   disagree. *"These three describe the same reorder loop: each mentions a
-   stock check followed by a supplier order."*
+1. **Decides sameness.** Responses describing the same task become one process,
+   however differently worded. Three people describing the order-to-supplier loop
+   are one process.
+2. **Records the segmentation**, which is internal. A description containing a
+   chain is recorded as **one process with several steps** — not several
+   processes.
+3. **Names it**, in the language of the responses, as the actual work rather than
+   a category.
+4. **Reports its reasoning** for every merge, and its confidence, so a human can
+   disagree and say why.
+
+**One response is one process.** A participant describes a thing they do; the
+steps inside it are how it is recorded, not separate answers.
 
 **What the script does:** holds the responses, passes them to the model, stores
-the grouping that comes back, and keeps the mapping from process to the responses
-that formed it.
+the grouping, and keeps the mapping from process to responses.
 
-**Q1.** Should a process that only one person described be included, or only ones
-mentioned by several? My reading: **include it**, because one person's tedious
-task is still a candidate and the weighting already reflects that only one person
-said it.
-
-**Q2.** When the model splits one response into three, what does the participant
-see on their own summary? They described one thing and the analysis says three.
-
-**Q3.** What happens when the model's grouping changes between runs — because a
-later participant adds a description that merges two previous processes? Does the
-roadmap regenerate, or is a human's edit preserved?
+**Q2.** Every process is recorded, including one mentioned by a single person.
+Confirm that holds for the roadmap too, or whether single mentions rank
+differently.
 
 ---
 
-## 2. Weighting
+## 3. Aggregation is inspectable, and reclassifiable
+
+**The model's decisions are visible rather than hidden behind a clean list.**
+Beside each process:
+
+- the responses that formed it
+- the reasoning for the merge
+- the confidence
+
+**This is the one step no test can fully pin.** A wrong grouping produces a
+plausible roadmap of the wrong things and the client acts on it, so the working
+is shown and can be challenged.
+
+### Reclassification
+
+An admin who disagrees **does not set a category.** They **ask for a
+reclassification, with a reason**:
+
+```
+Admin sees:   this process, grouped from 4 responses, and why
+Admin clicks: "ask for a reclassification"
+Admin writes: why they think the grouping is wrong
+  -> the model is asked again, with that reasoning
+  -> a new grouping comes back, with its own reasoning
+  -> both versions are visible
+```
+
+**A dropdown would be worse than a reasoned request.** The classification depends
+on factors nobody can enumerate in advance, so the admin's contribution is an
+**argument to the model**, not a field to set.
+
+**Versions are kept**, so a reclassification is a revision rather than an
+overwrite, and the earlier grouping can be seen.
+
+**The participant never sees where their process was grouped, or with what.**
+Deliberate: people would write answers to influence the grouping. **There is no
+right answer to the questionnaire.** There are processes, and whether any is worth
+doing is decided later by people comparing and weighing them.
+
+**Q3.** Does a reclassification regenerate the whole roadmap, or only the affected
+process's placement?
+
+---
+
+## 4. Weighting
 
 **Arithmetic on the aggregation's output. No model involved.**
 
-For each process, per department:
+Per process, per department:
 
 ```
-mentions in department / respondents in department
+mentioned by / invited in
 ```
 
-- **mentions** — how many responses named this process, where the respondent is
-  in that department
-- **respondents** — how many people in that department answered at all
+- **mentioned by** — how many responses named this process, from that department
+- **invited in** — how many people in that department were **invited**
 
-**Reach:** how many departments the process touches.
-
-```
-reach = the number of distinct departments named in touchedDepartments
-```
-
-**Reach amplifies both sides, and that is deliberate:**
-
-| | Effect |
-|---|---|
-| More departments | **higher effort** — more systems, more people to align, more integration surface |
-| More departments | **higher reward** — more people affected, more duplicated work removed |
-
-So a process spanning four departments is a bigger project *and* a bigger payoff.
-The scoring shows both sides and the reader decides whether the complexity is
-worth it. **It is not a penalty and not a bonus.**
+**Invited, not answered.** A department where nobody replied shows `0/6`, which
+is visibly different from a department where all six answered and none named it
+(`0/6` with the counts) — and both are different from `6/6`.
 
 **Displayed as counts, never a bare ratio:**
 
@@ -108,99 +179,121 @@ worth it. **It is not a penalty and not a bonus.**
 Ops 4/6      Warehouse 2/2      Finance 1/3      Web 0/2
 ```
 
-**Q4.** The ratios are per department, so what is the number for the *overall*
-roadmap ranking? My earlier reading was **the mean of the per-department ratios**,
-with counts shown alongside and no minimum, so a two-person department is not
-buried by a twenty-person one. Confirm or correct.
+### Reach
+
+`reach` = the number of distinct departments a process touches.
+
+**It amplifies both sides, deliberately:**
+
+| | Effect |
+| :--- | :--- |
+| More departments | **higher effort** — more systems, more people, more integration |
+| More departments | **higher reward** — more people affected, more duplication removed |
+
+So a process spanning four departments is a bigger project *and* a bigger payoff.
+**The roadmap shows both sides and the reader decides.** It is not a penalty and
+not a bonus.
+
+### The scoring formula is provisional
+
+**The goal is a sorted list by importance and gain in time or money.** The exact
+matrix is to be fine-tuned once there are real responses to look at; this phase
+starts with the simple form:
+
+```
+effort            = frequency * time * people
+automability      = from the judgement scores, per step
+mistakes × consequence = what a failure costs
+reach             = amplifies both effort and reward
+```
+
+**Marked provisional on purpose**, so a placeholder is not later treated as
+settled.
+
+**Q4.** Must the score be defensible to a client — "why is this first?" —
+in which case every term needs a plain-language explanation in the UI. I assume
+yes.
 
 ---
 
-## 3. Grouping
+## 5. Grouping
 
-**Where a process appears. Arithmetic, from `touchedDepartments`.**
-
-Three sections:
+**Where a process appears, from `touchedDepartments`.**
 
 | Section | Contains |
-|---|---|
-| **Per department** | processes touching that department, ranked within it |
+| :--- | :--- |
+| **Per department** | processes touching it, ranked within it |
 | **Cross-department** | processes touching several, in their own section |
 | **Overall** | everything |
 
-**A cross-department process appears in the cross-department section, not filed
-under one department and not duplicated into all of them.** That is what makes
-the cross-department complexity visible as its own thing.
-
-**Q5.** A department with **no respondents** — how does it appear? A process can
-touch the warehouse with nobody from the warehouse having answered. I would show
-it with `0/0` and the invitation count, so "nobody answered" is visibly different
-from "everyone answered and disagreed".
+A cross-department process appears **in the cross-department section**, not filed
+under one department and not duplicated.
 
 ---
 
-## 4. The roadmap
+## 6. The roadmap
 
-**A separate tab in the console.** Not a document and not an export. Each item
+**A separate tab in the console.** Not a document, not an export. Each item
 **expands** to its detail.
 
-**Input:** the three analyses above. **The model synthesises**, then the script
-renders.
+**Input:** the three analyses. **The model synthesises**, then the script renders.
 
-**Each roadmap item shows, collapsed:**
+**Collapsed, each item shows:**
 
 - what it is, in plain language
 - the departments it touches, with the counts
-- the three figures: effort, mistakes, consequence
-- **where a human stays in the loop**, where relevant
+- effort, mistakes, consequence
+- **where a human stays in the loop**
 
-**Expanded, what the handoff calls "the details of what is needed and
-restrictions":**
+**Expanded:**
 
-- the steps, in order
+- the steps, in order, **with judgement marked per step**
 - the systems involved
-- what it waits on, and what has to happen first
-- the dependencies and approvals
+- what it waits on, what has to happen first
+- dependencies and approvals
 - **the improvement, observed rather than prescribed**
 
 **Two things the roadmap does not do:**
 
-- **It does not decide.** It lays out the evidence and the observation; the
-  meeting decides. That was the owner's position and it is the design.
-- **It does not exclude.** A process already automated is still shown, because an
-  employee calling it tedious is a finding regardless. `currentState` is context,
-  never a gate.
-
-**Q6.** Expanded detail comes from the participant's own words, so it is only as
-detailed as they were. Where a participant gave a short answer, does the roadmap
-show what is known and say what is missing, or ask them again?
-
-**Q7.** The three figures — effort, mistakes, consequence — are per process or per
-step? My reading: **effort and consequence per process, judgement per step**,
-since judgement is where the automation boundary sits.
+- **It does not decide.** It lays out evidence and observations; the meeting
+  decides.
+- **It does not exclude.** An already-automated process still appears, because an
+  employee calling it tedious is a finding. `currentState` is context, never a
+  gate.
 
 ---
 
-## What is *not* in this phase
+## 7. Visibility, and its limit
+
+**Answers are visible in the console and can be challenged.** The admin sees each
+response, how it was grouped, and the reasoning.
+
+**The console never shows which person gave which answer.** The database holds the
+link; `getResponsesForAnalysis` omits the join, so the console cannot receive it.
+This is the rule the store already enforces and it holds here unchanged.
+
+A person with direct database access can join the two. That is the accepted,
+documented limit, not an oversight.
+
+---
+
+## Out of scope
 
 | Deferred | Why |
-|---|---|
+| :--- | :--- |
 | PDF export | Polish on a shape not yet built |
-| Roadmap generation by the model writing final prose | The shape must be proven by hand first, per the original build order |
-| Emailing the roadmap | It is a console tab for now |
-| V2 anything | Tenancy stops here |
+| Emailing the roadmap | A console tab for now |
+| Model-written final prose | The shape is proven by hand first |
+| Tenancy beyond what exists | Frozen: store, accounts, links, HTTPS, console |
 
 ---
 
-## The one thing that worries me
+## The risk this spec is written around
 
-**The aggregation is the load-bearing step and the hardest to test.** A wrong
+**Aggregation is the load-bearing step and the hardest to test.** A wrong
 grouping produces a plausible roadmap of the wrong things, and the client acts on
-it. A script has deterministic tests; a model's grouping has to be judged.
+it. Scoring has deterministic tests; a model's grouping has to be judged.
 
-**I would build it so the model's decisions are visible and inspectable** — the
-merge reasoning, the confidence, the responses behind each process — rather than
-producing a clean list that hides how it got there. That also gives the manual
-test plan something to check.
-
-**Is that the right instinct?** It costs a little UI and makes the output
-reviewable, which matters more for the one step no test can fully pin.
+**So the model's reasoning is surfaced rather than hidden**, every process can be
+challenged with an argument, and revisions are kept. That is not polish: it is
+the only way the one unverifiable step can be reviewed.
