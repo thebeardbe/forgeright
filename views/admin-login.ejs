@@ -92,7 +92,7 @@
             <div class="problem">Too many sign-in requests. Wait a few minutes, then try again.</div>
         <% } %>
 
-        <form method="post" action="/admin/login">
+        <form method="post" action="<%= basePath %>/admin/login">
             <label for="email">Email address</label>
             <input type="email" id="email" name="email" required autocomplete="email"
                    placeholder="you@example.com" autofocus>

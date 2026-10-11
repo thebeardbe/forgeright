@@ -8,6 +8,22 @@
     const cfg = window.AUDIT_CONFIG || {};
     const S = cfg.strings || {};
 
+    /**
+     * The app's base path from the page config, "" when served at the root.
+     *
+     * It comes from the server via AUDIT_CONFIG rather than being hardcoded, so
+     * a deployment under a prefix needs no change here. One value, one place.
+     */
+    const BASE_PATH = cfg.basePath || '';
+
+    /**
+     * Prefixes an application path with the base path.
+     *
+     * @param {string} appPath Begins with "/", for example "/api/chat".
+     * @returns {string}
+     */
+    const apiPath = (appPath) => `${BASE_PATH}${appPath}`;
+
     const state = {
         conversation: [],
         pass: '',
@@ -64,7 +80,7 @@
         // Verify the code against the server before showing the chat, so a wrong
         // code fails here rather than on the participant's first answer.
         try {
-            const res = await fetch('/api/chat', {
+            const res = await fetch(apiPath('/api/chat'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -106,7 +122,7 @@
         appendTyping();
 
         try {
-            const res = await fetch('/api/chat', {
+            const res = await fetch(apiPath('/api/chat'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -147,7 +163,7 @@
 
     async function runScoring() {
         try {
-            const res = await fetch('/api/score', {
+            const res = await fetch(apiPath('/api/score'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

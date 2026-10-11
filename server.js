@@ -22,9 +22,11 @@ import { stringsFor, SUPPORTED_LANGS, DEFAULT_LANG } from './lib/strings.js';
 import { DEFAULT_TOOL_ID, getTool } from './config/tools.js';
 import { loadAiConfig } from './ai/config.js';
 import { assertSessionSecretConfigured } from './lib/auth/session.js';
-import { cookieReader, router as adminRouter } from './lib/auth/routes.js';
+import { cookieReader, router as adminRouter, assertPublicBaseUrlUsable } from './lib/auth/routes.js';
+import { requireSecureConnection } from './lib/auth/require-secure.js';
 import { assertMailSenderUsable } from './lib/mail/index.js';
 import { closeAll } from './lib/store/index.js';
+import { BASE_PATH } from './lib/base-path.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -36,6 +38,10 @@ const PORT = Number(process.env.PORT) || 3000;
 // the hardest kind of misconfiguration to diagnose from the outside.
 assertSessionSecretConfigured();
 assertMailSenderUsable();
+// The mail-link configuration is validated here too: a PUBLIC_BASE_URL that
+// cannot be combined with BASE_PATH must stop the process at startup, not throw
+// on an admin's first login attempt, which it did before this check existed.
+assertPublicBaseUrlUsable();
 
 /**
  * Hostnames this instance answers on, from a comma-separated ALLOWED_HOST.
@@ -53,11 +59,91 @@ const ALLOWED_HOSTS = (process.env.ALLOWED_HOST || '')
     .map((entry) => entry.trim().toLowerCase())
     .filter((entry) => entry.length > 0);
 
+/**
+ * How many proxy hops in front of this app may be trusted, from TRUST_PROXY.
+ *
+ * WHAT THIS CONTROLS. `req.secure` (and `req.protocol`, and `req.ip`) reflect
+ * the `X-Forwarded-*` headers only for hops Express has been told to trust. The
+ * admin session cookie is marked Secure when `req.secure` is true, so this value
+ * decides whether a request arriving over plain HTTP from the proxy can be
+ * recognised as having been HTTPS for the browser.
+ *
+ * WHY IT DEFAULTS TO 0 (trust nobody). Trusting a forwarded header means
+ * trusting whoever can send it. `trust proxy = true` trusts every client, so a
+ * request made DIRECTLY to this port could send `X-Forwarded-Proto: https` and
+ * be treated as secure. Measured on this machine, with Express:
+ *
+ *   trust proxy unset, X-Forwarded-Proto: https -> secure false  (header ignored)
+ *   trust proxy = 1,     X-Forwarded-Proto: https -> secure true  (header trusted)
+ *
+ * With the default, the socket is the only thing trusted, which is correct when
+ * nothing is in front. Set TRUST_PROXY=1 when exactly one reverse proxy
+ * terminates TLS and forwards to this container; that is the intended
+ * deployment. Set it to the real number of hops, not more.
+ *
+ * WHAT GOES WRONG IF IT IS WRONG, in both directions:
+ *   - too LOW (0 behind a proxy): a genuine HTTPS request looks like HTTP, the
+ *     cookie is set without Secure, and over a plain-HTTP hop the cookie travels
+ *     in clear text. Sign-in still works, which is why this is the failure an
+ *     owner sees rather than a crash.
+ *   - too HIGH: a client that is not a trusted proxy can set the header and have
+ *     its request treated as secure when it is not. That is an attacker-chosen
+ *     change, so more hops is never the safer setting.
+ *
+ * THE RESIDUAL RISK, stated plainly because it cannot be removed here. A hop
+ * count of 1 means "trust the peer that connects to me". If that peer can be a
+ * client rather than the proxy (the app is reachable directly, which it is while
+ * the listener binds all interfaces), that client can send X-Forwarded-Proto
+ * itself. Measured: with TRUST_PROXY=1, a direct client sending the header gets
+ * a Secure cookie over plain HTTP. No value of this setting fixes that, because
+ * Express decides trust from the hop count, not from the peer's identity.
+ *
+ * So TRUST_PROXY=1 is correct ONLY where the proxy is the only thing that can
+ * reach this port (a private network, or a firewall rule dropping direct access).
+ * Until that holds, keep the default of 0. The alternative, trusting a specific
+ * address or subnet, is what TRUST_PROXY would need to be if this process could
+ * be reached both ways; that is a deployment decision, not one to guess here.
+ *
+ * The value is the NUMBER OF HOPS, or 0 for none. It is deliberately not a
+ * boolean: a boolean true is the one value that cannot be reasoned about, and a
+ * count makes the operator state the topology.
+ */
+const TRUST_PROXY_HOPS = (() => {
+    const raw = process.env.TRUST_PROXY;
+
+    if (raw === undefined || raw.trim() === '') return 0;
+
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        console.warn(
+            `[server] TRUST_PROXY=${JSON.stringify(raw)} is not a non-negative whole number; ` +
+            'treating it as 0 (trust no proxy). Set it to the number of reverse proxies in front ' +
+            'of this app, for example TRUST_PROXY=1 when one proxy terminates TLS.'
+        );
+        return 0;
+    }
+    return parsed;
+})();
+
+// 0 means trust nothing: the socket address is the only thing believed, which is
+// what `false` means to Express. A positive count is passed through.
+app.set('trust proxy', TRUST_PROXY_HOPS);
+
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
-app.use(express.json({ limit: '256kb' }));
-app.use(express.urlencoded({ extended: false, limit: '64kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+
+/**
+ * Expose the base path to every template, so views build URLs from one value
+ * rather than hand-writing a prefix that would then drift.
+ *
+ * `basePath` is "" when served at the root, and views interpolate it directly:
+ * href="<%= basePath %>/admin/login". Empty means the ordinary root-relative
+ * path, so the same template serves both deployments.
+ */
+app.use((req, res, next) => {
+    res.locals.basePath = BASE_PATH;
+    next();
+});
 
 /**
  * Restricts the Host header when ALLOWED_HOST is set. The hostname belongs in
@@ -103,7 +189,35 @@ app.use((req, res, next) => {
 // cookie itself. Mounted after the host guard, so an unlisted host cannot reach
 // a route at all.
 app.use(cookieReader);
-app.use('/admin', adminRouter);
+
+/**
+ * EVERYTHING the app serves is HTTPS only, applied here rather than per route.
+ *
+ * This sits before the content routes so a route added later is covered without
+ * anyone remembering: the rule is the connection, not the feature. See
+ * lib/auth/require-secure.js for why the questionnaire is included (the
+ * participant token is a credential and the answers describe internal
+ * processes) and for the single /healthz exemption.
+ *
+ * It runs after the host guard so an unlisted host is rejected as misdirected
+ * before anything else, and it sets no cookie, so a refusal cannot itself leave
+ * state behind.
+ */
+app.use(requireSecureConnection);
+
+/**
+ * Everything the application SERVES lives on this sub-app, mounted at the base
+ * path below. Express strips the prefix from req.url for a mounted app, so the
+ * route definitions here stay written as if the app were at the root, and the
+ * prefix has exactly one home (the mount point). That is what stops a route
+ * from being missed: a new route added to this app is prefixed automatically.
+ */
+const appInternal = express.Router();
+
+appInternal.use(express.json({ limit: '256kb' }));
+appInternal.use(express.urlencoded({ extended: false, limit: '64kb' }));
+appInternal.use(express.static(path.join(__dirname, 'public')));
+appInternal.use('/admin', adminRouter);
 
 /** Resolves the UI language from ?lang= or Accept-Language. */
 function resolveLang(req) {
@@ -118,11 +232,11 @@ function resolveLang(req) {
     return DEFAULT_LANG;
 }
 
-app.get('/healthz', (req, res) => {
+appInternal.get('/healthz', (req, res) => {
     res.json({ ok: true });
 });
 
-app.get('/', (req, res) => {
+appInternal.get('/', (req, res) => {
     const lang = resolveLang(req);
     const strings = stringsFor(lang);
     res.render('audit', {
@@ -133,7 +247,7 @@ app.get('/', (req, res) => {
     });
 });
 
-app.post('/api/chat', async (req, res) => {
+appInternal.post('/api/chat', async (req, res) => {
     const { toolId, messages, pass, lang } = req.body || {};
 
     const tool = getTool(toolId || DEFAULT_TOOL_ID);
@@ -166,7 +280,7 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
-app.post('/api/score', async (req, res) => {
+appInternal.post('/api/score', async (req, res) => {
     const { toolId, pass, audit } = req.body || {};
 
     const tool = getTool(toolId || DEFAULT_TOOL_ID);
@@ -193,15 +307,56 @@ app.post('/api/score', async (req, res) => {
     }
 });
 
+appInternal.use((req, res) => {
+    res.status(404).send('Not found.');
+});
+
+/**
+ * Mount the application at the base path.
+ *
+ * An empty BASE_PATH makes this app.use(appInternal), which is the root, so the
+ * existing deployment is unchanged. A prefix moves routes, static files and the
+ * API together, which is why they share one app rather than being mounted
+ * separately: three mount points are three chances to prefix only two of them.
+ */
+app.use(BASE_PATH, appInternal);
+
+/**
+ * 404 for anything outside the prefix.
+ *
+ * Without this, a request to the root of a prefixed deployment, or a typo in
+ * the prefix, falls through to Express's default handler, which answers with an
+ * HTML page naming the path. This says the same "Not found." as the app's own
+ * 404, so a wrong URL looks the same wherever it lands. It also means a request
+ * that missed the prefix cannot accidentally reach a route.
+ */
 app.use((req, res) => {
     res.status(404).send('Not found.');
 });
 
 const server = app.listen(PORT, () => {
     const config = loadAiConfig();
-    console.log(`[server] listening on http://localhost:${PORT}`);
+    console.log(`[server] listening on http://localhost:${PORT}${BASE_PATH}`);
     console.log(`[server] AI provider: ${config.name} (${config.type})`);
     console.log(`[server] mail sender: ${process.env.MAIL_SENDER || 'console'} (default console)`);
+
+    // Say where the app is served, because a wrong prefix produces 404s that look
+    // like a missing file. The empty case is called out as the root.
+    if (BASE_PATH === '') {
+        console.log('[server] base path: none (BASE_PATH unset). The app is served at the root.');
+    } else {
+        console.log(`[server] base path: ${BASE_PATH} (all URLs and routes are prefixed, including the session cookie path)`);
+    }
+
+    // State the trust boundary at startup, because it decides whether a session
+    // cookie is marked Secure and is otherwise invisible until sign-in misbehaves
+    // on a particular hostname.
+    if (TRUST_PROXY_HOPS === 0) {
+        console.log('[server] trust proxy: none (TRUST_PROXY=0). Forwarded protocol headers are ignored, so a request is secure only over TLS to this port.');
+    } else {
+        console.log(`[server] trust proxy: ${TRUST_PROXY_HOPS} hop(s). X-Forwarded-Proto from those hops decides whether the session cookie is Secure.`);
+    }
+
     if (!process.env.AUDIT_ACCESS_CODE) {
         console.warn('[server] WARNING: AUDIT_ACCESS_CODE is unset, every request will be rejected.');
     }
@@ -210,12 +365,11 @@ const server = app.listen(PORT, () => {
     } else {
         console.log(`[server] accepting hosts: ${ALLOWED_HOSTS.join(', ')}`);
     }
-    if (!process.env.PUBLIC_BASE_URL) {
-        console.warn(
-            '[server] PUBLIC_BASE_URL is unset: sign-in links will point at http://localhost:' + PORT + '. ' +
-            'Set it to the public URL before anyone relies on a mailed link.'
-        );
-    }
+
+    // The PUBLIC_BASE_URL warning lives with the code that builds the link, so
+    // the message and the fallback cannot drift apart. It is emitted once, on
+    // the first login request, rather than here: the listener callback runs even
+    // when a test imports this module without sending mail.
 });
 
 // Leave no orphan processes, and say why we are stopping. Store connections are

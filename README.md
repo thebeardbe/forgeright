@@ -112,10 +112,13 @@ ai/fixtures/mock-audit.js  illustrative audit data
 lib/scoring.js             scoring and aggregation (pure, tested)
 lib/strings.js             UI copy, trilingual
 lib/store/                 per-organisation storage (step 1)
-lib/auth/tokens.js         admin sign-in links: hashed, single use, expiring
-lib/auth/session.js        signed session cookie, and the SESSION_SECRET check
+lib/auth/tokens.js         sign-in links: hashed, single use, expiring
+lib/auth/session.js        signed session cookie, SESSION_SECRET check, loopback test
 lib/auth/routes.js         /admin login, logout, console, session guard
+lib/auth/require-secure.js the HTTPS-only rule, applied to every route
+lib/auth/public-base-url.js the installation's own URL, for links and redirects
 lib/auth/rate-limit.js     in-memory limits on the login request
+lib/base-path.js           BASE_PATH: normalisation, validation, URL prefixing
 lib/mail/                  mail sending behind one interface (console, proton)
 views/audit.ejs            the questionnaire page
 views/admin-login.ejs      the sign-in page and the cookie notice
@@ -156,13 +159,50 @@ Participants can add and edit until the admin calls `finishOrganisation`. After
 that, writes throw and reads still work. Adding another process appends a new
 response; it never overwrites an earlier round.
 
+### HTTPS only
+
+**Everything is served over HTTPS, except localhost.** The questionnaire, the API,
+the static assets and the admin console all refuse a plain-HTTP request. A refused
+request is redirected (308, so a POST stays a POST) to the same path at the HTTPS
+address in `PUBLIC_BASE_URL`, or answered with an explanation when no HTTPS
+address is configured.
+
+Why the questionnaire is included, not just the admin console:
+
+- The **participant link is a bearer credential**. It is single-use and short-lived,
+  but a token sent in cleartext can be used by anyone who observes it *before* the
+  participant does, submitting answers in someone else's name and corrupting the
+  roadmap the client then acts on.
+- The **answers are employees describing how the business runs**, which is the
+  sensitive material this product exists to collect.
+- `AUDIT_ACCESS_CODE` travels in the request body of `/api/chat` and `/api/score`.
+
+`req.secure` decides, so a proxy that terminates TLS must be trusted for this to
+work: set `TRUST_PROXY=1` when exactly one proxy sits in front, and only when that
+proxy is the only thing able to reach the port. A client that can reach the port
+directly could otherwise send `X-Forwarded-Proto` itself.
+
+**Localhost is exempt**, and the exemption requires both a loopback peer and a
+loopback `Host`, so neither half alone grants it: a local process cannot claim a
+public hostname, and a remote client cannot claim loopback. A loopback connection
+never crosses a network, so there is no wire to read a credential from, and
+without the exemption nothing is testable locally.
+
+**`/healthz` is exempt too**, deliberately. It reports a boolean and nothing else,
+so there is no data or credential on the wire, and refusing it would make a
+plain-HTTP liveness probe fail and have an orchestrator restart a healthy
+container. A security control that causes an outage is worse than the exposure it
+prevents. If the endpoint ever reports anything else, it loses the exemption.
+
 ### Environment
 
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
 | `ALLOWED_HOST` | empty | Hosts this instance answers on, comma-separated (`localhost,127.0.0.1,forgeright.bunkens.be`). Empty accepts any host, for development. Compared on hostname only, case-insensitively; empty entries are ignored. |
+| `TRUST_PROXY` | `0` | Number of reverse proxies in front. Decides whether `X-Forwarded-Proto` is believed, and therefore whether a request counts as secure. **Set to 1 when one proxy terminates TLS**, or every request looks insecure and the whole site refuses. |
+| `BASE_PATH` | empty | Prefix this app is served under, when a proxy mounts it on one (`/forgeright`). Empty means the domain root. Must be a single safe path, or the server refuses to start. |
 | `SESSION_SECRET` | none | Signs the admin session cookie. **Required**: the server refuses to start without it, because a per-process secret would invalidate every session on restart and look like a broken login. |
-| `PUBLIC_BASE_URL` | none | Base URL for mailed sign-in links. Must be set outside local development: a link built from the request would let a forged `Host` header choose where it points. |
+| `PUBLIC_BASE_URL` | none | Absolute address of this installation. Used for mailed sign-in links **and** as the target when a plain-HTTP request is redirected to HTTPS. Include the base path. |
 | `LOGIN_LINK_TTL_MINUTES` | `15` | How long a sign-in link stays valid. A link is single-use regardless. |
 | `SESSION_TTL_HOURS` | `12` | How long an admin session lasts. |
 | `MAIL_SENDER` | `console` | `console` prints the message to stdout (no credentials); `proton` sends through `proton-cli`. An unknown value refuses to start rather than silently falling back. |

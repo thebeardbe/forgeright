@@ -243,3 +243,30 @@ Everything below is a rewrite, not an extension of this code.
 - **No em dashes in user-facing copy.** En-dash ranges are fine.
 - **Illustrative sample data must stay labelled as illustrative** wherever it
   appears. If it reads as real, it looks like inventing facts about a client.
+
+## Deployment: the Tailscale test host
+
+The app is reachable for manual testing at
+
+    https://pi-agents.tail399956.ts.net/forgeright
+
+The host maps that path to this container's port 3000:
+
+    tailscale serve --bg --set-path /forgeright http://127.0.0.1:3000
+
+**The root path on that hostname belongs to another application** (Pi Pocket,
+proxied to 127.0.0.1:8787). The forgeright mapping is a path, not the root, so
+adding it does not disturb the other app. `tailscale serve status` shows both.
+
+For the app to serve there, `.env` needs:
+
+    BASE_PATH=/forgeright
+    PUBLIC_BASE_URL=https://pi-agents.tail399956.ts.net/forgeright
+
+and the host list needs the hostname or IP. Both are in the local `.env`; the
+`BASE_PATH` support is a build item, not yet done.
+
+**Why HTTPS and not plain HTTP.** The Tailscale endpoint terminates TLS, so this
+is a genuinely secure origin. The admin console refuses to serve over an
+insecure connection, so plain HTTP is not a usable path by design; the HTTPS
+endpoint is what makes testing here coherent with production.
