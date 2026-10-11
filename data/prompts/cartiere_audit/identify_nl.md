@@ -141,9 +141,15 @@ nutteloos: "Dit antwoord beschrijft het matchen van facturen."
 ```
 
 `confidence` is `high`, `medium` of `low`, en beschrijft hoe zeker je bent van het
-antwoord dat je gaf. **Wees eerlijk in plaats van consistent.** Niets filtert op
-deze waarde, en niets hier beslist er iets mee: het is een aantekening voor een
-lezer, geen drempel die het antwoord ergens anders heen stuurt.
+antwoord dat je gaf. **Wees eerlijk in plaats van consistent.**
+
+**Wat `low` precies doet, zodat je het gericht kunt gebruiken:** een `low` bij een
+NIEUW proces markeert dat item voor een mens om na te kijken, want het wordt gelezen
+als "het model twijfelde of dit hetzelfde werk was, dus het heeft niet
+samengevoegd". Verder verandert het niets: geen routing, geen score, geen volgorde,
+en een `low` bij een match wordt helemaal niet gebruikt. Het is een markering voor
+een reviewer, en daarom is het de moeite waard om het eerlijk te zetten en niet
+voorzichtig te zijn.
 
 **HOUD `low` VOOR ÉÉN GEVAL: een nieuw proces dat je aanmaakte omdat je niet kon
 uitmaken of het hetzelfde werk was.** Een lage betrouwbaarheid bij een

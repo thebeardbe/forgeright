@@ -136,9 +136,14 @@ useless: "This response describes matching invoices."
 ```
 
 `confidence` is `high`, `medium` or `low`, and it describes how sure you are of
-the answer you gave. **Be honest rather than consistent.** Nothing filters on this
-value, and nothing here decides anything by it: it is a record for a reader, not a
-threshold that moves the response somewhere else.
+the answer you gave. **Be honest rather than consistent.**
+
+**What `low` does, exactly, so you can use it precisely:** a `low` confidence on a
+NEW process marks that entry for a person to review, because it is read as "the
+model was unsure whether this was the same work, so it did not merge". It changes
+nothing else: no routing, no score, no order, and a `low` on a match is not acted on
+at all. It is a flag for a reviewer, which is why it is worth setting honestly and
+not worth setting defensively.
 
 **RESERVE `low` FOR ONE CASE: a new process you created because you could not tell
 whether it was the same work.** A low confidence on a `matches: null` answer is read
