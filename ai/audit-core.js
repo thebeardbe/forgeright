@@ -276,13 +276,25 @@ export function parseModelResponse(raw) {
         );
     }
 
+    // THE PAYLOAD IS NORMALISED FROM THE BEST AVAILABLE SOURCE.
+    //
+    // Not `parsed.audit ?? normalise(processes)`. That kept `parsed.audit`
+    // whenever it was merely NON-NULL, so a stale or wrong-typed one won over a
+    // good `processes`: `audit: { workflows: [] }` passed `??` and reached the
+    // client as an empty list, which /api/score then rejected with a 400 and the
+    // participant saw the scoring-failed panel after a successful interview. The
+    // same shape as the defect this replaced, one field deeper.
+    //
+    // So the decision is made on CONTENT, not on nullness: if a usable workflows
+    // array exists anywhere, it wins and is wrapped; only when neither source has
+    // one does the raw `audit` survive for validation to reject.
+    const best = workflowsFrom(parsed);
+
     return {
         ...parsed,
-        // NORMALISED PAYLOAD. A caller reads `audit.workflows` whatever shape
-        // arrived, so the client does not have to know that an interview reply
-        // used `processes`. Without this the browser would need its own branch,
-        // which is the same two-shapes problem one layer down.
-        audit: parsed.audit ?? normaliseProcessesPayload(parsed, workflowsFrom(parsed)),
+        audit: Array.isArray(best)
+            ? normaliseProcessesPayload(parsed, best)
+            : parsed.audit,
         have: computed.have,
         missing: computed.missing,
         processes
@@ -290,27 +302,35 @@ export function parseModelResponse(raw) {
 }
 
 /**
- * Wraps an interview reply's `processes` in the payload shape the client reads.
+ * Wraps a workflows array in the payload shape the client reads.
  *
- * The interview shape carries a bare array; the client wants an object with
- * `workflows`, and optionally `illustrative` and `note`, which the prompt does
- * not ask a model to produce but which this system uses to label generated data.
- * An unknown model therefore yields a payload with neither flag, which reads as
- * "not illustrative", the correct default for a real interview.
+ * The interview shape carries a bare array under `processes`; the client wants an
+ * object with `workflows`, and optionally `illustrative` and `note`, which the
+ * prompt does not ask a model to produce but which this system uses to label
+ * generated data. An unknown model therefore yields a payload with neither flag,
+ * which reads as "not illustrative", the correct default for a real interview.
  *
- * @param {object} parsed The parsed reply, which may carry the flags at the top.
- * @param {Array<object>|undefined} workflows
- * @returns {object|undefined}
+ * The flags are read from EITHER place a model might put them: the top level, or
+ * inside an `audit` envelope it also sent. The envelope is not preferred for the
+ * workflows themselves, because those came from the best source, but its labels
+ * are still worth taking rather than dropping.
+ *
+ * @param {object} parsed The parsed reply, which may carry the flags.
+ * @param {Array<object>} workflows A non-empty array, already resolved.
+ * @returns {object}
  */
 function normaliseProcessesPayload(parsed, workflows) {
-    if (!Array.isArray(workflows)) return undefined;
-
     const payload = { workflows };
 
-    // Read from the top level if the model put them there, since a flag set at
-    // the root of the reply is just as easy for it to produce as one nested.
+    const envelope = parsed && typeof parsed.audit === 'object' && parsed.audit !== null ? parsed.audit : {};
+
     if (parsed && parsed.illustrative === true) payload.illustrative = true;
-    if (parsed && typeof parsed.note === 'string' && parsed.note.trim() !== '') payload.note = parsed.note;
+    else if (envelope.illustrative === true) payload.illustrative = true;
+
+    const note = typeof parsed?.note === 'string' && parsed.note.trim() !== ''
+        ? parsed.note
+        : (typeof envelope.note === 'string' && envelope.note.trim() !== '' ? envelope.note : null);
+    if (note !== null) payload.note = note;
 
     return payload;
 }
