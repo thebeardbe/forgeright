@@ -16,6 +16,8 @@ import assert from 'node:assert/strict';
 
 import net from 'node:net';
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -25,6 +27,53 @@ const SERVER = path.join(__dirname, '..', 'server.js');
 
 const ACCESS_CODE = 'test-code-route-suite';
 const ALLOWED_HOST = 'allowed.example.test';
+
+// A temp STORE_DIR per run, so the admin and organisation databases this suite
+// causes are written under /tmp and data/store/ is never touched.
+const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-routes-test-'));
+
+// The header that makes a request count as HTTPS, seen only because the peer is
+// a trusted proxy (TRUST_PROXY=127.0.0.1). Sent on every request by default; the
+// one test that must prove a genuine plain-HTTP request is still refused passes
+// `forwardedProto: null` to drop it.
+const FORWARDED_PROTO = { 'x-forwarded-proto': 'https' };
+
+/**
+ * Every environment variable the spawned server reads, built once PORT is known.
+ *
+ * They are NOT inherited from the repo's .env: the child is spawned with this as
+ * its WHOLE environment, so nothing from .env or a developer's shell can leak
+ * in. Inheriting it made the suite depend on local configuration and once hid a
+ * failure for a full run.
+ *
+ * @param {number} port The port the child will bind.
+ * @returns {Record<string, string>}
+ */
+function spawnedEnv(port) {
+    return {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        NODE_ENV: 'test',
+        PORT: String(port),
+        HOST: '127.0.0.1',
+        // The app is mounted and visible at the origin root in these tests.
+        BASE_PATH: '',
+        // The public URL is HTTPS so a refused plain-HTTP request has somewhere to
+        // be redirected to (the 308 path), and so the app is treated as
+        // production-like rather than as local development.
+        PUBLIC_BASE_URL: `https://${ALLOWED_HOST}`,
+        // Only the loopback peer may set the forwarded-protocol headers. The
+        // child connects from 127.0.0.1, so X-Forwarded-Proto: https is believed,
+        // which is exactly the deployment shape these tests must reproduce.
+        TRUST_PROXY: '127.0.0.1',
+        ALLOWED_HOST,
+        SESSION_SECRET: 'a'.repeat(64),
+        STORE_DIR,
+        AI_PROVIDER: 'mock',
+        MAIL_SENDER: 'console',
+        AUDIT_ACCESS_CODE: ACCESS_CODE
+    };
+}
 
 /** A free TCP port, released before the child claims it. */
 function freePort() {
@@ -40,8 +89,18 @@ function freePort() {
 
 const PORT = await freePort();
 
-/** One HTTP request. Host defaults to the allowed host. */
-function request({ method = 'GET', path: urlPath = '/', headers = {}, body } = {}) {
+/**
+ * One HTTP request.
+ *
+ * By default it carries `X-Forwarded-Proto: https` and the allowed Host, so it
+ * reaches the route the way a request through the production proxy does. Pass
+ * `forwardedProto: null` to omit the header, which reproduces a genuine plain
+ * HTTP request that the app must refuse.
+ *
+ * @param {object} options
+ * @param {string|null} [options.forwardedProto] Header value, or null to omit it.
+ */
+function request({ method = 'GET', path: urlPath = '/', headers = {}, body, forwardedProto = 'https' } = {}) {
     const payload = body === undefined ? undefined : JSON.stringify(body);
     return new Promise((resolve, reject) => {
         const req = http.request(
@@ -52,6 +111,7 @@ function request({ method = 'GET', path: urlPath = '/', headers = {}, body } = {
                 method,
                 headers: {
                     host: ALLOWED_HOST,
+                    ...(forwardedProto === null ? {} : { 'x-forwarded-proto': forwardedProto }),
                     ...(payload !== undefined
                         ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
                         : {}),
@@ -71,9 +131,16 @@ function request({ method = 'GET', path: urlPath = '/', headers = {}, body } = {
     });
 }
 
-/** POSTs JSON with the allowed host. */
-function post(urlPath, body, headers = {}) {
-    return request({ method: 'POST', path: urlPath, body, headers });
+/**
+ * POSTs JSON with the allowed host and the trusted HTTPS header.
+ *
+ * @param {string} urlPath
+ * @param {object} body
+ * @param {object} [options] Passed to request(): use `headers` for extra
+ *   headers, `forwardedProto: null` to omit the HTTPS header.
+ */
+function post(urlPath, body, options = {}) {
+    return request({ method: 'POST', path: urlPath, body, ...options });
 }
 
 /** Waits until the child answers /healthz, or fails after a timeout. */
@@ -95,13 +162,10 @@ let child;
 
 before(async () => {
     child = spawn(process.execPath, [SERVER], {
-        env: {
-            ...process.env,
-            PORT: String(PORT),
-            AUDIT_ACCESS_CODE: ACCESS_CODE,
-            AI_PROVIDER: 'mock',
-            ALLOWED_HOST
-        },
+        // spawnedEnv(PORT) is passed as the child's WHOLE environment, not merged
+        // with the parent's, so nothing from .env or the developer's shell leaks
+        // in.
+        env: spawnedEnv(PORT),
         stdio: ['ignore', 'pipe', 'pipe']
     });
     child.stdout.on('data', () => {});
@@ -110,6 +174,7 @@ before(async () => {
 });
 
 after(async () => {
+    fs.rmSync(STORE_DIR, { recursive: true, force: true });
     if (!child || child.killed) return;
     // Wait for the child to actually exit before the runner tears down. A bare
     // kill() returns immediately, and if the process exits while the signal is
@@ -142,13 +207,34 @@ test('/healthz responds 200 when the Host header matches ALLOWED_HOST', async ()
     assert.deepEqual(res.json(), { ok: true });
 });
 
+// --- the HTTPS rule is still in force ---------------------------------------
+// These two tests are the guard on the harness change: making the other tests
+// pass by trusting a forwarded header must not have disabled the rule for a
+// genuine plain-HTTP request. They deliberately do NOT send the header.
+
+test('a genuine plain-HTTP request to an API route is still refused, not served', async () => {
+    const res = await post('/api/score', VALID_PAYLOAD, { forwardedProto: null });
+    assert.notEqual(res.status, 403, 'the refusal must be the HTTP->HTTPS redirect, not the route');
+    assert.equal(res.status, 308, 'a POST over HTTP is refused with 308 so the method is kept');
+});
+
+test('a plain-HTTP request with no forwarding header never reaches the handler', async () => {
+    // The cleartext rule must hold even for a well-formed, correctly authorised
+    // request: an observer must not be able to make one at all. A 308 has an
+    // empty-ish body, so the check is that no handler JSON came back.
+    const res = await post('/api/score', VALID_PAYLOAD, { forwardedProto: null });
+    assert.equal(res.status, 308, 'the request is redirected, not handled');
+    assert.equal(res.text.includes('workflowCount'), false, 'no scoring output may come back over HTTP');
+    assert.equal(res.text.includes('Invalid code'), false, 'no handler error output either');
+});
+
 test('a mismatched Host header is rejected with 421', async () => {
     const res = await request({ path: '/healthz', headers: { host: 'evil.example.test' } });
     assert.equal(res.status, 421);
 });
 
 test('the host check runs before the route, so a bad host fails on any path', async () => {
-    const res = await post('/api/score', VALID_PAYLOAD, { host: 'evil.example.test' });
+    const res = await post('/api/score', VALID_PAYLOAD, { headers: { host: 'evil.example.test' } });
     assert.equal(res.status, 421, 'a bad host must be turned away before scoring');
 });
 
