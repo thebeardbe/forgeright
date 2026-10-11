@@ -379,24 +379,93 @@ test('revokeSession refuses an empty or non-string id without throwing', () => {
 });
 
 test('sessionCookieOptions carries HttpOnly, SameSite=Lax and Path=/admin', () => {
-    const opts = session.sessionCookieOptions(false);
-    assert.equal(opts.httpOnly, true);
+    const opts = session.sessionCookieOptions(true);
+    assert.equal(opts.httpOnly, true, 'the cookie must not be readable from JavaScript');
     assert.equal(opts.sameSite, 'lax');
     assert.equal(opts.path, '/admin');
+    assert.equal(typeof opts.maxAge, 'number');
+    assert.ok(opts.maxAge > 0);
 });
 
-test('sessionCookieOptions sets Secure off localhost and clears it on localhost', () => {
-    assert.equal(session.sessionCookieOptions(false).secure, true, 'non-localhost must be Secure');
-    assert.equal(session.sessionCookieOptions(true).secure, false, 'localhost must not be Secure, or the cookie is dropped');
+test('sessionCookieOptions sets Secure exactly when the connection is secure', () => {
+    // The argument is "is this connection secure", NOT "is this localhost": see
+    // the call site, `sessionCookieOptions(isSecureRequest(req))` in routes.js.
+    // The requirement is that the cookie is Secure on an HTTPS connection, and is
+    // NOT Secure on a plain-HTTP one, because a browser drops a Secure cookie sent
+    // over HTTP and sign-in then fails silently.
+    assert.equal(session.sessionCookieOptions(true).secure, true, 'a secure connection must set Secure');
+    assert.equal(session.sessionCookieOptions(false).secure, false, 'an insecure connection must not set Secure, or the browser drops the cookie');
 });
 
-test('isLocalhostRequest recognises the localhost forms', () => {
-    for (const host of ['localhost', 'localhost:3000', '127.0.0.1', '127.0.0.1:8080', 'LOCALHOST:80']) {
-        assert.equal(session.isLocalhostRequest({ headers: { host } }), true, `host ${JSON.stringify(host)}`);
+test('the Secure flag follows isSecureRequest at the call site', () => {
+    // Tie the two together, so the meaning of the argument cannot silently invert
+    // again: whatever isSecureRequest says is what sessionCookieOptions receives.
+    const secureReq = { secure: true };
+    const insecureReq = { secure: false };
+
+    assert.equal(session.isSecureRequest(secureReq), true);
+    assert.equal(session.sessionCookieOptions(session.isSecureRequest(secureReq)).secure, true);
+
+    assert.equal(session.isSecureRequest(insecureReq), false);
+    assert.equal(session.sessionCookieOptions(session.isSecureRequest(insecureReq)).secure, false);
+});
+
+test('the non-conditional cookie attributes do not depend on the Secure argument', () => {
+    // HttpOnly, SameSite and Path must not drift when the Secure flag changes.
+    const secure = session.sessionCookieOptions(true);
+    const insecure = session.sessionCookieOptions(false);
+    assert.equal(secure.httpOnly, insecure.httpOnly);
+    assert.equal(secure.sameSite, insecure.sameSite);
+    assert.equal(secure.path, insecure.path);
+});
+
+test('sessionCookiePath is the admin prefix, used to clear the cookie identically', () => {
+    // setCookie and clearCookie must use the same Path, or the browser keeps the
+    // cookie after logout.
+    assert.equal(session.sessionCookiePath(), '/admin');
+});
+
+test('isLoopbackRequest requires BOTH a loopback peer and a loopback Host', () => {
+    // The narrowness IS the security property. Keying on the socket alone would
+    // let a local process claim any hostname (a loopback socket with
+    // "Host: localhost" and one with "Host: myhost.example" are indistinguishable
+    // by socket). Keying on the Host alone would let a remote client claim
+    // loopback. Both halves are required, so neither alone grants the exemption.
+    const peerOn = (remoteAddress, host) => ({ socket: { remoteAddress }, headers: { host } });
+
+    // Both loopback: exempted.
+    assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', 'localhost')), true);
+    assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', '127.0.0.1')), true);
+    // "localhost:3000" parses to the hostname "localhost", so the port is ignored.
+    assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', 'localhost:3000')), true);
+    // Node reports a v4 loopback connection on a dual-stack listener in its
+    // IPv4-mapped form, so this address must be accepted as a loopback peer or
+    // the exemption would match nothing on this machine's real listener.
+    assert.equal(session.isLoopbackRequest(peerOn('::ffff:127.0.0.1', 'localhost')), true);
+    assert.equal(session.isLoopbackRequest(peerOn('::1', '[::1]')), true);
+});
+
+test('a loopback peer alone is NOT enough: a local process cannot claim a public host', () => {
+    // This is the half that a hostname-only or socket-only test would miss.
+    const req = { socket: { remoteAddress: '127.0.0.1' }, headers: { host: 'forgeright.example' } };
+    assert.equal(session.isLoopbackRequest(req), false, 'a loopback socket with a public Host is not loopback');
+});
+
+test('a loopback Host alone is NOT enough: a remote client cannot claim loopback', () => {
+    const req = { socket: { remoteAddress: '203.0.113.7' }, headers: { host: 'localhost' } };
+    assert.equal(session.isLoopbackRequest(req), false, 'a remote peer claiming Host: localhost is not loopback');
+});
+
+test('isLoopbackRequest rejects non-loopback hosts and missing parts', () => {
+    const peerOn = (remoteAddress, host) => ({ socket: { remoteAddress }, headers: { host } });
+    for (const host of ['example.com', 'example.com:443', 'evil-localhost.com', 'notlocalhost']) {
+        assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', host)), false, `host ${JSON.stringify(host)}`);
     }
-    for (const host of ['example.com', 'example.com:443', 'evil-localhost.com', '', 'notlocalhost']) {
-        assert.equal(session.isLocalhostRequest({ headers: { host } }), false, `host ${JSON.stringify(host)}`);
-    }
+    // A missing host, a missing socket, and a bare "::1" Host (which parses to ""
+    // and so can never match the bracketed form) are all refused.
+    assert.equal(session.isLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: {} }), false);
+    assert.equal(session.isLoopbackRequest({ headers: { host: 'localhost' } }), false);
+    assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', '::1')), false);
 });
 
 test('SESSION_COOKIE is the documented name', () => {
@@ -673,9 +742,20 @@ test('a newline in the subject cannot become a second argument or header', async
     });
 
     const seen = fake.read();
+    // The whole subject is ONE argument value, newline and all, so it cannot
+    // split into a second argv entry. The mechanism is execFile with an argument
+    // array (no shell) and the body on stdin, so the newline has nowhere to go
+    // except inside the value it belongs to.
     const value = seen.argv[seen.argv.indexOf('--subject') + 1];
     assert.equal(value, subject, 'the whole subject is one argument value');
-    assert.equal(seen.argv.length, 9, 'no extra argv entry was introduced by the newline');
+
+    // No injected argument: the subject's own text must not appear as a separate
+    // argv entry, and nothing after --subject may look like a fresh flag from it.
+    assert.equal(seen.argv.includes('Bcc: attacker@example.com'), false, 'no fragment became its own argument');
+    assert.equal(seen.argv.filter((a) => a.startsWith('--')).length, 5, 'only the intended flags are present');
+
+    // And the body, newline-bearing text included, went to stdin, not argv.
+    assert.equal(seen.stdin, 'x');
 });
 
 test('a recipient that looks like an option is passed as the value of --to', async () => {
