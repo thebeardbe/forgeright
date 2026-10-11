@@ -87,13 +87,18 @@
                     an accident: showing the quotation from the account that decided the
                     flag would present a rejected reading as the accepted evidence. The
                     other accounts' own flags and quotations are on the Every answer
-                    view, under each answer, where the disagreement reads as one. %>
-                <% if (responses.length > 1) { %>
+                    view, under each answer, where the disagreement reads as one.
+                    SHOWN ONLY ON AN ACTUAL DISAGREEMENT, from the merge, rather than on
+                    every process with several accounts: a note that appears everywhere
+                    reads as boilerplate and stops signalling which process needs a look,
+                    which is the only reason to show it. %>
+                <% if (merged.disagreed) { %>
                     <p class="meta">
-                        Described by <%= responses.length %> people. Where they disagreed about
-                        a step, the step is marked as needing a person and its quote comes
-                        from one account; each account's own reading is on
-                        <a href="<%= basePath %>/admin/answers">Every answer</a>.
+                        Described by <%= responses.length %> people, who did not all read
+                        <%= merged.sharedSteps === 1 ? 'one step' : merged.sharedSteps + ' steps' %>
+                        the same way: where they disagreed, the step is marked as needing a
+                        person and its quote comes from one account. Each account's own
+                        reading is on <a href="<%= basePath %>/admin/answers">Every answer</a>.
                     </p>
                 <% } %>
                 <% if (steps.length === 0) { %>

@@ -165,8 +165,8 @@ Op procesniveau gelezen zegt de hele keten "heeft een mens nodig" en wordt er
 niets geautomatiseerd. Per stap gelezen zijn vier stappen automatiseerbaar en
 staat de grens op de ene stap die iets beslist wat nergens opgeschreven staat.
 **Een stap die een vaste drempel of een checklist volgt is `false`, hoeveel zorg
-het ook kost, en
-dat geldt ook voor een goedkeuring tegen een vastgelegde controle.**
+het ook kost, en dat geldt ook voor een goedkeuring tegen een vastgelegde
+controle.**
 
 ## Je antwoord, elke beurt
 
@@ -190,7 +190,7 @@ Zolang er nog iets ontbreekt:
         {
           "name": "De bestelbon zoeken",
           "whatHappens": "In het boekhoudpakket de passende bestelbon opzoeken.",
-          "decidedHow": "ik zoek op het factuurnummer, en bij meerdere neem ik de oudste",
+          "decidedHow": "ik zoek op het factuurnummer, en ik neem de oudste als er meer zijn",
           "needsReasoning": false,
           "reasoningBasis": "ik neem de oudste"
         }

@@ -81,10 +81,13 @@ function stepKey(step) {
  * @returns {{
  *   steps: Array<object>,
  *   reasoningSteps: number,
- *   describedBy: Array<string>,
- *   stepCount: number
+ *   describedBy: Array<[string, number]>,
+ *   stepCount: number,
+ *   disagreed: boolean,
+ *   sharedSteps: number
  * }} The merged steps with the count of steps needing a person, the departments
- *   that described the work, and how many steps there are.
+ *   that described the work, how many steps there are, whether any shared step
+ *   was read differently by different accounts, and how many steps were shared.
  */
 export function mergeProcessSteps(responses) {
     const merged = new Map();
@@ -111,9 +114,14 @@ export function mergeProcessSteps(responses) {
 
             const existing = merged.get(key);
             if (!existing) {
-                merged.set(key, { ...step });
+                // `accounts` and `flags` are bookkeeping for the caller, not fields of
+                // the step: they are removed before the steps are returned.
+                merged.set(key, { ...step, accounts: 1, flags: new Set([stepNeedsReasoning(step)]) });
                 continue;
             }
+
+            existing.accounts += 1;
+            existing.flags.add(stepNeedsReasoning(step));
 
             if (String(step.whatHappens || '').length > String(existing.whatHappens || '').length) {
                 existing.whatHappens = step.whatHappens;
@@ -133,12 +141,27 @@ export function mergeProcessSteps(responses) {
         }
     }
 
-    const steps = [...merged.values()];
+    // WHETHER THE ACCOUNTS DISAGREED, reported rather than left for the caller to
+    // infer from the response count. Two people who describe a process and agree
+    // about every flag are a different thing from two who differ, and the roadmap
+    // shows a note about the disagreement only when there is one: a note on every
+    // multi-account process reads as boilerplate and stops being a signal that a
+    // particular process needs attention.
+    const all = [...merged.values()];
+    const disagreed = all.some((step) => step.flags.size > 1);
+    const sharedSteps = all.filter((step) => step.accounts > 1).length;
+
+    // The bookkeeping is dropped here, so a caller sees only step fields.
+    const steps = all.map(({ accounts, flags, ...step }) => step);
 
     return {
         steps,
         stepCount: steps.length,
         reasoningSteps: steps.filter(stepNeedsReasoning).length,
-        describedBy: [...describedBy.entries()].sort((a, b) => b[1] - a[1])
+        describedBy: [...describedBy.entries()].sort((a, b) => b[1] - a[1]),
+        // True when at least one merged step was described by more than one account
+        // AND those accounts did not all read its flag the same way.
+        disagreed,
+        sharedSteps
     };
 }
