@@ -325,3 +325,242 @@ test('the fixture pairs a rule with false and a variable basis with true, per th
         assert.equal(step.needsReasoning, true, `a variable basis is judgement: ${JSON.stringify(step.decidedHow)}`);
     }
 });
+
+// ===========================================================================
+// 4. BOTH PAYLOAD SHAPES
+// ===========================================================================
+//
+// A defect fixed in the last commit: a reply carrying `processes` and no `audit`
+// fell through to the older single-shot check and errored. Both directions are
+// pinned here so it cannot return. `workflowsFrom` is the one place that reads
+// either shape, so it is tested directly as well as through parseModelResponse.
+
+test('a processes-only reply with a complete process returns complete', () => {
+    const result = completeWith([completeProcess()]);
+
+    assert.equal(result.status, 'complete', 'the interview shape completes');
+    assert.equal(result.audit.workflows.length, 1, 'the payload is normalised for the client');
+    assert.equal(result.processes.length, 1, 'and the raw processes are kept');
+});
+
+test('an audit.workflows reply returns complete', () => {
+    const result = parseModelResponse(JSON.stringify({
+        status: 'complete',
+        content: 'done',
+        audit: { workflows: [{ id: 'w1', title: 'Invoice entry' }] }
+    }));
+
+    assert.equal(result.status, 'complete', 'the older single-shot shape still completes');
+    assert.equal(result.audit.workflows.length, 1);
+});
+
+test('a reply with NEITHER shape is an error', () => {
+    const result = parseModelResponse(JSON.stringify({ status: 'complete', content: 'done' }));
+    assert.equal(result.status, 'error', 'completion with nothing to score is refused');
+});
+
+test('a reply with an EMPTY processes array and no audit is an error or asking, never complete', () => {
+    // An interview that produced no process has produced nothing to score.
+    const result = parseModelResponse(JSON.stringify({ status: 'complete', content: 'done', processes: [] }));
+    assert.notEqual(result.status, 'complete');
+});
+
+test('workflowsFrom reads the interview shape', () => {
+    assert.deepEqual(workflowsFrom({ processes: [{ id: 'p1' }] }), [{ id: 'p1' }]);
+});
+
+test('workflowsFrom reads the single-shot shape', () => {
+    assert.deepEqual(workflowsFrom({ audit: { workflows: [{ id: 'w1' }] } }), [{ id: 'w1' }]);
+});
+
+test('workflowsFrom returns undefined when neither shape is present', () => {
+    assert.equal(workflowsFrom({}), undefined);
+    assert.equal(workflowsFrom({ content: 'just text' }), undefined);
+    assert.equal(workflowsFrom(null), undefined);
+});
+
+test('workflowsFrom treats an EMPTY processes array as no payload', () => {
+    // Empty is not a payload: it must not shadow a valid audit, and it must not
+    // read as success on its own.
+    assert.equal(workflowsFrom({ processes: [] }), undefined);
+});
+
+test('workflowsFrom prefers processes when BOTH shapes are present', () => {
+    // Pinning the precedence: the interview shape is the current one, so a model
+    // that emits both is read as an interview. This is a behaviour, not an
+    // endorsement; see the report.
+    assert.deepEqual(
+        workflowsFrom({ processes: [{ id: 'interview' }], audit: { workflows: [{ id: 'singleshot' }] } }),
+        [{ id: 'interview' }]
+    );
+});
+
+test('an interview reply with a stub processes and a complete audit does not complete', () => {
+    // The consequence of the precedence above: the stub wins, so the reply is
+    // downgraded rather than closing on the audit. Pinned so a change to the
+    // precedence is visible.
+    const result = parseModelResponse(JSON.stringify({
+        status: 'complete',
+        content: 'done',
+        processes: [{ task: 'a stub' }],
+        audit: { workflows: [{ id: 'w1', title: 'A complete workflow' }] }
+    }));
+    assert.equal(result.status, 'asking', 'the incomplete interview shape governs');
+});
+
+// ===========================================================================
+// 5. COMPLETE VERSUS INCOMPLETE
+// ===========================================================================
+
+test('a fully populated process built from the field lists is COMPLETE', () => {
+    const process = completeProcess();
+    assert.deepEqual(fieldsMissingFrom(process), [], 'nothing is missing');
+    assert.equal(completeWith([process]).status, 'complete');
+});
+
+test('removing ANY ONE process field makes it incomplete', () => {
+    for (const field of PROCESS_FIELDS) {
+        const process = completeProcess();
+        delete process[field];
+        assert.ok(fieldsMissingFrom(process).includes(field), `removing ${field} leaves it missing`);
+    }
+});
+
+test('removing ANY ONE step field makes the PROCESS incomplete', () => {
+    for (const field of STEP_FIELDS) {
+        const process = completeProcess();
+        delete process.steps[0][field];
+        assert.ok(fieldsMissingFrom(process).includes('steps'), `a step without ${field} is not complete`);
+    }
+});
+
+test('an empty steps array is incomplete', () => {
+    assert.ok(fieldsMissingFrom(completeProcess({ steps: [] })).includes('steps'));
+});
+
+test('a null or empty-string field is NOT supplied, and the code says so', () => {
+    // Asserted from the code's own rule (isSupplied), not from expectation: an
+    // empty value must leave the field missing, or a blank answer would count.
+    for (const field of PROCESS_FIELDS) {
+        if (field === 'steps') continue; // steps has its own rule, covered above
+        for (const empty of [null, '', '   ']) {
+            const process = completeProcess();
+            process[field] = empty;
+            assert.ok(
+                fieldsMissingFrom(process).includes(field),
+                `${field}=${JSON.stringify(empty)} must count as not supplied`
+            );
+        }
+        // And a zero NUMBER is not empty: 0 is a real answer for a count.
+        if (['mistakesPerPeriod', 'peopleAffected'].includes(field)) {
+            const process = completeProcess();
+            process[field] = 0;
+            assert.equal(fieldsMissingFrom(process).includes(field), false, `${field}=0 is a supplied count`);
+        }
+    }
+});
+
+test('an EMPTY ARRAY is not supplied, because it is a statement nobody made', () => {
+    // handoffTo: [] says "the work does not go anywhere else", which is a real
+    // answer only if the participant said so.
+    for (const field of ['handoffTo', 'waitsFor', 'dependsOn', 'systems', 'touchedDepartments']) {
+        const process = completeProcess();
+        process[field] = [];
+        assert.ok(fieldsMissingFrom(process).includes(field), `${field}=[] must count as not supplied`);
+    }
+});
+
+test('the either/or pair: frequencyPerWeek alone is complete', () => {
+    const process = completeProcess();
+    delete process.timePerPeriod;
+    assert.equal(completeWith([process]).status, 'complete');
+});
+
+test('the either/or pair: timePerPeriod alone is complete', () => {
+    const process = completeProcess();
+    delete process.frequencyPerWeek;
+    process.timePerPeriod = '2 hours a day';
+    assert.equal(completeWith([process]).status, 'complete');
+});
+
+test('the either/or pair: neither leaves it missing', () => {
+    const process = completeProcess();
+    delete process.frequencyPerWeek;
+    delete process.timePerPeriod;
+    assert.equal(completeWith([process]).status, 'asking');
+});
+
+test('the either/or pair: BOTH present is not an error', () => {
+    // A participant who gives both a frequency and a time per period is answering
+    // more fully, not making a mistake. It must complete.
+    const process = completeProcess();
+    process.frequencyPerWeek = 3;
+    process.timePerPeriod = '2 hours a day';
+
+    assert.deepEqual(fieldsMissingFrom(process), []);
+    assert.equal(completeWith([process]).status, 'complete');
+});
+
+// ===========================================================================
+// 6. THE MOCK'S SHAPE MATCHES THE PROMPT'S
+// ===========================================================================
+
+/** One mock turn for the given number of prior user answers. */
+async function mockTurn(userTurns, lang = 'en') {
+    const { generate } = await import('../ai/adapters/mock.js');
+    const messages = Array.from({ length: userTurns }, (_, i) => ({ role: 'user', content: `answer ${i}` }));
+    return JSON.parse(await generate({ messages, providerConfig: { lang } }));
+}
+
+test('the mock emits `processes` and NOT `audit` on completion', async () => {
+    // THE MASKING THAT HID THE DEFECT. Emitting a second shape to satisfy the
+    // parser hides exactly the defect the parser has, so the absence is asserted
+    // explicitly: a future change that re-adds the old key fails here.
+    const reply = await mockTurn(8);
+
+    assert.equal(reply.status, 'complete');
+    assert.ok(Array.isArray(reply.processes) && reply.processes.length > 0, 'processes is the payload');
+    assert.equal('audit' in reply, false, 'the mock must not emit an audit envelope');
+});
+
+test('the mock emits `processes` and NOT `audit` while still asking', async () => {
+    const reply = await mockTurn(2);
+
+    assert.equal(reply.status, 'asking');
+    assert.ok(Array.isArray(reply.processes), 'a partial process keeps the shape stable');
+    assert.equal('audit' in reply, false, 'no audit envelope at any turn');
+});
+
+test('the mock emits illustrative and note on completion', async () => {
+    const reply = await mockTurn(8);
+
+    assert.equal(reply.illustrative, true, 'generated data is labelled as illustrative');
+    assert.equal(typeof reply.note, 'string');
+    assert.ok(reply.note.trim() !== '', 'the note is not blank');
+});
+
+test('the mock reports an empty missing list on completion', async () => {
+    const reply = await mockTurn(8);
+    assert.deepEqual(reply.missing, [], 'the scripted interview finishes with nothing missing');
+});
+
+test('the mock\'s reported matrix narrows as the conversation goes on', async () => {
+    // The pair must CHANGE turn by turn, which is the behaviour the server's loop
+    // relies on; a fixed pair would make the loop untestable.
+    const early = await mockTurn(1);
+    const late = await mockTurn(8);
+
+    assert.ok(early.missing.length > late.missing.length, 'the missing list shrinks as answers arrive');
+    assert.ok(late.have.length > early.have.length, 'the have list grows');
+});
+
+test('the mock\'s reply survives parseModelResponse as complete with a normalised payload', async () => {
+    // End to end through the parser: the mock's actual output, not a hand-built
+    // reply, must complete the interview and carry workflows the client can read.
+    const reply = await mockTurn(8);
+    const parsed = parseModelResponse(JSON.stringify(reply));
+
+    assert.equal(parsed.status, 'complete', 'a real mock completion parses as complete');
+    assert.ok(Array.isArray(parsed.audit?.workflows) && parsed.audit.workflows.length > 0);
+    assert.equal(parsed.audit.illustrative, true, 'the illustrative flag survives normalisation');
+});
