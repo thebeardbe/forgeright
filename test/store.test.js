@@ -110,13 +110,13 @@ test('a token from one organisation cannot write into another', () => {
     assert.deepEqual(store.getResponsesForAnalysis(a.id), [], 'nothing may have been written to A');
 });
 
-test('markInvitationOpened with another organisation\'s token returns null and touches nothing', () => {
+test('invitationForToken with another organisation\'s token returns null and touches nothing', () => {
     const a = newOrg('Org A');
     const b = newOrg('Org B');
     const invA = invite(a.id, 'a@orga.example');
     const invB = invite(b.id, 'b@orgb.example');
 
-    assert.equal(store.markInvitationOpened(a.id, invB.token), null);
+    assert.equal(store.invitationForToken(a.id, invB.token), null);
 
     // Neither invitation was opened: the wrong-org attempt must not record a visit.
     const listA = store.listInvitations(a.id);
@@ -618,7 +618,7 @@ test('a wrong (non-empty) token returns nothing from the READ methods', () => {
     invite(org.id);
 
     assert.deepEqual(store.getResponsesByToken(org.id, 'no-such-token'), []);
-    assert.equal(store.markInvitationOpened(org.id, 'no-such-token'), null);
+    assert.equal(store.invitationForToken(org.id, 'no-such-token'), null);
 });
 
 // The read/write rule: reads return nothing for a token that yields no
@@ -634,7 +634,7 @@ test('reads return nothing for an empty or non-string token, and never throw', (
 
     for (const bad of ['', null, undefined]) {
         assert.deepEqual(store.getResponsesByToken(org.id, bad), [], `getResponsesByToken(${String(bad)}) must return []`);
-        assert.equal(store.markInvitationOpened(org.id, bad), null, `markInvitationOpened(${String(bad)}) must return null`);
+        assert.equal(store.invitationForToken(org.id, bad), null, `invitationForToken(${String(bad)}) must return null`);
     }
 });
 
@@ -682,18 +682,22 @@ test('a refused write leaves nothing behind', () => {
     assert.deepEqual(store.getResponsesForAnalysis(org.id), [], 'a refused write must not insert a row');
 });
 
-test('markInvitationOpened records the first open and does not move it', () => {
+test('invitationForToken records the first open and does not move it', () => {
     const org = newOrg('Opened');
     const inv = invite(org.id, 'opened@example.com');
 
-    const first = store.markInvitationOpened(org.id, inv.token);
+    // The old markInvitationOpened became invitationForToken: it resolves the
+    // token AND records the visit, so the property it pinned lives here now.
+    const first = store.invitationForToken(org.id, inv.token);
     assert.equal(typeof first.opened_at, 'string');
     assert.equal(typeof first.last_seen_at, 'string');
     assert.equal('token' in first, false, 'the returned invitation must not carry the token');
 
-    // A second open keeps the original opened_at.
-    const second = store.markInvitationOpened(org.id, inv.token);
+    // A second open keeps the original opened_at (COALESCE), so the admin view
+    // does not report the most recent visit as the opening.
+    const second = store.invitationForToken(org.id, inv.token);
     assert.equal(second.opened_at, first.opened_at);
+    assert.ok(second.last_seen_at >= first.last_seen_at, 'last_seen_at advances on the later visit');
 });
 
 test('getResponsesByToken parses the stored JSON back to an object', () => {
@@ -1169,7 +1173,7 @@ test('a token resolves while the stored hash is exactly what the code writes', (
 
     // Both read paths resolve the token.
     assert.equal(store.getResponsesByToken(org.id, inv.token).length, 1);
-    assert.notEqual(store.markInvitationOpened(org.id, inv.token), null);
+    assert.notEqual(store.invitationForToken(org.id, inv.token), null);
 });
 
 test('a malformed stored hash does not authenticate the token', () => {
@@ -1184,7 +1188,7 @@ test('a malformed stored hash does not authenticate the token', () => {
 
     // The token no longer resolves, and nothing throws on the read path.
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
-    assert.equal(store.markInvitationOpened(org.id, inv.token), null);
+    assert.equal(store.invitationForToken(org.id, inv.token), null);
 
     // A corrupt credential must not break the rest of the organisation.
     assert.equal(store.listInvitations(org.id).length, 1);
@@ -1227,7 +1231,7 @@ test('an uppercase stored hash does not resolve, and fails closed', () => {
     db.close();
 
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), [], 'the uppercase row is not matched');
-    assert.equal(store.markInvitationOpened(org.id, inv.token), null);
+    assert.equal(store.invitationForToken(org.id, inv.token), null);
 });
 
 // ===========================================================================
