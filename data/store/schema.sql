@@ -25,13 +25,20 @@ CREATE TABLE IF NOT EXISTS organisation (
 
 -- A named person the admin invited. The admin supplies the department at this
 -- point, so the participant is never asked and never spends a click on it.
+--
+-- NO TOKEN COLUMN. The credential lives in participant_tokens, one row per issued
+-- link, because several may be live at once: "Send a link" adds one without
+-- retiring the last, and the two reset actions revoke them all and issue one.
+--
+-- THE ID IS THE IDENTITY, THE TOKENS ARE CREDENTIALS. invitation.id never changes
+-- and response.invitation_id references it, which is what makes a reset safe: the
+-- credentials are replaced wholesale while the identity, and therefore every
+-- answer already given, stays attached. A participant who resets returns to their
+-- existing work rather than starting over.
 CREATE TABLE IF NOT EXISTS invitation (
     id           TEXT PRIMARY KEY,
     email        TEXT NOT NULL,
     department   TEXT NOT NULL,
-    -- The participant's bearer credential. Stored as a SHA-256 hash, never
-    -- verbatim, so a database read does not hand over usable links.
-    token        TEXT NOT NULL UNIQUE,
     created_at   TEXT NOT NULL,
     -- Progress the admin may see. Answer content is never exposed here.
     opened_at    TEXT,
@@ -39,7 +46,35 @@ CREATE TABLE IF NOT EXISTS invitation (
     completed_at TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_invitation_token ON invitation(token);
+-- The invitation link credentials, several of which may be live for one
+-- invitation.
+--
+-- EACH ROW IS A TOKEN, STORED AS A SHA-256 HASH and never verbatim, so a database
+-- read yields nothing usable. Revocation is a timestamp rather than a delete, so
+-- the console can show what happened to a link rather than the row vanishing.
+--
+-- EXPIRY IS GENEROUS, in days, because a questionnaire may run for weeks and a
+-- participant who returns to a dead link is a lost respondent. That is a
+-- deliberate trade: the link is long-lived and appears in URLs, so it can end up
+-- in browser history and in a proxy log. See README "Long-lived participant
+-- links" for why that is accepted and what limits the exposure.
+CREATE TABLE IF NOT EXISTS participant_tokens (
+    id            TEXT PRIMARY KEY,
+    invitation_id TEXT NOT NULL REFERENCES invitation(id) ON DELETE CASCADE,
+    -- SHA-256 of the token, lowercase hex.
+    token_hash    TEXT NOT NULL UNIQUE,
+    issued_at     TEXT NOT NULL,
+    expires_at    TEXT NOT NULL,
+    -- Set by a reset or a lost-link request. A revoked token resolves to nothing,
+    -- the same as an unknown one.
+    revoked_at    TEXT,
+    -- Who issued it: 'admin' from the console, 'participant' from lost-my-link.
+    -- Recorded so a support conversation can tell which action produced a link.
+    issued_by     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_participant_tokens_hash ON participant_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_participant_tokens_invitation ON participant_tokens(invitation_id);
 CREATE INDEX IF NOT EXISTS idx_invitation_department ON invitation(department);
 
 -- One round of answers from one participant.
@@ -73,4 +108,4 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '3');

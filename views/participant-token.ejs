@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="<%= lang %>" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Questionnaire code</title>
+    <%- include('partials/theme-head') %>
+</head>
+<body>
+<div class="wrap narrow">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1>Open your questionnaire</h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+        </div>
+    </header>
+
+    <p class="intro">Paste the code from your invitation email. It is the long string of letters and numbers, not the whole link.</p>
+
+    <div class="card">
+        <% if (error === 'link_invalid') { %>
+            <div class="problem">That code is not usable. It may have been replaced by a newer one. Request a new link below.</div>
+        <% } %>
+        <% if (error === 'token_required') { %>
+            <div class="problem">Paste the code from your invitation email to continue.</div>
+        <% } %>
+
+        <form method="get" action="<%= basePath %>/q">
+            <label for="token">Your code</label>
+            <input class="mono-input" type="text" id="token" name="token" value="<%= prefill %>" required
+                   autocomplete="off" autocapitalize="off" spellcheck="false" autofocus>
+            <button type="submit">Open the questionnaire</button>
+        </form>
+        <p class="note">Lost the code? <a href="<%= basePath %>/lost-link">Request a new link</a>. Your answers are kept.</p>
+    </div>
+</div>
+</body>
+</html>

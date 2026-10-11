@@ -24,9 +24,18 @@
      */
     const apiPath = (appPath) => `${BASE_PATH}${appPath}`;
 
+    /**
+     * The participant's token, when the page was reached from an invitation
+     * link. THE TOKEN IS THE CREDENTIAL: with one present the access-code gate
+     * is skipped entirely, because the code was never given to a participant
+     * and asking for it is a dead end.
+     */
+    const TOKEN = cfg.participantToken || '';
+    const hasToken = TOKEN !== '';
+
     const state = {
         conversation: [],
-        pass: '',
+        pass: TOKEN,
         waiting: false,
         audit: null,
         result: null
@@ -86,6 +95,7 @@
                 body: JSON.stringify({
                     toolId: cfg.toolId,
                     pass: state.pass,
+                    participantToken: TOKEN || undefined,
                     lang: cfg.lang,
                     messages: []
                 })
@@ -128,6 +138,7 @@
                 body: JSON.stringify({
                     toolId: cfg.toolId,
                     pass: state.pass,
+                    participantToken: TOKEN || undefined,
                     lang: cfg.lang,
                     messages: state.conversation
                 })
@@ -149,6 +160,9 @@
             if (data.status === 'complete' && data.audit) {
                 state.audit = data.audit;
                 $('input-area').classList.add('hidden');
+                // Persist against the invitation, so a returning participant (and
+                // a reset link) finds this work rather than an empty form.
+                await saveResponse(data.audit);
                 await runScoring();
             }
         } catch (err) {
@@ -161,6 +175,33 @@
         $('send-btn').disabled = false;
     }
 
+    /**
+     * Stores the completed answers against the invitation.
+     *
+     * Only when the page was reached from an invitation link, since that is what
+     * identifies the participant. A failure is logged rather than shown: the
+     * participant has their analysis on screen, and an error box would suggest
+     * their answers were lost when they were not.
+     */
+    async function saveResponse(audit) {
+        if (!hasToken) return;
+        try {
+            const res = await fetch(apiPath('/api/response'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    token: TOKEN,
+                    data: audit
+                })
+            });
+            if (!res.ok) {
+                console.error('saving the answers failed with ' + res.status);
+            }
+        } catch (err) {
+            console.error('saving the answers failed', err);
+        }
+    }
+
     async function runScoring() {
         try {
             const res = await fetch(apiPath('/api/score'), {
@@ -169,6 +210,7 @@
                 body: JSON.stringify({
                     toolId: cfg.toolId,
                     pass: state.pass,
+                    participantToken: TOKEN || undefined,
                     audit: state.audit
                 })
             });
@@ -330,14 +372,32 @@
         URL.revokeObjectURL(a.href);
     }
 
+    /**
+     * Opens the conversation without the access-code step, for a page reached
+     * from an invitation link. The token in the page config is already the
+     * credential, and it is sent with each answer, so no separate code is
+     * collected or verified here.
+     */
+    function beginWithToken() {
+        $('conversation').classList.remove('hidden');
+        state.conversation = [{ role: 'assistant', content: S.initialMessage }];
+        appendMessage('ai', S.aiLabel, S.initialMessage);
+        $('actions').classList.remove('hidden');
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
-        $('start-btn').addEventListener('click', start);
+        // The unlock controls are absent when a token arrived, so their
+        // listeners are only attached when they exist.
+        if ($('start-btn')) $('start-btn').addEventListener('click', start);
+        if (hasToken) beginWithToken();
         $('send-btn').addEventListener('click', send);
         $('download-md').addEventListener('click', downloadMarkdown);
 
-        $('pass').addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') start();
-        });
+        if ($('pass')) {
+            $('pass').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') start();
+            });
+        }
         $('input').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') send();
         });

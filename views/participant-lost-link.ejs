@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="<%= lang %>" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Get a new link - forgeright</title>
+    <%- include('partials/theme-head') %>
+</head>
+<body>
+<div class="wrap narrow">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1>Get a new questionnaire link</h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+        </div>
+    </header>
+
+    <p class="intro">If your link has been used, lost or has stopped working, enter your email address and we will send a new one.</p>
+
+    <div class="card">
+        <% if (sent) { %>
+            <%#
+                The SAME message whichever branch ran. If a matched address said one
+                thing and an unmatched another, the form would list who has been
+                invited, which is a list of employees and their departments.
+            %>
+            <div class="notice">If that address has been invited, a new link is on its way.</div>
+        <% } %>
+        <% if (error === 'invalid_email') { %>
+            <div class="problem">That does not look like an email address. Check it and try again.</div>
+        <% } %>
+        <% if (error === 'too_many_requests') { %>
+            <div class="problem">Too many requests. Wait a few minutes, then try again.</div>
+        <% } %>
+
+        <form method="post" action="<%= basePath %>/lost-link">
+            <label for="email">Email address</label>
+            <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com" autofocus>
+            <button type="submit">Send me a new link</button>
+        </form>
+        <p class="note">Requesting a new link replaces any earlier one. Answers you have already given are kept.</p>
+    </div>
+</div>
+</body>
+</html>

@@ -1,79 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sign in - forgeright</title>
-    <style>
-        :root {
-            --ink: #14181f;
-            --muted: #6b7280;
-            --line: #e5e7eb;
-            --accent: #1f6feb;
-            --bg: #f7f8fa;
-            --warn-bg: #fffbeb;
-            --warn-line: #fcd34d;
-            --warn-ink: #78350f;
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg); color: var(--ink); line-height: 1.55;
-        }
-        .wrap { max-width: 460px; margin: 8vh auto 0; padding: 0 16px 100px; }
-        .eyebrow {
-            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 0.14em; color: var(--accent); margin: 0 0 4px;
-        }
-        h1 { font-size: 1.4rem; margin: 0 0 6px; }
-        .intro { color: var(--muted); font-size: 0.92rem; margin: 0 0 18px; }
-        .card {
-            background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px;
-        }
-        label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 6px; }
-        input[type="email"] {
-            width: 100%; padding: 11px 13px; font-size: 1rem; font-family: inherit;
-            border: 1px solid var(--line); border-radius: 8px; background: #fff;
-        }
-        input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-        button {
-            margin-top: 12px; width: 100%; padding: 12px 18px; font-size: 0.95rem;
-            font-weight: 700; border: none; border-radius: 8px; background: var(--accent);
-            color: #fff; cursor: pointer; font-family: inherit;
-        }
-        button:hover { filter: brightness(1.08); }
-        .note { color: var(--muted); font-size: 0.8rem; margin: 12px 0 0; }
-        .notice {
-            padding: 11px 13px; border-radius: 8px; font-size: 0.88rem; margin-bottom: 14px;
-            background: #eef4ff; border: 1px solid #c7dbfb;
-        }
-        .problem {
-            padding: 11px 13px; border-radius: 8px; font-size: 0.88rem; margin-bottom: 14px;
-            background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn-ink);
-        }
-
-        /* Cookie banner: fixed to the bottom, visible until answered. */
-        .cookie-banner {
-            position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-            background: #fff; border-top: 1px solid var(--line);
-            padding: 14px 16px; font-size: 0.85rem;
-            box-shadow: 0 -2px 12px rgba(20, 24, 31, 0.06);
-        }
-        .cookie-inner { max-width: 460px; margin: 0 auto; }
-        .cookie-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-        .cookie-actions button { width: auto; margin: 0; padding: 9px 16px; font-size: 0.85rem; }
-        .cookie-actions button.secondary {
-            background: #fff; color: var(--ink); border: 1px solid var(--line);
-        }
-        .hidden { display: none !important; }
-    </style>
+    <%- include('partials/theme-head') %>
 </head>
 <body>
-<div class="wrap">
-    <p class="eyebrow">forgeright</p>
-    <h1>Admin sign in</h1>
-    <p class="intro">Enter your email address and we will send you a link. There is no password.</p>
+<div class="wrap narrow">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1>Admin sign in</h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+        </div>
+    </header>
+    <p class="intro">Enter your email address and we will send you a link. There is no password, and a new address creates a new organisation.</p>
 
     <div class="card">
         <% if (sent) { %>
@@ -88,31 +32,43 @@
         <% if (error === 'send_failed') { %>
             <div class="problem">The sign-in link could not be sent. This is a problem on our side; please try again shortly.</div>
         <% } %>
+        <% if (error === 'signin_failed') { %>
+            <div class="problem">Signing you in failed. This is a problem on our side; please try again shortly.</div>
+        <% } %>
         <% if (error === 'too_many_requests') { %>
             <div class="problem">Too many sign-in requests. Wait a few minutes, then try again.</div>
         <% } %>
+        <% if (noConsole) { %>
+            <div class="problem">You are signed in, but this account has the <strong>user</strong> role and does not see the admin console. An admin in your organisation can change that.</div>
+        <% } %>
 
-        <form method="post" action="<%= basePath %>/admin/login">
+        <form method="post" action="<%= basePath %>/admin">
             <label for="email">Email address</label>
             <input type="email" id="email" name="email" required autocomplete="email"
                    placeholder="you@example.com" autofocus>
             <button type="submit">Send sign-in link</button>
         </form>
         <p class="note">The link opens once and expires after <%= ttlMinutes %> minutes.</p>
+        <p class="note">Questionnaire participant? <a href="<%= basePath %>/lost-link">Get a new questionnaire link</a>.</p>
     </div>
 </div>
 
 <!--
-    The session cookie is ESSENTIAL: it is what keeps you signed in, so declining
-    it does not stop it being set. The banner says so plainly rather than offering
-    a choice it will not honour. "Essential only" is the honest label for the only
-    state this page has.
+    The cookies this site stores, said plainly. TWO now: the session cookie, which
+    is essential, and the theme cookie, which remembers an appearance choice. Both
+    are named, because a banner that says "one cookie" while setting two is not
+    telling the truth.
+
+    Declining is not offered, because neither cookie is optional: the session one
+    keeps you signed in, and the theme one is the only way a stored choice can be
+    applied before the page paints. There is no analytics and no advertising.
 -->
 <div id="cookie-banner" class="cookie-banner hidden">
     <div class="cookie-inner">
-        <strong>This site stores one cookie.</strong>
-        It is the session cookie that keeps you signed in to the admin console. It is essential, so it is
-        set whether or not you accept anything else. There are no analytics and no advertising cookies.
+        <strong>This site stores two cookies.</strong>
+        One keeps you signed in to the admin console, and one remembers your theme choice.
+        Both are essential to how the site works, so they are set either way. There are no
+        analytics and no advertising cookies.
         <div class="cookie-actions">
             <button id="cookie-ok">Understood</button>
         </div>
@@ -121,20 +77,20 @@
 
 <script>
     // The banner records only that it was seen, in localStorage rather than a
-    // cookie, so acknowledging it does not itself set a cookie. Login does not
-    // depend on this running: the banner is hidden until the script shows it.
+    // cookie, so acknowledging it does not itself set one. Sign-in does not depend
+    // on this running: the banner is hidden until the script shows it.
     (function () {
+        var banner = document.getElementById('cookie-banner');
         try {
-            var seen = localStorage.getItem('fr_cookie_notice');
-            if (!seen) document.getElementById('cookie-banner').classList.remove('hidden');
+            if (!localStorage.getItem('fr_cookie_notice')) banner.classList.remove('hidden');
         } catch (err) {
-            // localStorage can be unavailable (private mode, disabled storage).
-            // The safe degradation is to show the notice, not to hide it.
-            document.getElementById('cookie-banner').classList.remove('hidden');
+            // localStorage can be unavailable (private mode, disabled storage). The
+            // safe degradation is to show the notice, not to hide it.
+            banner.classList.remove('hidden');
         }
         document.getElementById('cookie-ok').addEventListener('click', function () {
-            try { localStorage.setItem('fr_cookie_notice', '1'); } catch (err) { /* storage unavailable; banner returns next visit */ }
-            document.getElementById('cookie-banner').classList.add('hidden');
+            try { localStorage.setItem('fr_cookie_notice', '1'); } catch (err) { /* storage unavailable */ }
+            banner.classList.add('hidden');
         });
     })();
 </script>

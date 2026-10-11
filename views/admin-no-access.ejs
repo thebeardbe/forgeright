@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin - forgeright</title>
+    <%- include('partials/theme-head') %>
+</head>
+<body>
+<div class="wrap narrow">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1>Signed in, but no console for you</h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+        </div>
+    </header>
+
+    <div class="card">
+        <p><%= email %> signed in successfully. This account has the <strong>user</strong> role, which can sign in but does not have access to the admin console.</p>
+        <p class="meta">An admin in your organisation can give you the admin role from the console's Users section.</p>
+        <form method="post" action="<%= basePath %>/admin/logout">
+            <button type="submit">Sign out</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>

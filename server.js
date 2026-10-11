@@ -16,22 +16,48 @@ import 'dotenv/config';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
-import { runAuditTurn, validateWorkflows } from './ai/audit-core.js';
-import { aggregate } from './lib/scoring.js';
 import { stringsFor, SUPPORTED_LANGS, DEFAULT_LANG } from './lib/strings.js';
-import { DEFAULT_TOOL_ID, getTool } from './config/tools.js';
 import { loadAiConfig } from './ai/config.js';
 import { assertSessionSecretConfigured } from './lib/auth/session.js';
 import { cookieReader, router as adminRouter, assertPublicBaseUrlUsable } from './lib/auth/routes.js';
 import { requireSecureConnection } from './lib/auth/require-secure.js';
 import { assertMailSenderUsable } from './lib/mail/index.js';
 import { closeAll } from './lib/store/index.js';
-import { BASE_PATH } from './lib/base-path.js';
+import { BASE_PATH, PUBLIC_PATH, describeMount, describePublicPath } from './lib/base-path.js';
+import { resolveTrustProxy, hostnameFromHeader } from './lib/trust-proxy.js';
+import { router as participantRouter } from './lib/auth/participant-routes.js';
+import { router as landingRouter } from './lib/landing.js';
+import { router as apiRouter } from './lib/routes-api.js';
+import { DEFAULT_TOOL_ID } from './config/tools.js';
+import { FOLLOW_SYSTEM, PALETTE_IDS, PALETTES } from './lib/palettes.js';
+import { themeMiddleware, parseThemeChoice, THEME_COOKIE, THEME_COOKIE_MAX_AGE } from './lib/theme.js';
+import { isSecureRequest } from './lib/auth/session.js';
+import { publicBaseUrl } from './lib/auth/public-base-url.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 
 const PORT = Number(process.env.PORT) || 3000;
+
+/**
+ * Interface the listener binds, from HOST. Defaults to loopback.
+ *
+ * WHY LOOPBACK BY DEFAULT. The deployment is a reverse proxy on the same host,
+ * connecting over loopback, so binding 127.0.0.1 is exactly the access this
+ * needs while making the container unreachable from anywhere else. That is the
+ * other half of the proxy-trust boundary: TRUST_PROXY decides which PEER may
+ * claim a request was HTTPS, and HOST decides who can connect at all. With the
+ * listener open on all interfaces, the trust setting is the only thing standing
+ * between a LAN client and the application, and a single mistake there serves it
+ * over cleartext (that was the H2 bypass: reachable on the LAN, so one forged
+ * header was believed).
+ *
+ * Set HOST=0.0.0.0 deliberately, in a container where the proxy is NOT on the
+ * same host and reaches this one over a private network, or for a development
+ * setup where another machine must connect. In that case TRUST_PROXY must name
+ * that proxy's address, and a hop count is not enough for the reason above.
+ */
+const HOST = (process.env.HOST || '127.0.0.1').trim();
 
 // Fail before serving anything, rather than at the first sign-in attempt. A
 // missing SESSION_SECRET would otherwise surface as "login is broken", which is
@@ -59,89 +85,33 @@ const ALLOWED_HOSTS = (process.env.ALLOWED_HOST || '')
     .map((entry) => entry.trim().toLowerCase())
     .filter((entry) => entry.length > 0);
 
-/**
- * How many proxy hops in front of this app may be trusted, from TRUST_PROXY.
- *
- * WHAT THIS CONTROLS. `req.secure` (and `req.protocol`, and `req.ip`) reflect
- * the `X-Forwarded-*` headers only for hops Express has been told to trust. The
- * admin session cookie is marked Secure when `req.secure` is true, so this value
- * decides whether a request arriving over plain HTTP from the proxy can be
- * recognised as having been HTTPS for the browser.
- *
- * WHY IT DEFAULTS TO 0 (trust nobody). Trusting a forwarded header means
- * trusting whoever can send it. `trust proxy = true` trusts every client, so a
- * request made DIRECTLY to this port could send `X-Forwarded-Proto: https` and
- * be treated as secure. Measured on this machine, with Express:
- *
- *   trust proxy unset, X-Forwarded-Proto: https -> secure false  (header ignored)
- *   trust proxy = 1,     X-Forwarded-Proto: https -> secure true  (header trusted)
- *
- * With the default, the socket is the only thing trusted, which is correct when
- * nothing is in front. Set TRUST_PROXY=1 when exactly one reverse proxy
- * terminates TLS and forwards to this container; that is the intended
- * deployment. Set it to the real number of hops, not more.
- *
- * WHAT GOES WRONG IF IT IS WRONG, in both directions:
- *   - too LOW (0 behind a proxy): a genuine HTTPS request looks like HTTP, the
- *     cookie is set without Secure, and over a plain-HTTP hop the cookie travels
- *     in clear text. Sign-in still works, which is why this is the failure an
- *     owner sees rather than a crash.
- *   - too HIGH: a client that is not a trusted proxy can set the header and have
- *     its request treated as secure when it is not. That is an attacker-chosen
- *     change, so more hops is never the safer setting.
- *
- * THE RESIDUAL RISK, stated plainly because it cannot be removed here. A hop
- * count of 1 means "trust the peer that connects to me". If that peer can be a
- * client rather than the proxy (the app is reachable directly, which it is while
- * the listener binds all interfaces), that client can send X-Forwarded-Proto
- * itself. Measured: with TRUST_PROXY=1, a direct client sending the header gets
- * a Secure cookie over plain HTTP. No value of this setting fixes that, because
- * Express decides trust from the hop count, not from the peer's identity.
- *
- * So TRUST_PROXY=1 is correct ONLY where the proxy is the only thing that can
- * reach this port (a private network, or a firewall rule dropping direct access).
- * Until that holds, keep the default of 0. The alternative, trusting a specific
- * address or subnet, is what TRUST_PROXY would need to be if this process could
- * be reached both ways; that is a deployment decision, not one to guess here.
- *
- * The value is the NUMBER OF HOPS, or 0 for none. It is deliberately not a
- * boolean: a boolean true is the one value that cannot be reasoned about, and a
- * count makes the operator state the topology.
- */
-const TRUST_PROXY_HOPS = (() => {
-    const raw = process.env.TRUST_PROXY;
+// Which peers may set the forwarded-protocol headers. Resolved and validated
+// here so a bad value stops startup rather than quietly refusing every request.
+// See lib/trust-proxy.js for the forms and why addresses beat hop counts.
+const TRUST_PROXY = resolveTrustProxy();
 
-    if (raw === undefined || raw.trim() === '') return 0;
-
-    const parsed = Number(raw);
-    if (!Number.isInteger(parsed) || parsed < 0) {
-        console.warn(
-            `[server] TRUST_PROXY=${JSON.stringify(raw)} is not a non-negative whole number; ` +
-            'treating it as 0 (trust no proxy). Set it to the number of reverse proxies in front ' +
-            'of this app, for example TRUST_PROXY=1 when one proxy terminates TLS.'
-        );
-        return 0;
-    }
-    return parsed;
-})();
-
-// 0 means trust nothing: the socket address is the only thing believed, which is
-// what `false` means to Express. A positive count is passed through.
-app.set('trust proxy', TRUST_PROXY_HOPS);
-
+app.set('trust proxy', TRUST_PROXY.setting);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 /**
- * Expose the base path to every template, so views build URLs from one value
+ * Expose the PUBLIC path to every template, so views build URLs from one value
  * rather than hand-writing a prefix that would then drift.
  *
- * `basePath` is "" when served at the root, and views interpolate it directly:
- * href="<%= basePath %>/admin/login". Empty means the ordinary root-relative
- * path, so the same template serves both deployments.
+ * PUBLIC_PATH, not BASE_PATH: the browser is outside the mount, so the prefix it
+ * must use is where the app is VISIBLE, which differs from where it is mounted
+ * whenever a proxy strips its prefix (the Tailscale deployment). See
+ * lib/base-path.js.
+ *
+ * The value is "" when the site is at an origin root, and views interpolate it
+ * directly: href="<%= basePath %>/admin/login".
  */
 app.use((req, res, next) => {
-    res.locals.basePath = BASE_PATH;
+    res.locals.basePath = PUBLIC_PATH;
+
+    // The picker's list, derived from the palette data so a new palette appears
+    // without touching a template. Ordered as lib/palettes.js orders them.
+    res.locals.themeOptions = PALETTE_IDS.map((id) => ({ id, name: PALETTES[id].name }));
     next();
 });
 
@@ -160,21 +130,17 @@ app.use((req, res, next) => {
     // Strip the port, then lowercase. A Host header is case-insensitive, and an
     // operator who typed "Localhost" should not be locked out.
     //
-    // The raw header is used rather than Express's req.hostname, because
-    // req.hostname is derived and can normalise a bracketed IPv6 form. Splitting
-    // the header ourselves keeps one rule for what is compared.
+    // The raw header is parsed by hostnameFromHeader, which handles an IPv6
+    // authority correctly. Splitting on ":" here was a second instance of the
+    // same defect that made the loopback check unable to match "[::1]": a
+    // bracketed literal yields "[", so an IPv6 entry in ALLOWED_HOST could never
+    // match however it was written.
     //
     // Edge cases, both of which must NOT pass by accident:
     //   - a missing Host header yields "", which matches no configured entry,
     //     because empty entries were filtered out above
-    //   - an IPv6 host like "[::1]:3000" splits on the first colon to "[", which
-    //     matches no configured entry. A bracketed IPv6 literal is therefore
-    //     refused even if it is written in ALLOWED_HOST, because every form of
-    //     it reduces to "[". IPv6 literals are not supported by this check; the
-    //     deployment is a named subdomain behind a proxy. The failure direction
-    //     is safe (refused, not accepted), and this is stated rather than
-    //     implied.
-    const host = (req.headers.host || '').split(':')[0].trim().toLowerCase();
+    //   - an IPv6 host is now matched as written, so "[::1]" in ALLOWED_HOST works
+    const host = hostnameFromHeader(req.headers.host);
     if (ALLOWED_HOSTS.includes(host)) return next();
 
     console.warn(
@@ -189,6 +155,13 @@ app.use((req, res, next) => {
 // cookie itself. Mounted after the host guard, so an unlisted host cannot reach
 // a route at all.
 app.use(cookieReader);
+
+// Resolves the theme from the cookie, or the system preference when there is no
+// usable choice, and exposes it to every view as `theme`.
+//
+// AFTER cookieReader: it reads req.cookies, so running it before the reader would
+// silently see no cookie and always fall back to the system preference.
+app.use(themeMiddleware);
 
 /**
  * EVERYTHING the app serves is HTTPS only, applied here rather than per route.
@@ -217,6 +190,24 @@ const appInternal = express.Router();
 appInternal.use(express.json({ limit: '256kb' }));
 appInternal.use(express.urlencoded({ extended: false, limit: '64kb' }));
 appInternal.use(express.static(path.join(__dirname, 'public')));
+
+/**
+ * Expose the strings and language every template needs.
+ *
+ * SET ON res.locals, not on the request, and BEFORE every router: templates read
+ * these as locals, and a page rendered by a route mounted earlier would otherwise
+ * have them undefined. That is what broke the paste-a-token page, which is served
+ * by the participant router before this used to run.
+ */
+appInternal.use((req, res, next) => {
+    const lang = resolveLang(req);
+    res.locals.lang = lang;
+    res.locals.strings = stringsFor(lang);
+    res.locals.toolId = DEFAULT_TOOL_ID;
+    res.locals.supportedLangs = SUPPORTED_LANGS;
+    next();
+});
+
 appInternal.use('/admin', adminRouter);
 
 /** Resolves the UI language from ?lang= or Accept-Language. */
@@ -236,76 +227,61 @@ appInternal.get('/healthz', (req, res) => {
     res.json({ ok: true });
 });
 
-appInternal.get('/', (req, res) => {
-    const lang = resolveLang(req);
-    const strings = stringsFor(lang);
-    res.render('audit', {
-        strings,
-        lang,
-        toolId: DEFAULT_TOOL_ID,
-        supportedLangs: SUPPORTED_LANGS
+/**
+ * Stores the theme choice, then returns the person to where they were.
+ *
+ * A GET, deliberately: it sets one preference and redirects, and a GET keeps the
+ * picker a plain form with no body and no CSRF surface. The value is validated
+ * against the palette list, so a hand-edited URL cannot store anything else, and
+ * an unrecognised value is refused rather than quietly defaulted: a cookie that
+ * says a theme that does not exist would show up as a blank-looking page later.
+ *
+ * The cookie is NOT HttpOnly, because the client reads it to keep the picker in
+ * step, and it is the only cookie here that the page reads. SameSite=Lax, so it is
+ * not sent on a cross-site request.
+ */
+appInternal.get('/settings/theme', (req, res) => {
+    const raw = String(req.query.choice || '');
+    const choice = parseThemeChoice(raw) === FOLLOW_SYSTEM ? FOLLOW_SYSTEM : (PALETTES[raw] ? raw : null);
+
+    if (choice === null) {
+        console.warn(`[theme] refusing an unknown theme choice ${JSON.stringify(raw)}`);
+        return res.redirect(`${PUBLIC_PATH}/`);
+    }
+
+    res.cookie(THEME_COOKIE, choice, {
+        path: '/',
+        sameSite: 'lax',
+        httpOnly: false, // the page reads it to reflect the choice in the picker
+        maxAge: THEME_COOKIE_MAX_AGE * 1000,
+        secure: isSecureRequest(req)
     });
+
+    // Back where they came from, when that is this site, so changing the theme on
+    // the console does not throw them out to the landing page.
+    const referer = req.headers.referer;
+    if (typeof referer === 'string' && referer.startsWith(`${publicBaseUrl()}/`)) {
+        return res.redirect(referer);
+    }
+    return res.redirect(`${PUBLIC_PATH}/`);
 });
 
-appInternal.post('/api/chat', async (req, res) => {
-    const { toolId, messages, pass, lang } = req.body || {};
 
-    const tool = getTool(toolId || DEFAULT_TOOL_ID);
-    if (!tool) {
-        return res.status(400).json({ status: 'error', content: 'Unknown tool.' });
-    }
+/**
+ * The participant's routes: /q/<token>, /q, /lost-link and the answer API.
+ *
+ * Under /q rather than at the root, so the root can be a landing page rather
+ * than "the questionnaire, sometimes". See lib/landing.js.
+ */
+appInternal.use('/', participantRouter);
 
-    const expected = process.env[tool.accessCodeEnv] || '';
-    if (!expected || pass !== expected) {
-        return res.status(403).json({ status: 'error', content: 'Invalid code.' });
-    }
+// The landing page, at the root, mounted AFTER the participant routes so those
+// specific paths win and only the bare `/` reaches it.
+appInternal.use('/', landingRouter);
 
-    if (!Array.isArray(messages)) {
-        return res.status(400).json({ status: 'error', content: 'Missing messages.' });
-    }
-
-    try {
-        const result = await runAuditTurn({
-            messages,
-            lang,
-            toolId: tool.promptDir
-        });
-        res.json(result);
-    } catch (err) {
-        console.error('[api/chat] failed:', err);
-        res.status(500).json({
-            status: 'error',
-            content: 'The analysis service is temporarily unavailable. Please try again.'
-        });
-    }
-});
-
-appInternal.post('/api/score', async (req, res) => {
-    const { toolId, pass, audit } = req.body || {};
-
-    const tool = getTool(toolId || DEFAULT_TOOL_ID);
-    const expected = tool ? (process.env[tool.accessCodeEnv] || '') : '';
-    if (!tool || !expected || pass !== expected) {
-        return res.status(403).json({ error: 'Invalid code.' });
-    }
-
-    // Validate with the same rule the model path uses, rather than duplicating
-    // the checks. This route takes the payload straight from the client, so
-    // without it a request could serve a blank heading to the reader.
-    const check = validateWorkflows(audit?.workflows);
-    if (!check.ok) {
-        return res.status(400).json({ error: `Invalid audit: ${check.reason}.` });
-    }
-
-    // Scoring is pure and cannot fail on well-formed input, but guard the shape
-    // so a malformed payload is a 400 rather than a 500.
-    try {
-        res.json(aggregate(audit.workflows));
-    } catch (err) {
-        console.error('[api/score] failed:', err);
-        res.status(400).json({ error: 'Could not score the supplied audit.' });
-    }
-});
+// The questionnaire's API: one conversation turn, and scoring. In its own
+// module so the two endpoints that take a participant's answers live together.
+appInternal.use('/', apiRouter);
 
 appInternal.use((req, res) => {
     res.status(404).send('Not found.');
@@ -334,28 +310,34 @@ app.use((req, res) => {
     res.status(404).send('Not found.');
 });
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, HOST, () => {
     const config = loadAiConfig();
-    console.log(`[server] listening on http://localhost:${PORT}${BASE_PATH}`);
-    console.log(`[server] AI provider: ${config.name} (${config.type})`);
+    console.log(`[server] listening on http://${HOST}:${PORT}${BASE_PATH}`);    console.log(`[server] AI provider: ${config.name} (${config.type})`);
     console.log(`[server] mail sender: ${process.env.MAIL_SENDER || 'console'} (default console)`);
 
     // Say where the app is served, because a wrong prefix produces 404s that look
     // like a missing file. The empty case is called out as the root.
-    if (BASE_PATH === '') {
-        console.log('[server] base path: none (BASE_PATH unset). The app is served at the root.');
+    if (BASE_PATH === PUBLIC_PATH) {
+        if (BASE_PATH === '') {
+            console.log('[server] paths: mounted and visible at the origin root.');
+        } else {
+            console.log(
+                `[server] paths: mounted and visible at ${BASE_PATH} ` +
+                '(the proxy passes its prefix through).'
+            );
+        }
     } else {
-        console.log(`[server] base path: ${BASE_PATH} (all URLs and routes are prefixed, including the session cookie path)`);
+        console.log(
+            `[server] paths: mounted at ${describeMount()}, visible at ${describePublicPath()} ` +
+            '(the proxy strips its prefix before forwarding, so emitted URLs still carry it).'
+        );
     }
 
-    // State the trust boundary at startup, because it decides whether a session
-    // cookie is marked Secure and is otherwise invisible until sign-in misbehaves
-    // on a particular hostname.
-    if (TRUST_PROXY_HOPS === 0) {
-        console.log('[server] trust proxy: none (TRUST_PROXY=0). Forwarded protocol headers are ignored, so a request is secure only over TLS to this port.');
-    } else {
-        console.log(`[server] trust proxy: ${TRUST_PROXY_HOPS} hop(s). X-Forwarded-Proto from those hops decides whether the session cookie is Secure.`);
-    }
+    // State the trust boundary at startup, because it decides whether a request
+    // counts as secure and is otherwise invisible until the site misbehaves on a
+    // particular address.
+    console.log(`[server] trust proxy: ${TRUST_PROXY.summary}`);
+    console.log(`[server] bound to ${HOST}:${PORT}${HOST === '127.0.0.1' ? ' (loopback only; set HOST to widen it deliberately)' : ''}`);
 
     if (!process.env.AUDIT_ACCESS_CODE) {
         console.warn('[server] WARNING: AUDIT_ACCESS_CODE is unset, every request will be rejected.');

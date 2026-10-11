@@ -1,41 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin - forgeright</title>
-    <style>
-        :root {
-            --ink: #14181f;
-            --muted: #6b7280;
-            --line: #e5e7eb;
-            --accent: #1f6feb;
-            --bg: #f7f8fa;
-        }
-        * { box-sizing: border-box; }
-        body {
-            margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg); color: var(--ink); line-height: 1.55;
-        }
-        .wrap { max-width: 620px; margin: 0 auto; padding: 24px 16px 64px; }
-        header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-        .eyebrow {
-            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
-            letter-spacing: 0.14em; color: var(--accent); margin: 0 0 4px;
-        }
-        h1 { font-size: 1.5rem; margin: 0 0 6px; }
-        .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
-        .card h2 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin: 0 0 10px; }
-        .who { font-size: 1.05rem; font-weight: 600; margin: 0 0 4px; }
-        .meta { color: var(--muted); font-size: 0.85rem; margin: 0; }
-        button {
-            padding: 10px 16px; font-size: 0.88rem; font-weight: 700; border: 1px solid var(--line);
-            border-radius: 8px; background: #fff; color: var(--ink); cursor: pointer; font-family: inherit;
-        }
-        button:hover { filter: brightness(0.98); }
-        .todo { color: var(--muted); font-size: 0.88rem; margin: 0; }
-    </style>
+    <%- include('partials/theme-head') %>
 </head>
 <body>
 <div class="wrap">
@@ -43,21 +12,141 @@
         <div>
             <p class="eyebrow">forgeright</p>
             <h1>Admin console</h1>
+            <p class="meta"><%= email %> (<%= role %>) &middot; this session runs until <%= expiresAt %></p>
         </div>
-        <form method="post" action="<%= basePath %>/admin/logout">
-            <button type="submit">Sign out</button>
-        </form>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+            <form method="post" action="<%= basePath %>/admin/logout">
+                <button type="submit" class="secondary">Sign out</button>
+            </form>
+        </div>
     </header>
 
-    <div class="card" style="margin-top:18px;">
-        <h2>Signed in</h2>
-        <p class="who"><%= email %></p>
-        <p class="meta">This session runs until <%= expiresAt %>.</p>
+    <div class="card">
+        <h2 class="eyebrow">Organisation</h2>
+        <form method="post" action="<%= basePath %>/admin/organisation/name" class="row">
+            <div>
+                <label for="name">Name</label>
+                <input type="text" id="name" name="name" value="<%= organisation.name %>" required>
+            </div>
+            <button type="submit">Save</button>
+        </form>
+        <p class="meta">Created <%= organisation.created_at %>. The name starts as a placeholder until it is set here.</p>
     </div>
 
     <div class="card">
-        <h2>Organisations</h2>
-        <p class="todo">The console that lists organisations and their questionnaire progress is the next step. This page exists so that signing in has somewhere to land.</p>
+        <h2 class="eyebrow">Invite a participant</h2>
+        <form method="post" action="<%= basePath %>/admin/invitations" class="row">
+            <div>
+                <label for="inv-email">Email address</label>
+                <input type="email" id="inv-email" name="email" required placeholder="person@example.com">
+            </div>
+            <div>
+                <label for="inv-dept">Department</label>
+                <input type="text" id="inv-dept" name="department" required placeholder="Finance">
+            </div>
+            <button type="submit">Send invitation</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2 class="eyebrow">Invitations</h2>
+        <% if (invitations.length === 0) { %>
+            <p class="empty">No one has been invited yet.</p>
+        <% } else { %>
+            <table>
+                <thead>
+                    <tr><th>Email</th><th>Department</th><th>Opened</th><th>Links</th><th></th></tr>
+                </thead>
+                <tbody>
+                <% invitations.forEach(function (inv) { %>
+                    <tr>
+                        <td><%= inv.email %></td>
+                        <td><%= inv.department %></td>
+                        <td>
+                            <% if (inv.opened_at) { %>
+                                <span class="pill yes">opened</span>
+                                <div class="meta"><%= inv.opened_at %></div>
+                            <% } else { %>
+                                <span class="pill no">not opened</span>
+                            <% } %>
+                        </td>
+                        <td>
+                            <%# How many links are live. More than one is normal after
+                                Send a link, which adds without retiring. %>
+                            <span class="pill <%= inv.live_tokens > 0 ? 'yes' : 'no' %>">
+                                <%= inv.live_tokens %> live
+                            </span>
+                            <% if (inv.token_issued_at) { %>
+                                <div class="meta">newest <%= inv.token_issued_at %></div>
+                            <% } %>
+                        </td>
+                        <td>
+                            <div class="actions">
+                                <form class="inline" method="post" action="<%= basePath %>/admin/invitations/<%= inv.id %>/send">
+                                    <button type="submit" class="secondary">Send a link</button>
+                                </form>
+                                <form class="inline" method="post" action="<%= basePath %>/admin/invitations/<%= inv.id %>/reset">
+                                    <button type="submit" class="secondary">Reset all access</button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                <% }); %>
+                </tbody>
+            </table>
+            <p class="meta">
+                <strong>Send a link</strong> adds a working link and leaves the others working: for a
+                participant who missed the first email. <strong>Reset all access</strong> stops every
+                link for that person and sends one new one: for a link that may have been shared.
+                Both keep every answer already given.
+            </p>
+        <% } %>
+    </div>
+
+    <div class="card">
+        <h2 class="eyebrow">Users</h2>
+        <form method="post" action="<%= basePath %>/admin/users" class="row">
+            <div>
+                <label for="user-email">Add by email address</label>
+                <input type="email" id="user-email" name="email" required placeholder="colleague@example.com">
+            </div>
+            <div>
+                <label for="user-role">Role</label>
+                <select id="user-role" name="role">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                </select>
+            </div>
+            <button type="submit">Add</button>
+        </form>
+
+        <table style="margin-top:14px;">
+            <thead>
+                <tr><th>Email</th><th>Role</th><th></th></tr>
+            </thead>
+            <tbody>
+            <% users.forEach(function (u) { %>
+                <tr>
+                    <td><%= u.email %><% if (u.email === email) { %> <span class="meta">(you)</span><% } %></td>
+                    <td><%= u.role %></td>
+                    <td>
+                        <form class="inline" method="post" action="<%= basePath %>/admin/users/<%= u.id %>/role">
+                            <input type="hidden" name="role" value="<%= u.role === 'admin' ? 'user' : 'admin' %>">
+                            <button type="submit" class="secondary">
+                                <%= u.role === 'admin' ? 'Demote to user' : 'Promote to admin' %>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+            <% }); %>
+            </tbody>
+        </table>
+        <p class="meta">
+            A user with the <strong>user</strong> role can sign in but does not see this console. Adding
+            someone before they sign in prepares their access. An admin is not told which questionnaire
+            answers came from them: the console never shows who said what.
+        </p>
     </div>
 </div>
 </body>

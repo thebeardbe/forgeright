@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="<%= lang %>" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Forgeright</title>
+    <%- include('partials/theme-head') %>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1>This is Forgeright.</h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+        </div>
+    </header>
+
+    <p class="intro">It turns a short questionnaire about tedious work into a ranked view of what is worth automating. There are three ways in.</p>
+
+    <div class="card">
+        <h2>Sign in or create an organisation</h2>
+        <p>Enter your email address. New here? This creates your organisation and makes you its admin.</p>
+        <a class="button primary" href="<%= basePath %><%= adminPath %>">Continue</a>
+    </div>
+
+    <div class="card">
+        <h2>I have a link and want to participate</h2>
+        <p>Paste the code from your invitation email, or open the link in it.</p>
+        <form method="get" action="<%= basePath %>/q">
+            <div class="row">
+                <input class="mono-input" type="text" name="token" placeholder="Paste your code" aria-label="Your code" required>
+                <button type="submit">Go to the questionnaire</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>Lost your link?</h2>
+        <p>We can send a new one. Your answers are kept either way.</p>
+        <a class="button" href="<%= basePath %>/lost-link">Request a new link</a>
+    </div>
+</div>
+</body>
+</html>

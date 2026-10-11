@@ -53,10 +53,66 @@ CREATE TABLE IF NOT EXISTS admin_session (
     revoked_at  TEXT
 );
 
+-- One row per person who may sign in to the console.
+--
+-- IN THE INSTALLATION DATABASE, not an organisation's file, because sign-in has
+-- to work BEFORE an organisation is known: the first sign-in creates one. A user
+-- then points at the organisation it belongs to, and that pointer is what the
+-- console scopes every query by.
+--
+-- There is no foreign key to the organisation, because the organisation lives in
+-- a different file and SQLite cannot enforce a constraint across files. The
+-- relationship is held by this column and checked by the application; the comment
+-- says so rather than implying the engine guards it.
+CREATE TABLE IF NOT EXISTS users (
+    id              TEXT PRIMARY KEY,
+    organisation_id TEXT NOT NULL,
+    email           TEXT NOT NULL UNIQUE,
+    -- 'admin' or 'user'. Both act the same today; the column exists now because
+    -- adding it later would be a migration, and the distinction is expected to
+    -- return. Validated in lib/users.js, not by a CHECK constraint, so the error
+    -- message can name the problem.
+    role            TEXT NOT NULL,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
+
+-- Email is the identity used at sign-in, so it is unique across the installation.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
+-- The console lists one organisation's users, so that lookup is indexed.
+CREATE INDEX IF NOT EXISTS idx_users_organisation ON users(organisation_id);
+
+-- Which organisation owns a participant token.
+--
+-- WHY THIS EXISTS, and why it is safe. A participant arrives with a token and NO
+-- organisation id: the link is the only thing they have, so something must map
+-- the token to a tenant before any organisation file can be opened. That fact is
+-- installation-level routing, not tenant data, so it lives here.
+--
+-- WHAT IT HOLDS: a token hash and an organisation id. No answers, no email, no
+-- name, no department. Nothing here identifies a person beyond the token they
+-- already hold, so this file cannot become a second copy of the tenant data.
+--
+-- The token hash is written by the same code that writes the invitation, in the
+-- same operation, so the two cannot drift; a token that is not in this table
+-- resolves to no organisation and is refused.
+CREATE TABLE IF NOT EXISTS token_index (
+    token_hash      TEXT PRIMARY KEY,
+    organisation_id TEXT NOT NULL,
+    -- The invitation this token belongs to, so a resolved token names both the
+    -- tenant and the identity in one lookup. Without it, a lookup would find the
+    -- organisation and then have to search that file for the hash, which is the
+    -- same information held twice.
+    invitation_id   TEXT NOT NULL,
+    created_at      TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_token_index_org ON token_index(organisation_id);
+
 -- Schema bookkeeping for this file.
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '4');

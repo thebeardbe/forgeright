@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin - forgeright</title>
+    <%- include('partials/theme-head') %>
+</head>
+<body>
+<div class="wrap narrow">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1>That did not work</h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+        </div>
+    </header>
+
+    <div class="problem"><%= message %></div>
+    <p><a href="<%= basePath %>/admin">Back to the console</a></p>
+</div>
+</body>
+</html>
