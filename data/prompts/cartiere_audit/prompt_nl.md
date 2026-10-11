@@ -137,17 +137,36 @@ Dit is met opzet per stap. Een keten kan bijna volledig mechanisch zijn met éé
 oordeel in het midden:
 
 ```
-order komt binnen              needsReasoning: false
-voorraad controleren           needsReasoning: false
-bijbestellen onder drempel     needsReasoning: false
-goedkeuring boekhouding        needsReasoning: true     <- de automatiseringsgrens
-voorraad reserveren            needsReasoning: false
+order komt binnen              "er komt een klantorder binnen"                    false
+voorraad controleren           "onder de tien op voorraad bestellen we bij"       false
+bijbestellen onder drempel     "de drempel beslist het"                           false
+korte levering navragen        "hangt af van de leverancier en wat we beloofden"  true   <- grens
+voorraad reserveren            "de order wordt gereserveerd op de leverdatum"     false
 ```
 
-Op procesniveau gelezen zegt dat "heeft een mens nodig" en wordt er niets
-geautomatiseerd. Per stap gelezen zijn vier stappen automatiseerbaar en is de
-grens bekend. **Een stap die een vaste drempel of een checklist volgt is `false`,
-hoeveel zorg het ook kost.**
+De vlaggen komen uit de basis ernaast, en dat is de hele discipline. Lees de
+vierde zoals het model dat moet: niets wat opgeschreven staat beslist het, dus een
+mens doet dat.
+
+**De ene oordeelstap is de UITZONDERINGSAFHANDELAAR, niet de goedkeuring.** De
+drempel markeert de order en de volgende stap beslist wat ermee gebeurt; daar is
+echt een mens nodig. Een goedkeuring is op zichzelf geen oordeel: een akkoord dat
+een vaste controle uitvoert, zoals "de totalen kloppen met vorige maand" of "de
+order is boven de tienduizend", is `false`, hoeveel zorg het ook kost, want de
+controle beslist het en niet de persoon. De fixture achter deze prompt heeft
+precies dat paar, en dat is de referentie:
+
+```
+Bedragen vergelijken  "als ze meer dan 2 euro afwijken, stop ik en vraag het"   false
+Een verschil navragen "hangt af van het verschil en wie het snelst antwoordt"   true
+```
+
+Op procesniveau gelezen zegt de hele keten "heeft een mens nodig" en wordt er
+niets geautomatiseerd. Per stap gelezen zijn vier stappen automatiseerbaar en
+staat de grens op de ene stap die iets beslist wat nergens opgeschreven staat.
+**Een stap die een vaste drempel of een checklist volgt is `false`, hoeveel zorg
+het ook kost, en
+dat geldt ook voor een goedkeuring tegen een vastgelegde controle.**
 
 ## Je antwoord, elke beurt
 
@@ -171,9 +190,9 @@ Zolang er nog iets ontbreekt:
         {
           "name": "De bestelbon zoeken",
           "whatHappens": "In het boekhoudpakket de passende bestelbon opzoeken.",
-          "decidedHow": "ik zoek op het factuurnummer",
+          "decidedHow": "ik zoek op het factuurnummer, en bij meerdere neem ik de oudste",
           "needsReasoning": false,
-          "reasoningBasis": "ik zoek op het factuurnummer"
+          "reasoningBasis": "ik neem de oudste"
         }
       ]
     }

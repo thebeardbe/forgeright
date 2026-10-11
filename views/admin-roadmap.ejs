@@ -81,6 +81,21 @@
 
             <div class="detail">
                 <h3>The steps, in order</h3>
+                <%# WHERE TWO ACCOUNTS DISAGREE ABOUT A STEP, the row below shows the
+                    pessimistic flag and ONE account's quotation, which may be from the
+                    account that read the step the other way. That is a known trade, not
+                    an accident: showing the quotation from the account that decided the
+                    flag would present a rejected reading as the accepted evidence. The
+                    other accounts' own flags and quotations are on the Every answer
+                    view, under each answer, where the disagreement reads as one. %>
+                <% if (responses.length > 1) { %>
+                    <p class="meta">
+                        Described by <%= responses.length %> people. Where they disagreed about
+                        a step, the step is marked as needing a person and its quote comes
+                        from one account; each account's own reading is on
+                        <a href="<%= basePath %>/admin/answers">Every answer</a>.
+                    </p>
+                <% } %>
                 <% if (steps.length === 0) { %>
                     <p class="empty">No steps were recorded for this process.</p>
                 <% } %>

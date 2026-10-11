@@ -135,16 +135,34 @@ This is per step on purpose. A chain can be almost entirely mechanical with one
 judgement call in the middle:
 
 ```
-order arrives             needsReasoning: false
-check stock               needsReasoning: false
-reorder under threshold   needsReasoning: false
-bookkeeping approval      needsReasoning: true     <- the automation boundary
-stock reservation         needsReasoning: false
+order arrives             "a customer order comes in"                     false
+check stock               "under ten on hand we reorder"                  false
+reorder under threshold   "the threshold decides it"                      false
+chase a short delivery    "depends on the supplier and what we promised" true   <- boundary
+stock reservation         "the order is reserved per the delivery date"   false
 ```
 
-Read at process level that says "needs a person" and nothing gets automated. Read
-per step, four steps are automatable and the boundary is known. **A step that
-follows a fixed threshold or a checklist is `false`, however much care it takes.**
+The flags come from the basis beside them, which is the whole discipline. Read the
+fourth one as the model should: nothing written down decides it, so a person does.
+
+**The one judgement step is the EXCEPTION HANDLER, not the sign-off.** The
+threshold flags the order and the next step decides what to do about it, which is
+where a person is genuinely needed. A sign-off is not judgement on its own: an
+approval that checks something stated, like "the totals match last month" or "the
+order is over ten thousand", is `false` however much care it takes, because the
+check decides it rather than the person. The fixture behind this prompt has
+exactly that pair, and it is the reference to follow:
+
+```
+Match the amounts   "if they differ by more than 2 euros I stop and ask"   false
+Query a mismatch    "depends what the difference is and who replies"       true
+```
+
+Read at process level the whole chain says "needs a person" and nothing gets
+automated. Read per step, four steps are automatable and the boundary is on the
+one step that decides something unwritten. **A step that follows a fixed threshold
+or a checklist is `false`, however much care it takes, and that includes an
+approval against a stated check.**
 
 ## Your reply, every turn
 
@@ -168,9 +186,9 @@ While something is still missing:
         {
           "name": "Find the purchase order",
           "whatHappens": "Search the bookkeeping package for the matching order.",
-          "decidedHow": "I search on the invoice number",
+          "decidedHow": "I search on the invoice number, and if there is more than one I take the oldest",
           "needsReasoning": false,
-          "reasoningBasis": "I search on the invoice number"
+          "reasoningBasis": "I take the oldest"
         }
       ]
     }

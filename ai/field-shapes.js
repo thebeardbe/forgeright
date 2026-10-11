@@ -173,8 +173,12 @@ function hasShape(value, shape, field) {
     // reading it as a range check would invite an upper bound to be added here
     // later without the shape being consulted at all.
     //
-    // The comparison is STRICT (`!(value > min)` rather than `value <= min`), so a
-    // fractional frequency like `0.25` passes a minimum of 0.
+    // The comparison is written INVERTED on purpose: `!(value > min)` rather than
+    // `value <= min`. They agree for every finite number, and they part company at
+    // NaN: `NaN <= min` is false, so a naive `value <= min` would let a NaN through
+    // as if it cleared the minimum, while `!(NaN > min)` is true and refuses it. Do
+    // not "simplify" this one. It is also STRICT, so a fractional frequency like
+    // `0.25` passes a minimum of 0.
     if (field !== undefined && Object.hasOwn(FIELD_MINIMUMS, field)
         && typeof value === 'number' && !(value > FIELD_MINIMUMS[field])) {
         // Reported as not supplied so the interview asks again, which is the safe

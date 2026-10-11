@@ -60,6 +60,16 @@ function stepKey(step) {
  * deliberately: two accounts of invoice processing disagree about whether matching
  * the amounts is a two-euro rule or a judgement about the supplier.
  *
+ * THIS IS A KNOWN TRADE WITH A STATED LIMIT, not an accident of ordering. On a
+ * disagreement the merged row carries the PESSIMISTIC FLAG and ONE ACCOUNT'S
+ * QUOTATION, so the quotation can come from an account whose own reading of the
+ * step was the optimistic one. Pairing the flag with the quote from the account
+ * that decided it would be worse: a reader would then be shown a rejected reading
+ * presented as the accepted evidence. The other accounts' own flags and
+ * quotations are readable in view 1, under each answer, where the disagreement is
+ * visible as a disagreement. A reader who opens only the roadmap sees the merged
+ * row and not that. That limit is recorded here rather than left to be discovered.
+ *
  * Where two accounts of the same step differ in wording, the LONGER `whatHappens`
  * wins (it carries more of what somebody said) and the FIRST non-empty `decidedHow`
  * wins (a basis is a basis; the first account to state one is not made wrong by a

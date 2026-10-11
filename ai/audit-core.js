@@ -324,7 +324,14 @@ export function parseModelResponse(raw) {
 
     return {
         ...parsed,
-        audit: normaliseProcessesPayload(parsed, best),
+        // ABSENT WHEN THERE IS NOTHING TO NORMALISE, rather than `{}`. With no
+        // workflows, `normaliseProcessesPayload` builds `{ workflows: undefined }`,
+        // which serialises to an empty object, and AN EMPTY OBJECT IS TRUTHY: a
+        // caller using the `data.audit || ...` idiom the client already uses would
+        // take `{}` and find `.workflows === undefined`. That is the same subtle
+        // class of defect this file has been fixed for twice. On an `asking` turn
+        // there is no payload and no `audit` key at all.
+        audit: Array.isArray(best) ? normaliseProcessesPayload(parsed, best) : undefined,
         have: computed.have,
         missing: computed.missing,
         processes
