@@ -53,6 +53,29 @@ CREATE TABLE IF NOT EXISTS admin_session (
     revoked_at  TEXT
 );
 
+-- The demo sessions: a session that may LOOK at the console and not change anything.
+--
+-- A SEPARATE TABLE RATHER THAN A COLUMN ON admin_session, and that is the schema's
+-- constraint rather than a preference. `CREATE TABLE IF NOT EXISTS` applies a NEW
+-- TABLE to an existing file on its next open, so this needs NO version bump. A new
+-- COLUMN would not be added to an existing file, and would need either a migration
+-- (this project deliberately has none) or a bump (which REFUSES every existing file).
+--
+-- KEYED ON THE SESSION, because read-only is a property of THIS LOGIN and not of the
+-- person: the same human can sign in normally and write, and follow a demo link and
+-- not. `expires_at` mirrors the session's, so a demo row cannot outlive the session it
+-- belongs to, and the session row stays the single authority for validity.
+--
+-- There is no token column: the demo token lives in configuration, not in the
+-- database, so a database read does not hand over the link that leaves the building.
+CREATE TABLE IF NOT EXISTS demo_session (
+    session_id TEXT PRIMARY KEY REFERENCES admin_session(id) ON DELETE CASCADE,
+    org_id     TEXT NOT NULL,
+    email      TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
 -- One row per person who may sign in to the console.
 --
 -- IN THE INSTALLATION DATABASE, not an organisation's file, because sign-in has

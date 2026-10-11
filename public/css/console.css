@@ -169,3 +169,22 @@
 /* A department with its count, from the merged responses. */
 .depts { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
 .depts li { font-size: 0.8rem; padding: 3px 9px; background: var(--raised); border-radius: 99px; }
+
+/* The read-only demo banner.
+   NOT THE WARNING REGISTER: a demo is not a problem, and a reader who has just been
+   sent a link should not be greeted by something that looks like an error. It shares
+   the notice blue used for `.notice`, which reads as information. */
+.demo-banner {
+    margin: 0 0 18px;
+    padding: 10px 14px;
+    border: 1px solid var(--notice-line);
+    border-radius: 8px;
+    background: var(--notice-bg);
+    color: var(--notice-ink);
+    font-size: 0.9rem;
+}
+
+/* A DISABLED CONTROL MUST LOOK DISABLED, not merely be inert. Without this a greyed
+   button is indistinguishable from a live one until it is pressed, and the reader
+   concludes the tool is broken rather than that they are looking at a demo. */
+button[disabled] { opacity: 0.5; cursor: not-allowed; }

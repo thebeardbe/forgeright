@@ -8,6 +8,7 @@
 </head>
 <body>
 <div class="wrap">
+    <%- include('partials/demo-banner') %>
     <header>
         <div>
             <p class="eyebrow">forgeright</p>
@@ -107,7 +108,7 @@
                     <label for="reason-<%= response.id %>">This answer was read wrong</label>
                     <textarea id="reason-<%= response.id %>" name="reason" required
                               placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, and is free to disagree."></textarea>
-                    <button type="submit" class="secondary">Rejudge this answer</button>
+                    <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Rejudge this answer</button>
                 </form>
             </div>
         </details>

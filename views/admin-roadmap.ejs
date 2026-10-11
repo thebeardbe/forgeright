@@ -8,6 +8,7 @@
 </head>
 <body>
 <div class="wrap">
+    <%- include('partials/demo-banner') %>
     <header>
         <div>
             <p class="eyebrow">forgeright</p>
@@ -242,7 +243,7 @@
                     <label for="reason-<%= process.id %>">This flow is wrong</label>
                     <textarea id="reason-<%= process.id %>" name="reason" required
                               placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, then weighs the result again."></textarea>
-                    <button type="submit" class="secondary">Rejudge this process</button>
+                    <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Rejudge this process</button>
                 </form>
             </div>
         </details>

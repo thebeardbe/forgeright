@@ -1,0 +1,23 @@
+<%
+    // WHAT A BLOCKED ACTION LOOKS LIKE, AND WHY IT IS SHOWN RATHER THAN HIDDEN.
+    //
+    // A DEMO SESSION CANNOT WRITE. The server refuses every mutating request for one
+    // (see `refuseWritesForDemoSessions` in lib/auth/routes.js), which is the control
+    // that matters: a POST can be sent by hand, and this link leaves the owner's hands.
+    //
+    // This partial is the VISIBLE half, and it shows the actions disabled rather than
+    // removing them. A console with the buttons missing reads as broken software to
+    // somebody seeing it for the first time, and the reader's next thought is that the
+    // tool is unfinished rather than that they are looking at a demo. Saying so plainly
+    // costs one line and removes the ambiguity.
+    //
+    // The line below is the ONLY place the wording lives, so the console, the answers
+    // view and the roadmap all say the same thing.
+%>
+<% if (typeof readOnly !== 'undefined' && readOnly) { %>
+    <div class="demo-banner">
+        This is a <strong>read-only demo</strong>. You can look at everything and change
+        nothing: the buttons that would change something are switched off. Nothing you
+        do here affects any data.
+    </div>
+<% } %>

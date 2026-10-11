@@ -8,6 +8,7 @@
 </head>
 <body>
 <div class="wrap">
+    <%- include('partials/demo-banner') %>
     <header>
         <div>
             <p class="eyebrow">forgeright</p>
@@ -29,7 +30,7 @@
                 <label for="name">Name</label>
                 <input type="text" id="name" name="name" value="<%= organisation.name %>" required>
             </div>
-            <button type="submit">Save</button>
+            <button type="submit"<%= readOnly ? ' disabled' : '' %>>Save</button>
         </form>
         <p class="meta">Created <%= organisation.created_at %>. The name starts as a placeholder until it is set here.</p>
     </div>
@@ -45,7 +46,7 @@
                 <label for="inv-dept">Department</label>
                 <input type="text" id="inv-dept" name="department" required placeholder="Finance">
             </div>
-            <button type="submit">Send invitation</button>
+            <button type="submit"<%= readOnly ? ' disabled' : '' %>>Send invitation</button>
         </form>
     </div>
 
@@ -84,10 +85,10 @@
                         <td>
                             <div class="actions">
                                 <form class="inline" method="post" action="<%= basePath %>/admin/invitations/<%= inv.id %>/send">
-                                    <button type="submit" class="secondary">Send a link</button>
+                                    <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Send a link</button>
                                 </form>
                                 <form class="inline" method="post" action="<%= basePath %>/admin/invitations/<%= inv.id %>/reset">
-                                    <button type="submit" class="secondary">Reset all access</button>
+                                    <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Reset all access</button>
                                 </form>
                             </div>
                         </td>
@@ -118,7 +119,7 @@
                     <option value="admin">Admin</option>
                 </select>
             </div>
-            <button type="submit">Add</button>
+            <button type="submit"<%= readOnly ? ' disabled' : '' %>>Add</button>
         </form>
 
         <table style="margin-top:14px;">
@@ -133,7 +134,7 @@
                     <td>
                         <form class="inline" method="post" action="<%= basePath %>/admin/users/<%= u.id %>/role">
                             <input type="hidden" name="role" value="<%= u.role === 'admin' ? 'user' : 'admin' %>">
-                            <button type="submit" class="secondary">
+                            <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">
                                 <%= u.role === 'admin' ? 'Demote to user' : 'Promote to admin' %>
                             </button>
                         </form>
