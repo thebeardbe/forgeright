@@ -156,6 +156,116 @@ test('a missing term is treated the same as an explicit null', () => {
     assert.match(result.reason, /people/);
 });
 
+// --- the term RANGE, inclusive at both ends --------------------------------
+//
+// The owner moved the whole feature onto one 0-100 scale: the ten terms AND the
+// composite score. The live bound is TERM_MIN/TERM_MAX, inclusive, PER TERM. The
+// score is UNBOUNDED, because it is a composite the model composes rather than a
+// value with its own scale - which is a deliberate asymmetry, pinned below.
+
+test('the range constants are 0 and 100', () => {
+    assert.equal(weighing.TERM_MIN, 0);
+    assert.equal(weighing.TERM_MAX, 100);
+});
+
+test('0 and 100 are both ACCEPTED, so the bound is inclusive at both ends', () => {
+    for (const value of [weighing.TERM_MIN, weighing.TERM_MAX, 0, 100]) {
+        const result = weighing.validateWeighing(validReply({ terms: termsAt(value) }));
+        assert.equal(result.ok, true, `terms at ${value} must be accepted`);
+    }
+});
+
+test('a SINGLE term below the minimum is refused, AND the term is named', () => {
+    const terms = termsAt(50);
+    terms.complexity = -1;
+
+    const result = weighing.validateWeighing(validReply({ terms }));
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /complexity=-1/, 'the reason names the term and its value');
+    assert.match(result.reason, /outside 0 to 100/);
+});
+
+test('a SINGLE term above the maximum is refused, AND the term is named', () => {
+    const terms = termsAt(50);
+    terms.buildEffort = 101;
+
+    const result = weighing.validateWeighing(validReply({ terms }));
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /buildEffort=101/);
+});
+
+test('several out-of-range terms are ALL named', () => {
+    const terms = termsAt(50);
+    terms.complexity = -1;
+    terms.buildEffort = 101;
+
+    const result = weighing.validateWeighing(validReply({ terms }));
+    assert.equal(result.ok, false);
+    assert.match(result.reason, /complexity=-1/);
+    assert.match(result.reason, /buildEffort=101/);
+});
+
+test('the bound is on the VALUE, so a fraction just outside is refused', () => {
+    for (const value of [-0.0001, 100.0001, 100.5, -0.5]) {
+        const result = weighing.validateWeighing(validReply({ terms: termsAt(value) }));
+        assert.equal(result.ok, false, `terms at ${value} must be refused`);
+    }
+});
+
+test('the SCORE is bounded on the SAME 0-100 scale as the terms', () => {
+    // THE OWNER'S DECISION, and it reverses what this test used to assert. The
+    // score WAS unbounded: the prompt said "0 to 100, the same scale as the terms"
+    // while the validator checked only that it was finite, so a model returning 250
+    // had it stored, displayed and ranked by. The prompt is now true rather than
+    // softened, and this pins the bound.
+    //
+    // `TERM_MIN`/`TERM_MAX` ARE REUSED for both on purpose: a second pair with the
+    // same values is how the two get out of step.
+
+    // Inclusive at both ends.
+    for (const score of [0, 100]) {
+        const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
+        assert.equal(result.ok, true, `score ${score} must be accepted: the bound is inclusive`);
+        assert.equal(result.score, score);
+    }
+
+    // Out of range is refused, including a fraction just outside, so the bound is
+    // on the value and not only on whole numbers.
+    for (const score of [-5, 250, 1_000_000, 100.5, -0.5]) {
+        const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
+        assert.equal(result.ok, false, `score ${score} must be refused`);
+        assert.match(result.reason, /score/, 'the refusal names the SCORE');
+        assert.match(result.reason, /between 0 and 100/, 'and the range it wanted');
+        assert.ok(result.reason.includes(String(score)), 'and the value it got');
+    }
+});
+
+test('the SCORE refusal is distinguishable from the TERM refusal', () => {
+    // A reader who saw the term wording for a bad score would go looking for a term
+    // to fix. Both strings are asserted, side by side, so the two cannot collapse
+    // into one message.
+    const badScore = weighing.validateWeighing(validReply({ score: 250, terms: termsAt(50) }));
+    const badTerm = weighing.validateWeighing(validReply({ score: 50, terms: { ...termsAt(50), complexity: 140 } }));
+
+    assert.match(badScore.reason, /the score must be between 0 and 100, got 250/);
+    assert.match(badTerm.reason, /these terms are outside 0 to 100: complexity=140/);
+    assert.notEqual(badScore.reason, badTerm.reason, 'the two refusals are not the same message');
+    assert.equal(/\bthese terms\b/.test(badScore.reason), false, 'a score refusal does not talk about terms');
+    assert.equal(/\bscore must be between\b/.test(badTerm.reason), false, 'and a term refusal does not talk about the score');
+});
+
+test('TYPE is checked BEFORE RANGE, so a numeric string is a type error, not a range error', () => {
+    // Deliberate ordering. A string is refused as a type error even when its value
+    // is also out of range, so the message tells the model WHAT is wrong (the type)
+    // rather than sending it to adjust a number it never sent as a number.
+    for (const score of ['42', '5', '250', '999']) {
+        const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
+        assert.equal(result.ok, false, `score ${JSON.stringify(score)} must be refused`);
+        assert.match(result.reason, /finite number/, 'refused as a TYPE error');
+        assert.equal(/between 0 and 100/.test(result.reason), false, 'and NOT as a range error');
+    }
+});
+
 // ===========================================================================
 // 2. COST_TERMS AND isCostTerm — THE CLASSIFICATION
 // ===========================================================================
@@ -471,20 +581,26 @@ test('the admin\'s argument appears only when given', () => {
 test('BOUNDARY: a score whose cost terms all point the wrong way is ACCEPTED, because nothing recomputes it', () => {
     // THIS IS A TEST OF THE DESIGN, NOT A DEFECT. The score is composed by the
     // model in the prompt; this code validates only that the score is a finite
-    // number and that the ten terms are present and numeric. It does not recompute
-    // the score from the terms, and it does not check that a high `complexity` was
-    // treated as a cost.
+    // number and that the ten terms are present, numeric and in range. It does not
+    // recompute the score from the terms, and it does not check that a high
+    // `complexity` was treated as a cost.
     //
-    // So a reply whose four cost terms are all HIGH (10) and whose score is also
-    // HIGH (100) is accepted, even though the prompt says a high complexity should
-    // pull the process DOWN. Nothing here can fail on that, and this test records
-    // it so the next reader does not assume the direction is enforced.
+    // So a reply whose four cost terms are all at their WORST (100 on the 0-100
+    // scale) and whose score is also at the top is accepted, even though the prompt
+    // says a high complexity should pull the process DOWN. Nothing here can fail on
+    // that, and this test records it so the next reader does not assume the
+    // direction is enforced.
+    //
+    // THE VALUES WERE 10 UNDER THE OLD 1-5 SCALE, where 10 was out of range but
+    // still accepted because nothing checked. The scale is now 0-100 per term, so
+    // 100 is the genuine worst value and valid: the point is unchanged and now
+    // stated on the scale that exists. The range itself is pinned beside it.
     const wrongWayRound = {
         score: 100,
         terms: {
-            frequency: 10, time: 10, people: 10, results: 10, consequences: 10, automatableShare: 10,
+            frequency: 100, time: 100, people: 100, results: 100, consequences: 100, automatableShare: 100,
             // The four costs, all set to their WORST value, alongside a top score.
-            departments: 10, complexity: 10, reasoningSteps: 10, buildEffort: 10
+            departments: 100, complexity: 100, reasoningSteps: 100, buildEffort: 100
         },
         reasoning: 'a high complexity, which the prompt says counts against it, but a high score anyway'
     };
@@ -493,13 +609,33 @@ test('BOUNDARY: a score whose cost terms all point the wrong way is ACCEPTED, be
     assert.equal(result.ok, true, 'the gate accepts it: the direction is not its business');
     assert.equal(result.score, 100);
 
+    // THE HONEST PAIRING WITH THE RANGE TESTS BESIDE THIS ONE: every value here is
+    // IN RANGE, so the acceptance is about the direction alone and does not lean on
+    // an invalid number. If a future change made these out of range, the test would
+    // be proving the wrong thing and this assertion would fail.
+    assert.equal(result.score >= weighing.TERM_MIN && result.score <= weighing.TERM_MAX, true, 'the score is in range');
+    for (const [term, value] of Object.entries(result.terms)) {
+        assert.equal(value >= weighing.TERM_MIN && value <= weighing.TERM_MAX, true, `the term ${term} is in range`);
+    }
+
     // And it is stored and read back, so the acceptance is not merely the gate's.
     const { org, processId } = orgWithProcess('wrong way round');
     const recorded = weighing.recordWeighing({ orgId: org.id, processId, reply: wrongWayRound });
     assert.equal(recorded.score.score, 100);
     const entry = weighing.listRoadmap(org.id).find((e) => e.id === processId);
     assert.equal(entry.score.value, 100, 'a wrong-direction score reaches the roadmap unchanged');
-    assert.equal(entry.score.terms.complexity, 10, 'and the terms it was given are stored as they were');
+    assert.equal(entry.score.terms.complexity, 100, 'and the terms it was given are stored as they were');
+});
+
+test('THE RANGE, paired with the boundary above: 100 is accepted and 101 refused', () => {
+    // The honest pairing: this test says what the terms ARE checked for, right
+    // beside the test that says what they are not. Direction: unchecked. Range:
+    // checked, per term, inclusive.
+    assert.equal(weighing.validateWeighing(validReply({ terms: termsAt(100) })).ok, true, '100 is the top of the range');
+
+    const over = weighing.validateWeighing(validReply({ terms: termsAt(101) }));
+    assert.equal(over.ok, false, '101 is refused');
+    assert.match(over.reason, /complexity=101/, 'and the refusal names a term and its value');
 });
 
 // ===========================================================================
