@@ -83,8 +83,26 @@ frustration
 
 ```
 name                  what happens
-needsReasoning        true when a person must decide, false when it follows rules
+decidedHow            the BASIS on which a person decides, in their words
+needsReasoning        DERIVED from decidedHow, not asked
 ```
+
+**`needsReasoning` is never asked of the participant.** Asking "does this need
+your judgement?" asks them to assess automability, which they are not placed to
+do and would guess at. **The question is "on what basis do you decide?"** and the
+model infers the answer:
+
+```
+"How do you decide whether to reorder?"
+  -> "if stock is under ten, we reorder"           rules
+  -> "depends on the customer, sometimes we wait"  judgement
+```
+
+The basis is the evidence; whether it is a rule is the model's reading of it.
+
+**The field list stays as it is for V1.** Whether it is sufficient is exactly what
+V1 exists to find out, by running real workflows through it, and expanding it is
+cheap.
 
 ### Judgement is per step, and that is the discriminator
 
@@ -104,9 +122,6 @@ automated. Scored per step, five steps are automatable and the boundary is known
 
 **This is what makes workflow 3 possible**, because "how many steps need
 reasoning" and "what parts can be automated" are readings of these flags.
-
-**Q1.** Is the field list right — anything missing or superfluous? It is the
-contract the interview works to.
 
 ---
 
@@ -142,9 +157,9 @@ Admin asks:   "ask for a rerank", and writes why they think it is wrong
 on factors nobody can enumerate in advance, so the admin's contribution is an
 **argument to the model**, not a field to set.
 
-**Q2.** Does a reclassification re-run identification for that process only, or
-for everything? I assume that process only, unless the admin's reason implies a
-merge with another.
+**Settled:** a reclassification re-runs identification **for that process only**,
+unless the admin's reasoning implies a merge with another, in which case both are
+reconsidered.
 
 ---
 
@@ -210,14 +225,26 @@ why *"a very often simple process gets the highest weight"*.
 It is **not** the same as current effort. A process can be high-effort today and
 cheap to automate, and that is exactly the quick win the sort exists to find.
 
-**Q3.** Should build effort be its own field the model estimates in a fixed unit
-(days? a 1–5 scale?), or a phrase? A number sorts; a phrase explains. I assume
-both — an estimate and its reasoning.
+**Settled:** build effort is **an estimate with its reasoning**. The number sorts
+and the reasoning explains, so both are stored.
 
-**Q4.** The formula itself is **provisional** and to be fine-tuned once there are
-real responses. Should the UI explain each term in plain language, so a
-decision-maker can ask *"why is this first?"* and get an answer? I assume yes,
-because the list's whole purpose is to be discussed.
+### The score explains itself from the answers
+
+**No model-written explanation of the score.** The reasoning is **the evidence**:
+each term points at what the participant said, so the decision-maker checks the
+answer rather than the model's prose about its own arithmetic.
+
+```
+effort        <- 40 a week, 8 minutes each, 3 people        (their words)
+reasoning     <- 1 of 5 steps needs a person               (their basis)
+build effort  <- trivial: the rules are already written    (the estimate)
+```
+
+A model explaining its own score would be plausible language about a number it
+calculated. **The answers can be pointed at; a paragraph cannot be checked.**
+
+**The formula is provisional** and fine-tuned once there are real responses. V1 is
+where that happens.
 
 ---
 
@@ -260,20 +287,31 @@ doing is decided later by people comparing and weighing them.
 
 ---
 
-## Counting, and what a department figure means
+## Two different counts, which are not the same thing
 
-Per process, per department:
+They were merged in an earlier draft and they measure different things.
 
-```
-mentioned by / invited in
-```
-
-**Invited, not answered.** A department where nobody replied reads `0/6` — which
-is visibly different from six people answering and none naming it.
+**A process carries how many PEOPLE DESCRIBED IT**, splittable per department:
 
 ```
-Ops 4/6      Warehouse 2/2      Finance 1/3      Web 0/2
+described by 7 people      Ops 4, Warehouse 2, Finance 1
 ```
+
+**That is the process's figure.** It feeds the weight.
+
+**Response rate is a fact about the INVITATIONS, not about the process:**
+
+```
+Ops        4 answered of 6 invited
+Warehouse  2 of 2
+Finance    1 of 3
+Web        0 of 2      <- nobody replied, which is worth the admin knowing
+```
+
+**That lives in the invitation part of the console.** It is diagnostic — "nobody
+from the warehouse has answered" is a follow-up task — and it does not belong in
+the ranking, where it would confuse "few people described this" with "few people
+were asked".
 
 ---
 
