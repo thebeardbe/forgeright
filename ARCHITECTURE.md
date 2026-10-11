@@ -26,10 +26,46 @@ pipeline that separates automated gathering from human judgement.
 ## Request flow
 
 ```
-GET /                     views/audit.ejs + lib/strings.js
-POST /api/chat            ai/audit-core.js -> ai/provider.js -> adapters/*
-POST /api/score           lib/scoring.js (pure)
+GET  /                        landing page: sign in, or paste a token (lib/landing.js)
+GET  /admin                   sign-in form when signed out, the console when signed in
+POST /admin/login             issue a sign-in link; unknown address creates an organisation
+GET  /admin/login/verify      redeem the link, set the session cookie
+POST /admin/logout            revoke the session server-side
+
+GET  /q/:token                the questionnaire for a participant token
+GET  /q                       paste-a-token form, for a link a mail client stripped
+GET  /lost-link               participant recovery: reset every token, issue one
+POST /api/response            save an answer; the organisation comes from the token
+
+POST /api/chat                ai/audit-core.js -> ai/provider.js -> adapters/*
+POST /api/score               lib/scoring.js (pure)
+GET  /settings/theme          store the theme choice in a cookie
+GET  /healthz                 liveness; the only route exempt from the HTTPS rule
 ```
+
+### Tenancy and identity
+
+Three identifiers, and they are deliberately separate:
+
+| | What it is | Where it lives |
+| :--- | :--- | :--- |
+| **organisation id** | the tenant, and the filename | the session, **never the request** |
+| **invitation id** | who a participant is, stable for the life of the invitation | the org file |
+| **token** | a credential that can be replaced | hashed, in `participant_tokens` |
+
+**The identity is the invitation id and the credential is the token.** They are
+separate so a reset can retire a leaked link without orphaning the answers already
+given: a participant who resets returns to their existing responses.
+
+`scopeForSession` (`lib/auth/console.js`) is the only place a console route learns
+its organisation, and it reads it from the user row the session points at. **No
+route takes a tenant from a parameter, a query string or a body field.** That is
+the one mistake in this area that shows a client another client's data.
+
+A participant token resolves to an organisation through `lib/token-index.js`,
+because the token alone must find its tenant before any file can be opened. The
+index holds a token hash and an organisation id and nothing else: no email, no
+answers.
 
 ### The questionnaire turn
 
@@ -146,16 +182,17 @@ regression test.
 
 ## Deliberate omissions
 
-- **No persistence in the questionnaire.** The store exists (see README
-  "Storage") but nothing writes to it: there is no route that saves a response,
-  so a participant's answers still live only in their browser. Step 4 wires it up.
-- **No tenancy in the running app.** The store is per-organisation by file, and a
-  read cannot cross that boundary. But there is no admin console, no invitation
-  link and no session yet, so tenancy exists in the storage layer and nowhere else.
 - **No roadmap generation.** The first roadmaps are written by hand, so the
   output shape can be learned before it is automated.
 - **No PDF export yet.** The scoring output is on screen and downloadable as
   Markdown.
+- **No platform-level admin.** Each organisation's console sees only its own
+  data, and nothing in the application can cross that boundary. There is
+  deliberately no view of all organisations; adding one is the first thing that
+  would need its own isolation argument.
+- **No cross-organisation reporting.** Consequence of the file-per-organisation
+  store: there is no query that spans tenants, so any aggregate across
+  organisations needs a deliberate export rather than a join.
 
 ## Guardrails
 
