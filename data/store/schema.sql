@@ -215,15 +215,66 @@ CREATE INDEX IF NOT EXISTS idx_process_response_response ON process_response(res
 CREATE UNIQUE INDEX IF NOT EXISTS idx_process_response_once
     ON process_response(revision_id, response_id);
 
+-- One weighing of a revision: the number, the terms behind it, and the paragraph.
+--
+-- KEYED ON THE REVISION, NOT THE PROCESS, because a score is a judgement about a
+-- particular grouping. The spec's path for either kind of disagreement is to
+-- re-identify first and regenerate the score from that, so the score follows the
+-- grouping rather than the process identity. Keeping it on the revision makes
+-- "which grouping was this number computed from" answerable, which a
+-- process-level column could not express.
+--
+-- SEPARATE FROM process_revision RATHER THAN A COLUMN ON IT, for two reasons:
+--
+--   1. A DIFFERENT SESSION PRODUCES IT. Identification decides sameness; weighing
+--      decides the number. A revision is a grouping, and its `reasoning` and
+--      `confidence` belong to that judgement, not to the score. Folding the score
+--      in would put two independent judgements in one row and make it impossible
+--      to see which sentence explains which.
+--   2. IT CAN BE RECOMPUTED WITHOUT RE-GROUPING. The spec marks the formula
+--      provisional and says it is fine-tuned once there are real responses. A
+--      formula change re-scores the same revision, and a column on the revision
+--      would force a fake new grouping to record it.
+--
+-- SEVERAL ROWS PER REVISION ARE ALLOWED, and `is_current` marks the one to show,
+-- the same pattern as revisions: a rejudge regenerates rather than overwrites, and
+-- the earlier number stays readable for anyone asking why it moved.
+CREATE TABLE IF NOT EXISTS process_score (
+    id          TEXT PRIMARY KEY,
+    revision_id TEXT NOT NULL REFERENCES process_revision(id) ON DELETE CASCADE,
+    -- The single number the sort uses. A REAL so a provisional formula is free to
+    -- produce fractions; rounding is a presentation choice, not a storage one.
+    score       REAL NOT NULL,
+    -- JSON: the term scores the model reported, as {"frequency": 5, ...}. Stored
+    -- so a reader can see WHY the number came out where it did, and so a change to
+    -- the formula can be compared against the terms rather than only the total.
+    terms       TEXT NOT NULL,
+    -- The paragraph weighing every term. NOT NULL, for the same reason
+    -- process_revision.reasoning is: a score nobody can explain cannot be reviewed,
+    -- and the spec makes the paragraph part of the output rather than polish.
+    reasoning   TEXT NOT NULL,
+    -- Which weighing this is for its revision: 1, then 2 after a re-score or a
+    -- rejudge. Monotonic, so the order does not depend on timestamps.
+    revision_no INTEGER NOT NULL,
+    is_current  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_process_score_revision ON process_score(revision_id);
+-- At most ONE current score per revision, so the database refuses a second rather
+-- than the code remembering. The same guard the revisions carry.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_process_score_current
+    ON process_score(revision_id) WHERE is_current = 1;
+
 -- Schema bookkeeping for this file.
 --
--- VERSION 5 ADDS `process`, `process_revision` and `process_response` FOR
--- WORKFLOW 2 IDENTIFICATION, AND THERE IS STILL NO MIGRATION PATH.
+-- VERSION 6 ADDS `process_score` FOR WORKFLOW 3 WEIGHING, AND THERE IS STILL NO
+-- MIGRATION PATH.
 --
 -- That is deliberate and wanted. This is the proof of concept: V2 is a rewrite on
 -- a different database, so carrying an upgrade path here would be work spent on a
 -- schema with no future. The version check exists to REFUSE a file this code does
--- not understand -- reading version 4 with version 5 queries would answer the
+-- not understand -- reading version 5 with version 6 queries would answer the
 -- wrong question quietly -- not to upgrade one. An older file is a loud error,
 -- and someone who wants the data should export it before deleting the file.
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -231,4 +282,4 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '5');
+INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '6');

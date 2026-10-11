@@ -169,6 +169,72 @@ merged. Each response keeps the field list **it** contributed.
 **One response is one process.** A description containing a chain is one process
 with several steps, not several processes, and the prompt says so explicitly.
 
+## Workflow 3: weighing
+
+**Input:** each process, with its steps and their `needsReasoning` flags.
+**Output:** **one number per process**, with the ten terms behind it and a paragraph
+explaining it.
+
+A third model session, separate from the interview and from identification, whose
+only job is the number. The processes are then **sorted highest first**, because
+early results compound, and that sorted list is the deliverable.
+
+**It does not decide.** There is no floor, no cap and no filtering: whether the work
+*should* be automated, legally or practically, is the meeting's decision. The tool
+proposes what is possible and what it costs.
+
+### The ten terms, and the direction that matters
+
+`frequency`, `time`, `people`, `results`, `consequences`, `departments`,
+`complexity`, `automatableShare`, `reasoningSteps`, `buildEffort`.
+
+**Four of them are costs, where a HIGH value makes the process a worse candidate:**
+`departments`, `complexity`, `reasoningSteps` and `buildEffort`. An earlier draft of
+the spec had reach amplifying both effort and reward, which would have made a
+sprawling process look attractive; it is worse, not better. The direction lives in
+code (`COST_TERMS` in `lib/store/weighing.js`) as well as in the prompt, because it
+is the part a reader would get wrong.
+
+**`buildEffort` is its own estimate, not the current effort.** A process can consume
+many hours today and be cheap to automate, and that gap is exactly the quick win the
+sort exists to find.
+
+**Every step is considered**, not only the totals: a process of two steps where one
+is trivial weighs differently from two that are both hard.
+
+### The formula is provisional, and the split is deliberate
+
+**The model composes the terms into the number; the code validates the shape and
+stores both.** The spec marks the composition provisional and says it is fine-tuned
+once real responses exist. Keeping it in the prompt means it can be tuned by editing
+the prompt, with no deploy and no arithmetic to reconcile.
+
+The cost of that choice is real: two models can weight the same terms differently, so
+a number is comparable **within one set of processes** and not necessarily between
+runs. Stated here rather than left implicit.
+
+### How a weighing is stored
+
+One more table beside the identification ones:
+
+| table | what it holds |
+| :--- | :--- |
+| `process_score` | the number, the ten terms, and the paragraph. Keyed on the **revision**, not the process. |
+
+**Keyed on the revision because a score is a judgement about a particular grouping.**
+The spec's path for either kind of disagreement is to re-identify first and regenerate
+the score, so the score follows the grouping. It is a **separate table rather than a
+column on `process_revision`** because a different session produces it, its reasoning
+belongs to the score rather than to the grouping, and the provisional formula means a
+revision may be re-scored without re-grouping.
+
+A rejudge adds a weighing rather than editing one, so the earlier number and its
+paragraph stay readable.
+
+**An unscored process sorts last rather than disappearing.** A process nobody has
+weighed yet is still work somebody described, and hiding it would quietly shrink the
+roadmap.
+
 ## How scoring works
 
 ```
@@ -235,6 +301,9 @@ lib/store/                 per-organisation storage (step 1)
 lib/store/processes.js     workflow 2: grouping a response into a process
 lib/store/process-sql.js   the process, revision and membership statements
 ai/identify-core.js        workflow 2: the comparison, and the shared reply parsing
+ai/weigh-core.js           workflow 3: the weighing, and its reply parsing
+lib/store/weighing.js      the score, the term directions, and the sorted roadmap
+data/prompts/*/weigh_*.md  the workflow 3 prompt, per language
 ai/matrix.js               workflow 1: the completeness matrix and the judgement band
 data/prompts/*/identify_*.md  the workflow 2 prompt, per language
 lib/auth/tokens.js         sign-in links: hashed, single use, expiring
