@@ -38,7 +38,7 @@ WORKFLOW 2  Identification   is this the same process someone else described?
 WORKFLOW 3  Weighing         one number per process, with reasoning
             |
             v
-PRESENTATION  View 1: every answer   View 2: every process   View 3: the roadmap
+PRESENTATION  View 1: every answer        View 2: the roadmap
 ```
 
 Each workflow is a **separate LLM session with one job**. They do not share a
@@ -275,9 +275,11 @@ where that happens.
 
 ## Presentation
 
-**Three views in the console.** The middle one exists because workflow 2's output
-has to be inspected somewhere, and the roadmap is downstream and sorted, so the
-worst groupings would be the least visible there.
+**Two views in the console.** An earlier draft had three, with a separate view
+for the assembled processes. That was redundant: **the ordered list contains every
+process**, so it is where a wrong flow is fixed. A second view showing the same
+processes in a different order would be the same data twice, and the two would
+drift.
 
 ### View 1 — every answer
 
@@ -290,32 +292,33 @@ worst groupings would be the least visible there.
 **The subject here is one response.** *"This answer was read wrong"* — matched to
 the wrong process, or miscategorised.
 
-### View 2 — every process
+### View 2 — the roadmap
 
-**The assembled processes**, which is what workflow 2 actually produced:
+**Both the deliverable and the debugging surface**, because they are the same
+objects.
 
-- each process: its name, its steps in order, the answers behind it
-- **expandable** to the full flow, the departments it touches, and the reasoning
-  for the grouping
-- the score and the paragraph explaining it
-- **"rejudge"** with a reason
-- earlier versions kept
+- the sorted priority list, highest weight first
+- **each item expands** to its detail
 
-**The subject here is one process.** *"This flow is wrong"* — the steps are
-mis-ordered, two things that are not the same were merged, or a description was
-segmented badly.
+**Collapsed:** what it is, the departments and their counts, the weight, and where
+a human stays in the loop.
 
-**Without this view the only place to notice a bad grouping is the roadmap,
-which is sorted and summarised** — so the worst groupings would be the hardest to
-find.
+**Expanded:** the steps in order **with reasoning marked per step**, the systems,
+what it waits on, dependencies and approvals, **the improvement observed rather
+than prescribed**, the paragraph explaining the score, the answers behind the
+process, and **a rejudge**.
+
+**A badly grouped process sinks down the list**, which is right for the client's
+attention — and it stays rejudgeable there, so it is not hidden from the admin.
+Inspecting a process where you are already looking at it beats a separate view.
 
 ### Two entry points, one mechanism
 
-**Both views offer a rejudge, and both do the same thing:**
+**A rejudge is offered in both views, and both do the same thing:**
 
 ```
-from an ANSWER   "this answer was read wrong"
-from a PROCESS   "this flow is wrong"
+from an ANSWER   in view 1      "this answer was read wrong"
+from a PROCESS   in the roadmap "this flow is wrong"
        |
        v
   workflow 2 re-identifies, with the admin's reasoning
@@ -325,18 +328,6 @@ from a PROCESS   "this flow is wrong"
 **They are two places, not two mechanisms.** The subject differs; the path does
 not, because a process cannot be reweighed before it is certain what the process
 is.
-
-### View 3 — the roadmap
-
-- the sorted priority list, highest weight first
-- **each item expands** to its detail
-
-**Collapsed:** what it is, the departments and their counts, the weight, and where
-a human stays in the loop.
-
-**Expanded:** the steps in order **with reasoning marked per step**, the systems,
-what it waits on, dependencies and approvals, and **the improvement observed
-rather than prescribed**.
 
 ### What the console never shows
 
