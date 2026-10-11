@@ -77,6 +77,16 @@
                         <% } else if (steps.length > 0) { %>
                             &middot; <span class="tag">no step needs a person</span>
                         <% } %>
+                        <%# SPLIT WHILE UNSURE, in the same tag row as everything else. NOT a
+                            banner and not counted anywhere: this fires on every
+                            low-confidence creation and most are false alarms, so it says
+                            what happened and lets a reader decide. The why is the model's
+                            own reasoning, already rendered below, so nothing is restated
+                            here. A rejudge clears it, because the revision it writes is
+                            admin-decided. %>
+                        <% if (process.needsReview) { %>
+                            &middot; <span class="tag review" title="<%= process.needsReviewReason %>">split while unsure</span>
+                        <% } %>
                     </div>
                 </span>
                 <span class="summary-side">

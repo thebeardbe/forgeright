@@ -124,6 +124,13 @@
 .tag.reasoning { background: var(--warn-bg); color: var(--warn-ink); }
 .tag.departments { background: var(--notice-bg); color: var(--notice-ink); }
 
+/* Split while unsure. THE CALM REGISTER ON PURPOSE: this fires on every
+   low-confidence creation and most are false alarms, so it is a quiet label rather
+   than a warning. The yellow `.reasoning` treatment is reserved for something a
+   reader must act on; this is something a reader may want to look at. It shares the
+   notice blue so it reads as information, in the same row as the other tags. */
+.tag.review { background: var(--notice-bg); color: var(--notice-ink); }
+
 /* A rejudge is a reasoned request, never a category to pick. */
 .rejudge { margin-top: 14px; }
 .rejudge textarea {

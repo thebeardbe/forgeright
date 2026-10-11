@@ -142,15 +142,24 @@ nutteloos: "Dit antwoord beschrijft het matchen van facturen."
 
 `confidence` is `high`, `medium` of `low`, en beschrijft hoe zeker je bent van het
 antwoord dat je gaf. **Wees eerlijk in plaats van consistent.** Niets filtert op
-deze waarde en niets handelt ernaar, dus het is een aantekening voor een lezer, geen
-signaal aan het systeem: een `low` betrouwbaarheid stuurt het antwoord niet ergens
-anders heen.
+deze waarde, en niets hier beslist er iets mee: het is een aantekening voor een
+lezer, geen drempel die het antwoord ergens anders heen stuurt.
 
-Daarom is `low` GEEN manier om te zeggen "het zou beide kunnen zijn". Als je
-werkelijk twijfelt of het hetzelfde werk is, dan is dat `matches: null` hierboven,
-geen match met lage betrouwbaarheid: een match is een beslissing, en een beslissing
-waar je niet achter staat is erger dan een nieuw proces melden dat een lezer later
-kan samenvoegen.
+**HOUD `low` VOOR ÉÉN GEVAL: een nieuw proces dat je aanmaakte omdat je niet kon
+uitmaken of het hetzelfde werk was.** Een lage betrouwbaarheid bij een
+`matches: null`-antwoord wordt gelezen als "ik was onzeker, dus ik heb niet
+samengevoegd", en het markeert het item voor een mens om na te kijken. Dat is het
+geval waarvoor het bestaat, en het is zeldzaam.
+
+Al het andere dat duidelijk nieuw werk is, is `high`, ook als het werk ongewoon is:
+"deze taak heb ik nog nooit gezien" is geen onzekerheid, en er `low` van maken zet
+een reviewmarkering op iets waar niemand naar hoeft te kijken.
+
+En `low` is GEEN manier om te zeggen "het zou beide kunnen zijn" bij een MATCH. Als
+je werkelijk twijfelt of het hetzelfde werk is, dan is dat `matches: null` zonder
+aarzelen, geen match met lage betrouwbaarheid: een match is een beslissing, en een
+beslissing waar je niet achter staat is erger dan een nieuw proces dat een lezer
+later kan samenvoegen.
 
 `contributed` somt **op welke velden van het nieuwe antwoord de groepering
 droegen**: de velden die dit hetzelfde werk maakten, of die een samengevoegd proces

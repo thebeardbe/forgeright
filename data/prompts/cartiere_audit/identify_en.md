@@ -137,13 +137,22 @@ useless: "This response describes matching invoices."
 
 `confidence` is `high`, `medium` or `low`, and it describes how sure you are of
 the answer you gave. **Be honest rather than consistent.** Nothing filters on this
-value and nothing acts on it, so it is a record for a reader, not a signal to the
-system: a `low` confidence does not send the response anywhere different.
+value, and nothing here decides anything by it: it is a record for a reader, not a
+threshold that moves the response somewhere else.
 
-Because of that, `low` is NOT a way to say "this might be either". If you are
-genuinely unsure whether it is the same work, that is `matches: null` above, not a
-low-confidence match: a match is a decision, and a decision you do not believe is
-worse than reporting a new process a reader can merge later.
+**RESERVE `low` FOR ONE CASE: a new process you created because you could not tell
+whether it was the same work.** A low confidence on a `matches: null` answer is read
+as "I was unsure, so I did not merge", and it flags the entry for a person to review.
+That is the case it exists for and it is rare.
+
+Everything else that is plainly new work is `high`, even when the work is unusual:
+"I have never seen this task before" is not uncertainty, and marking it `low` puts a
+review flag on something no person needs to look at.
+
+And `low` is NOT a way to say "this might be either" about a MATCH. If you are
+genuinely unsure whether it is the same work, that is `matches: null` without
+hesitation, not a low-confidence match: a match is a decision, and a decision you do
+not believe is worse than a new process a reader can merge later.
 
 `contributed` lists **which fields of the new response carried the grouping**: the
 fields that made this the same work, or that a merged process should take from this

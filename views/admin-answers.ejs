@@ -58,6 +58,12 @@
                                 // so an admin can see which results came from a rejudge.
                             %><%= response.grouping.decidedBy === 'admin' ? 'regrouped' : 'grouped' %>
                         </span>
+                        <%# THE SAME FLAG AS THE ROADMAP, per answer, because this is where
+                            an admin reads one response and its grouping. Quiet by design:
+                            see the note on the roadmap's tag and in console.css. %>
+                        <% if (response.grouping.needsReview) { %>
+                            <span class="tag review" title="<%= response.grouping.needsReviewReason %>">split while unsure</span>
+                        <% } %>
                     <% } else { %>
                         <span class="tag">not yet read</span>
                     <% } %>
