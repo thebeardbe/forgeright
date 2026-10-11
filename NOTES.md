@@ -355,3 +355,30 @@ often, that is the thing to expose.
 **To make a stall cheap:** split the work so each piece is independently
 reportable, and ask for a report after each. A stall then costs one piece rather
 than the whole task.
+
+## The write-contention test trap, which cost two agents real time
+
+`node:sqlite` is **synchronous**. A test that holds a write lock and releases it
+from a `setTimeout` **deadlocks with itself**:
+
+    db.exec('BEGIN IMMEDIATE');          // holds the lock
+    setTimeout(() => db.exec('COMMIT'), 1000);   // can never run
+    // the busy_timeout wait blocks the event loop, so the timer never fires
+
+The symptom is exactly this: *"waited 1003ms for a 1000ms busy_timeout"* and the
+write still fails. It reads like a timeout bug and is not one.
+
+The builder hit this first, diagnosed it correctly ("an artefact of my test using
+one process") and then spent a long time failing to build a two-process version.
+The test-writer later hit the same wall independently and solved it.
+
+**The working shape is `test/helpers/hold-write-lock.mjs`**: a worker thread holds
+the lock. Two further traps are documented there, either of which makes the test
+pass for the wrong reason:
+
+1. an `UPDATE` matching **zero rows** does not take a lasting write lock in WAL,
+   so the contending write goes straight through and the test proves nothing;
+2. with no timer armed the worker's script finishes, the worker exits, SQLite
+   rolls the transaction back, and the lock is released before the parent writes.
+
+Use that helper rather than writing a fourth version.
