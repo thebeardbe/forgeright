@@ -111,6 +111,11 @@ ai/security.js             input sanitising, injection detection
 ai/fixtures/mock-audit.js  illustrative audit data
 lib/scoring.js             scoring and aggregation (pure, tested)
 lib/strings.js             UI copy, trilingual
+lib/users.js               who may sign in, and which organisation they belong to
+lib/provision.js           a sign-in resolved to a user, creating both if new
+lib/token-index.js         which organisation owns a participant token
+lib/auth/console.js        the console, scoped to the session's organisation
+lib/auth/participant-routes.js  the questionnaire link and the lost-my-link form
 lib/store/                 per-organisation storage (step 1)
 lib/auth/tokens.js         sign-in links: hashed, single use, expiring
 lib/auth/session.js        signed session cookie, SESSION_SECRET check, loopback test
@@ -118,7 +123,16 @@ lib/auth/routes.js         /admin login, logout, console, session guard
 lib/auth/require-secure.js the HTTPS-only rule, applied to every route
 lib/auth/public-base-url.js the installation's own URL, for links and redirects
 lib/auth/rate-limit.js     in-memory limits on the login request
-lib/base-path.js           BASE_PATH: normalisation, validation, URL prefixing
+lib/base-path.js           the mount path and the public path, and URL prefixing
+lib/landing.js             the landing page at /
+lib/routes-api.js          /api/chat and /api/score, and who may use them
+lib/theme.js               palette resolution, the theme cookie, its middleware
+lib/palettes.js            the 22 palettes as data (dark/light parts beside it)
+public/css/palette.css     generated: the 22 palettes as CSS variables
+public/css/app.css         semantic roles and the shared components
+public/css/questionnaire.css  the conversation and analysis styles
+views/partials/            the theme head and the picker, included by every page
+scripts/build-palette-css.js  regenerates palette.css from the data
 lib/mail/                  mail sending behind one interface (console, proton)
 views/audit.ejs            the questionnaire page
 views/admin-login.ejs      the sign-in page and the cookie notice
@@ -159,6 +173,36 @@ Participants can add and edit until the admin calls `finishOrganisation`. After
 that, writes throw and reads still work. Adding another process appends a new
 response; it never overwrites an earlier round.
 
+### The two prefixes
+
+A reverse proxy can separate the path a request arrives with from the path the
+browser uses, so there are two prefixes:
+
+| | in an incoming request | in an emitted URL |
+| :--- | :--- | :--- |
+| **`BASE_PATH`** | the mount: what Express strips | not used |
+| **`PUBLIC_PATH`** | not used | the prefix on every link, form action, asset and the cookie `Path` |
+
+`PUBLIC_PATH` is derived from the path in `PUBLIC_BASE_URL`, so it is not normally
+set. The three deployments:
+
+| proxy behaviour | `BASE_PATH` | `PUBLIC_BASE_URL` |
+| :--- | :--- | :--- |
+| passes the prefix through | `/forgeright` | `https://host/forgeright` |
+| **strips the prefix** | *(empty)* | `https://host/forgeright` |
+| no prefix | *(empty)* | `https://host` |
+
+The middle row is `tailscale serve --set-path /forgeright`, which strips the
+prefix before forwarding. The app must then expect requests at the root while
+still emitting `/forgeright` in its URLs. Setting `BASE_PATH=/forgeright` there
+produces a 404, because the app waits for a prefix it is never sent; setting no
+public path produces links that leave the mount. Both halves are needed, and they
+are what the two variables separate.
+
+The session cookie's `Path` is the **public** prefix (`/forgeright/admin`), because
+that is what the browser sees. It has to be: a cookie scoped to `/admin` is not
+sent for a request to `/forgeright/admin`, so sign-in would appear to do nothing.
+
 ### HTTPS only
 
 **Everything is served over HTTPS, except localhost.** The questionnaire, the API,
@@ -194,15 +238,65 @@ plain-HTTP liveness probe fail and have an orchestrator restart a healthy
 container. A security control that causes an outage is worse than the exposure it
 prevents. If the endpoint ever reports anything else, it loses the exemption.
 
+### Long-lived participant links, and the trade accepted
+
+A participant link is a credential in a URL, and it stays usable for 90 days. That
+is deliberate, and this is the reasoning, recorded rather than left to look like
+an oversight:
+
+- **Friction loses respondents.** The premise of this tool is that people fill in
+a questionnaire between other work. A link that expires in an hour, or that is
+used up on first open, adds a step and loses replies, which is a worse outcome
+than the exposure below.
+- **So the token appears in places that keep copies**: browser history, any proxy
+access log, and the mailbox as plain text (the mail carries it as copyable text so
+a mangled link is recoverable).
+- **What the exposure is worth, stated exactly.** The token grants one person's
+answers to one organisation's questionnaire. It does **not** grant console
+access, any role, or any other participant's answers. An observer who takes a
+token gets a form to fill in as that person, not an account.
+- **Two actions exist to end it.** "Reset all access" in the console and "Lost my
+link" on the participant page both revoke every live token for that invitation and
+issue one new one. Those are the answer to a link that leaked, and they are one
+implementation with two callers.
+
+Admin sign-in is deliberately different: single use, and 15 minutes. It grants an
+organisation rather than one person's answers, so the blast radius is not
+comparable and neither is the rule.
+
+### Themes
+
+The appearance is one of 22 palettes, chosen per browser.
+
+- The palette is **data** in `lib/palettes.js` (with the colour values in the two
+dark parts and the light part beside it), emitted as CSS custom properties by
+`scripts/build-palette-css.js`, and the generated `public/css/palette.css` is
+committed. A change to a colour is a change to the data and a regeneration.
+- `public/css/app.css` maps those variables onto **semantic** roles (`--bg`,
+`--card`, `--accent`), and components use only the roles. No component names a
+palette colour, so adding a theme cannot break one.
+- **The default follows the system**: Catppuccin and Catppuccin Latte when no
+choice is stored.
+- **The choice is a cookie**, `fr_theme`, not `localStorage`. A cookie reaches the
+server, so the palette is in the HTML and the first paint is correct rather than
+patched after it. It is `SameSite=Lax`, not `HttpOnly` (the page reads it to keep
+the picker in step), and long-lived.
+
+Three palettes have no `orange` (last-horizon, solitude, white). That is a
+property of the upstream theme data; the substitution is one line in
+`paletteVars`, not a blank value.
+
 ### Environment
 
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
 | `ALLOWED_HOST` | empty | Hosts this instance answers on, comma-separated (`localhost,127.0.0.1,forgeright.bunkens.be`). Empty accepts any host, for development. Compared on hostname only, case-insensitively; empty entries are ignored. |
 | `TRUST_PROXY` | `0` | Number of reverse proxies in front. Decides whether `X-Forwarded-Proto` is believed, and therefore whether a request counts as secure. **Set to 1 when one proxy terminates TLS**, or every request looks insecure and the whole site refuses. |
-| `BASE_PATH` | empty | Prefix this app is served under, when a proxy mounts it on one (`/forgeright`). Empty means the domain root. Must be a single safe path, or the server refuses to start. |
+| `BASE_PATH` | empty | Path the app is **mounted** at: the prefix an incoming request carries, which Express strips. Empty means it expects requests at the root. Must be a single safe path, or the server refuses to start. |
+| `PUBLIC_PATH` | derived | Path the app is **visible** at: the prefix every emitted URL and the session cookie carry. Normally derived from `PUBLIC_BASE_URL`'s path, so it needs no value. Set it only to override, and it must then agree with that URL. |
 | `SESSION_SECRET` | none | Signs the admin session cookie. **Required**: the server refuses to start without it, because a per-process secret would invalidate every session on restart and look like a broken login. |
-| `PUBLIC_BASE_URL` | none | Absolute address of this installation. Used for mailed sign-in links **and** as the target when a plain-HTTP request is redirected to HTTPS. Include the base path. |
+| `fr_theme` (cookie) | follows the system | The chosen palette, or `system`. Set by the theme picker, read on the server so the page renders in the right theme. |
+| `PUBLIC_BASE_URL` | none | Absolute address of this installation. Used for mailed sign-in links, as the target when a plain-HTTP request is redirected to HTTPS, and as the source of the public path. Include the prefix. |
 | `LOGIN_LINK_TTL_MINUTES` | `15` | How long a sign-in link stays valid. A link is single-use regardless. |
 | `SESSION_TTL_HOURS` | `12` | How long an admin session lasts. |
 | `MAIL_SENDER` | `console` | `console` prints the message to stdout (no credentials); `proton` sends through `proton-cli`. An unknown value refuses to start rather than silently falling back. |
@@ -242,15 +336,24 @@ proxy config and in `.env`, never hardcoded in the application.
 
 - Roadmap PDF export is not built.
 - The guardrail demonstration is not built.
-- The store exists but the questionnaire does not use it yet. There is no route
-  that writes a response, so nothing a participant does is currently persisted.
-- Admin sign-in exists (step 2): an emailed magic link, a signed session cookie,
-  and a login page. **The console behind it is a placeholder** that shows who is
-  signed in; listing organisations and their progress is step 3.
-- **Any well-formed address can request a sign-in link.** There is no allow-list
-  yet, so the admin console is not restricted to particular people. Adding one is
-  part of step 3, and the login response is already identical for a known and an
-  unknown address so that adding it does not change observable behaviour.
+- **The questionnaire is persisted only when it is reached from an invitation
+  link.** A participant with a token can answer, and answers are stored against
+  their invitation, but the bot conversation itself still runs from the browser
+  session and does not yet write through the store on every turn.
+- Admin sign-in and the console exist (steps 2 and 3). The console shows one
+  organisation: its name, its invitations with opened state, and its users.
+- **Every address that signs in becomes an admin of its own organisation.**
+  There is no allow-list: self-service is the intended first-run behaviour, and
+  the login response is identical for a known and an unknown address. Requiring
+  an existing admin to invite a colleague is what the `user` role and the console's
+  Users section are for.
+- **Several links can be live at once.** "Send a link" adds one and leaves the
+  others working, which is what a participant who missed the first email needs;
+  "Reset all access" and "Lost my link" revoke them all and issue one. Neither a
+  resend nor a reset can re-mail the *exact* earlier link: the database keeps only
+  a hash, never the readable value. See "Long-lived participant links" above for
+  why that is the accepted trade, and the console's help text for what each button
+  does.
 - **Rate limiting is in memory, per process.** It stops a loop or a script
   filling an inbox; it is not a distributed quota, and a restart clears it.
 - The mock provider's scripted flow ignores the participant's actual answers.

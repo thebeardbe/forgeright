@@ -1,0 +1,47 @@
+<%#
+    The theme, for the <head> of every page.
+
+    Included once per view, so the palette and the way to change it are defined in
+    one place rather than repeated and drifting.
+
+    THREE PARTS, each for a reason:
+
+      1. The stylesheets. palette.css carries the 22 palettes as variables,
+         app.css maps them onto semantic roles and holds the components.
+      2. The inline script. The server sets data-theme from the cookie, so a
+         stored choice is already correct on the first paint. For the
+         system-preference case the server cannot know the OS setting, so this
+         script reads it and picks the matching palette BEFORE the body is parsed.
+         That is what keeps the flash off the screen rather than making it brief.
+      3. Nothing here reads localStorage: the cookie is the one source of truth,
+         which is why the server could render the right theme in the first place.
+%>
+<link rel="stylesheet" href="<%= basePath %>/css/palette.css">
+<link rel="stylesheet" href="<%= basePath %>/css/app.css">
+<%# Page-specific sheets, so a page pays only for what it renders. %>
+<% if (typeof pageStyles !== 'undefined') { %>
+    <% pageStyles.forEach(function (sheet) { %>
+        <link rel="stylesheet" href="<%= basePath %>/css/<%= sheet %>.css">
+    <% }); %>
+<% } %>
+<script>
+    // Runs before the body renders, so no frame is painted in the wrong theme.
+    // Only needed when the choice is "follow system"; a stored palette is already
+    // on <html> from the server.
+    (function () {
+        var FOLLOW = 'system';
+        var root = document.documentElement;
+
+        if (root.getAttribute('data-theme') !== FOLLOW) return;
+
+        // The ids match lib/palettes.js: Catppuccin and Catppuccin Latte, the same
+        // palette in the two modes.
+        try {
+            var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+            root.setAttribute('data-theme', dark ? '<%= theme.systemDarkId %>' : '<%= theme.systemLightId %>');
+        } catch (err) {
+            // matchMedia unavailable: palette.css already applied the dark pair for
+            // the "system" category, so there is a usable theme and nothing to do.
+        }
+    })();
+</script>

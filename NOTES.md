@@ -260,13 +260,56 @@ adding it does not disturb the other app. `tailscale serve status` shows both.
 
 For the app to serve there, `.env` needs:
 
-    BASE_PATH=/forgeright
+    BASE_PATH=
     PUBLIC_BASE_URL=https://pi-agents.tail399956.ts.net/forgeright
 
-and the host list needs the hostname or IP. Both are in the local `.env`; the
-`BASE_PATH` support is a build item, not yet done.
+**`BASE_PATH` is EMPTY on purpose, and that was a correction.** `tailscale serve`
+STRIPS the `/forgeright` prefix before forwarding, so the app receives `/` and
+must therefore expect the root. Measured through the real proxy with
+`BASE_PATH=/forgeright`, the app got a 404 because it waited for a prefix it was
+never sent. The prefix still has to appear in everything the app EMITS, so the
+public path is derived from the path in `PUBLIC_BASE_URL` and applied to links,
+redirects, assets and the session cookie. Both halves are now verified through
+the live proxy: the page and assets serve, a sign-in completes, the cookie is
+`Path=/forgeright/admin`, and redirects carry the prefix.
+
+The host list needs the hostname or IP, which is in the local `.env`.
+
+**Verified against the live proxy, not simulated.** `curl -sk --resolve` to the
+tailnet address exercises the real stripping behaviour, which is what caught the
+`BASE_PATH` mistake above. The remaining assumption is the proxy's peer address:
+the app trusts `127.0.0.1`, and `tailscale serve` forwards from loopback here, so
+this works; if the proxy were ever moved off-host, `TRUST_PROXY` would need that
+address and the startup log states which peers are trusted.
 
 **Why HTTPS and not plain HTTP.** The Tailscale endpoint terminates TLS, so this
 is a genuinely secure origin. The admin console refuses to serve over an
 insecure connection, so plain HTTP is not a usable path by design; the HTTPS
 endpoint is what makes testing here coherent with production.
+
+## Testing through the Tailscale proxy
+
+The container cannot resolve its own MagicDNS name, so neither the agent nor the
+browser inside it can reach `https://pi-agents.tail399956.ts.net`. **Resolve the
+name to the tailnet address instead**:
+
+    curl -sk --resolve pi-agents.tail399956.ts.net:443:100.70.135.127 \
+      https://pi-agents.tail399956.ts.net/forgeright/admin/login
+
+That reaches the real proxy over real TLS and exercises the deployment path.
+
+### The proxy strips the mount prefix
+
+Measured, not assumed. A probe on port 3000 that echoed the request it received,
+reached through the proxy at `/forgeright/probe-test`, reported:
+
+    path=/probe-test   host=pi-agents.tail399956.ts.net   xfp=https
+
+So `tailscale serve --set-path /forgeright` removes `/forgeright` before
+forwarding. The app never sees the prefix on an incoming request, but every URL
+it emits still needs it, because that is what the browser used. **Those are two
+separate concerns and one variable cannot express both** — that is the gap
+`PUBLIC_PATH` or an equivalent closes.
+
+`tailscaled` connects from `127.0.0.1`, confirmed by the established connections
+to the other app on that host, so `TRUST_PROXY=127.0.0.1` is the correct setting.

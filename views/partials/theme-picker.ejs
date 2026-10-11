@@ -1,0 +1,24 @@
+<%#
+    The theme picker.
+
+    A <select>, not a custom control: it is keyboard and screen-reader accessible
+    by default, and the stored case needs no JavaScript at all because the cookie
+    already chose the theme server-side and this form merely writes it.
+
+    "Follow system" is an option rather than the absence of a choice, so a stored
+    palette is not a one-way door: choosing it puts the OS back in charge.
+
+    Submitted with GET, so no body and no CSRF surface: the value is a palette id
+    from a fixed list, validated again server-side.
+%>
+<form class="theme-picker" method="get" action="<%= basePath %>/settings/theme">
+    <label for="theme-select">Theme</label>
+    <select id="theme-select" name="choice" onchange="this.form.submit()">
+        <option value="system" <%= theme.selected === 'system' ? 'selected' : '' %>>Follow system</option>
+        <% themeOptions.forEach(function (option) { %>
+            <option value="<%= option.id %>" <%= theme.selected === option.id ? 'selected' : '' %>><%= option.name %></option>
+        <% }); %>
+    </select>
+    <%# A submit control, so the form works when the onchange handler does not. %>
+    <noscript><button type="submit">Apply</button></noscript>
+</form>

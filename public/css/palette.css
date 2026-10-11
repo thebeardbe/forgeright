@@ -1,0 +1,556 @@
+/*
+ * The 22 palettes as CSS custom properties, one block per theme.
+ *
+ * GENERATED FROM lib/palettes.js by scripts/build-palette-css.js. Do not edit by
+ * hand: change the data module and regenerate, so the colours have one home.
+ *
+ * A palette is data in the module and variables here; nothing in this file
+ * decides anything, and no component style names one of these colours.
+ * public/css/app.css maps them onto semantic roles (--bg, --card, --accent),
+ * which is what the components use.
+ *
+ * The names are --o-*, following the convention of the reference implementation
+ * in the Pi Pocket repository. Alongside them --o-mode is "dark" or "light",
+ * which app.css reads for the few values that depend on it.
+ *
+ * Applied as [data-theme="<id>"] on the html element, set server-side from the
+ * theme cookie so the first paint is already correct.
+ */
+
+/* Catppuccin (dark) */
+[data-theme="catppuccin"] {
+    --o-mode: dark;
+    --o-bg: #1e1e2e;
+    --o-bg-dark: #161622;
+    --o-bg-darker: #101019;
+    --o-bg-light: #313244;
+    --o-fg: #cdd6f4;
+    --o-fg-dim: #6c7086;
+    --o-fg-light: #bac2de;
+    --o-fg-bright: #cdd6f4;
+    --o-accent: #89b4fa;
+    --o-selection: #45475a;
+    --o-red: #f38ba8;
+    --o-yellow: #f9e2af;
+    --o-orange: #f6b6ab;
+    --o-green: #a6e3a1;
+    --o-cyan: #94e2d5;
+    --o-blue: #89b4fa;
+    --o-magenta: #f5c2e7;
+}
+
+/* Ethereal (dark) */
+[data-theme="ethereal"] {
+    --o-mode: dark;
+    --o-bg: #060b1e;
+    --o-bg-dark: #040816;
+    --o-bg-darker: #030610;
+    --o-bg-light: #131a3a;
+    --o-fg: #ffcead;
+    --o-fg-dim: #6d7db6;
+    --o-fg-light: #c9b8a6;
+    --o-fg-bright: #ffcead;
+    --o-accent: #7d82d9;
+    --o-selection: #252e56;
+    --o-red: #ed5b5a;
+    --o-yellow: #e9bb4f;
+    --o-orange: #eb8b54;
+    --o-green: #92a593;
+    --o-cyan: #a3bfd1;
+    --o-blue: #7d82d9;
+    --o-magenta: #c89dc1;
+}
+
+/* Everforest (dark) */
+[data-theme="everforest"] {
+    --o-mode: dark;
+    --o-bg: #2d353b;
+    --o-bg-dark: #21272c;
+    --o-bg-darker: #181d20;
+    --o-bg-light: #343f44;
+    --o-fg: #d3c6aa;
+    --o-fg-dim: #4f585e;
+    --o-fg-light: #9da9a0;
+    --o-fg-bright: #d3c6aa;
+    --o-accent: #7fbbb3;
+    --o-selection: #3d484d;
+    --o-red: #e67e80;
+    --o-yellow: #dbbc7f;
+    --o-orange: #e09d7f;
+    --o-green: #a7c080;
+    --o-cyan: #83c092;
+    --o-blue: #7fbbb3;
+    --o-magenta: #d699b6;
+}
+
+/* Gruvbox (dark) */
+[data-theme="gruvbox"] {
+    --o-mode: dark;
+    --o-bg: #282828;
+    --o-bg-dark: #1e1e1e;
+    --o-bg-darker: #161616;
+    --o-bg-light: #3c3836;
+    --o-fg: #d4be98;
+    --o-fg-dim: #7c6f64;
+    --o-fg-light: #bdae93;
+    --o-fg-bright: #d4be98;
+    --o-accent: #7daea3;
+    --o-selection: #504945;
+    --o-red: #ea6962;
+    --o-yellow: #d8a657;
+    --o-orange: #e1875c;
+    --o-green: #a9b665;
+    --o-cyan: #89b482;
+    --o-blue: #7daea3;
+    --o-magenta: #d3869b;
+}
+
+/* Hackerman (dark) */
+[data-theme="hackerman"] {
+    --o-mode: dark;
+    --o-bg: #0b0c16;
+    --o-bg-dark: #080910;
+    --o-bg-darker: #06060c;
+    --o-bg-light: #151828;
+    --o-fg: #ddf7ff;
+    --o-fg-dim: #6a6e95;
+    --o-fg-light: #b5c5db;
+    --o-fg-bright: #ddf7ff;
+    --o-accent: #82fb9c;
+    --o-selection: #1f253a;
+    --o-red: #50f872;
+    --o-yellow: #50f7d4;
+    --o-orange: #50f7a3;
+    --o-green: #4fe88f;
+    --o-cyan: #7cf8f7;
+    --o-blue: #829dd4;
+    --o-magenta: #86a7df;
+}
+
+/* Kanagawa (dark) */
+[data-theme="kanagawa"] {
+    --o-mode: dark;
+    --o-bg: #1f1f28;
+    --o-bg-dark: #17171e;
+    --o-bg-darker: #111116;
+    --o-bg-light: #223249;
+    --o-fg: #dcd7ba;
+    --o-fg-dim: #727169;
+    --o-fg-light: #c8c093;
+    --o-fg-bright: #dcd7ba;
+    --o-accent: #dcd7ba;
+    --o-selection: #363646;
+    --o-red: #c34043;
+    --o-yellow: #c0a36e;
+    --o-orange: #c17158;
+    --o-green: #76946a;
+    --o-cyan: #6a9589;
+    --o-blue: #7e9cd8;
+    --o-magenta: #957fb8;
+}
+
+/* Last Horizon (dark) */
+[data-theme="last-horizon"] {
+    --o-mode: dark;
+    --o-bg: #0c0b0c;
+    --o-bg-dark: #090809;
+    --o-bg-darker: #060606;
+    --o-bg-light: #0c0b0c;
+    --o-fg: #fafcfb;
+    --o-fg-dim: #584e51;
+    --o-fg-light: #cfd3cd;
+    --o-fg-bright: #e2dddc;
+    --o-accent: #b59790;
+    --o-selection: #584e51;
+    --o-red: #c38b7b;
+    --o-yellow: #6b5e73;
+    --o-orange: #6b5e73;
+    --o-green: #87a9b0;
+    --o-cyan: #a5a0b6;
+    --o-blue: #b59790;
+    --o-magenta: #c4d8e2;
+}
+
+/* Lumon (dark) */
+[data-theme="lumon"] {
+    --o-mode: dark;
+    --o-bg: #16242d;
+    --o-bg-dark: #101b21;
+    --o-bg-darker: #0b1216;
+    --o-bg-light: #1b2d40;
+    --o-fg: #d6e2ee;
+    --o-fg-dim: #4d86b0;
+    --o-fg-light: #d6e2ee;
+    --o-fg-bright: #f2fcff;
+    --o-accent: #8bc9eb;
+    --o-selection: #243d56;
+    --o-red: #4d86b0;
+    --o-yellow: #6fa4c9;
+    --o-orange: #8bc9eb;
+    --o-green: #5e95bc;
+    --o-cyan: #b4e4f6;
+    --o-blue: #6fb8e3;
+    --o-magenta: #8bc9eb;
+}
+
+/* Matte Black (dark) */
+[data-theme="matte-black"] {
+    --o-mode: dark;
+    --o-bg: #121212;
+    --o-bg-dark: #0d0d0d;
+    --o-bg-darker: #090909;
+    --o-bg-light: #1e1e1e;
+    --o-fg: #bebebe;
+    --o-fg-dim: #555555;
+    --o-fg-light: #8a8a8d;
+    --o-fg-bright: #bebebe;
+    --o-accent: #e68e0d;
+    --o-selection: #2a2a2a;
+    --o-red: #d35f5f;
+    --o-yellow: #b91c1c;
+    --o-orange: #c63d3d;
+    --o-green: #ffc107;
+    --o-cyan: #bebebe;
+    --o-blue: #e68e0d;
+    --o-magenta: #d35f5f;
+}
+
+/* Miasma (dark) */
+[data-theme="miasma"] {
+    --o-mode: dark;
+    --o-bg: #222222;
+    --o-bg-dark: #191919;
+    --o-bg-darker: #121212;
+    --o-bg-light: #2c2c2c;
+    --o-fg: #c2c2b0;
+    --o-fg-dim: #555555;
+    --o-fg-light: #8a8a7e;
+    --o-fg-bright: #c2c2b0;
+    --o-accent: #78824b;
+    --o-selection: #383838;
+    --o-red: #685742;
+    --o-yellow: #b36d43;
+    --o-orange: #8d6242;
+    --o-green: #5f875f;
+    --o-cyan: #c9a554;
+    --o-blue: #78824b;
+    --o-magenta: #bb7744;
+}
+
+/* Nord (dark) */
+[data-theme="nord"] {
+    --o-mode: dark;
+    --o-bg: #2e3440;
+    --o-bg-dark: #222730;
+    --o-bg-darker: #191c23;
+    --o-bg-light: #3b4252;
+    --o-fg: #d8dee9;
+    --o-fg-dim: #667080;
+    --o-fg-light: #adb5c4;
+    --o-fg-bright: #d8dee9;
+    --o-accent: #81a1c1;
+    --o-selection: #434c5e;
+    --o-red: #bf616a;
+    --o-yellow: #ebcb8b;
+    --o-orange: #d5967a;
+    --o-green: #a3be8c;
+    --o-cyan: #88c0d0;
+    --o-blue: #81a1c1;
+    --o-magenta: #b48ead;
+}
+
+/* Osaka Jade (dark) */
+[data-theme="osaka-jade"] {
+    --o-mode: dark;
+    --o-bg: #111c18;
+    --o-bg-dark: #0c1512;
+    --o-bg-darker: #090f0d;
+    --o-bg-light: #23372b;
+    --o-fg: #c1c497;
+    --o-fg-dim: #81b8a8;
+    --o-fg-light: #d6d5bc;
+    --o-fg-bright: #f7e8b2;
+    --o-accent: #509475;
+    --o-selection: #32473b;
+    --o-red: #ff5345;
+    --o-yellow: #459451;
+    --o-orange: #a2734b;
+    --o-green: #549e6a;
+    --o-cyan: #2dd5b7;
+    --o-blue: #509475;
+    --o-magenta: #d2689c;
+}
+
+/* Retro 82 (dark) */
+[data-theme="retro-82"] {
+    --o-mode: dark;
+    --o-bg: #05182e;
+    --o-bg-dark: #031222;
+    --o-bg-darker: #020c17;
+    --o-bg-light: #0a2540;
+    --o-fg: #f6dcac;
+    --o-fg-dim: #3f8f8a;
+    --o-fg-light: #a7c9c6;
+    --o-fg-bright: #f6dcac;
+    --o-accent: #faa968;
+    --o-selection: #134e5a;
+    --o-red: #f85525;
+    --o-yellow: #e97b3c;
+    --o-orange: #faa968;
+    --o-green: #028391;
+    --o-cyan: #8cbfb8;
+    --o-blue: #3f8f8a;
+    --o-magenta: #3f8f8a;
+}
+
+/* Ristretto (dark) */
+[data-theme="ristretto"] {
+    --o-mode: dark;
+    --o-bg: #2c2525;
+    --o-bg-dark: #211b1b;
+    --o-bg-darker: #181414;
+    --o-bg-light: #3d2f2a;
+    --o-fg: #e6d9db;
+    --o-fg-dim: #72696a;
+    --o-fg-light: #c3b7b8;
+    --o-fg-bright: #e6d9db;
+    --o-accent: #f38d70;
+    --o-selection: #403e41;
+    --o-red: #fd6883;
+    --o-yellow: #f9cc6c;
+    --o-orange: #fb9a77;
+    --o-green: #adda78;
+    --o-cyan: #85dacc;
+    --o-blue: #f38d70;
+    --o-magenta: #a8a9eb;
+}
+
+/* Solitude (dark) */
+[data-theme="solitude"] {
+    --o-mode: dark;
+    --o-bg: #101315;
+    --o-bg-dark: #0c0e10;
+    --o-bg-darker: #080a0b;
+    --o-bg-light: #101315;
+    --o-fg: #cacccc;
+    --o-fg-dim: #4b4e55;
+    --o-fg-light: #cbc2be;
+    --o-fg-bright: #a5aeb4;
+    --o-accent: #798186;
+    --o-selection: #343d41;
+    --o-red: #565d60;
+    --o-yellow: #d9dbdc;
+    --o-orange: #c9c2b4;
+    --o-green: #9fa5a9;
+    --o-cyan: #707070;
+    --o-blue: #798186;
+    --o-magenta: #aeaeae;
+}
+
+/* Tokyo Night (dark) */
+[data-theme="tokyo-night"] {
+    --o-mode: dark;
+    --o-bg: #1a1b26;
+    --o-bg-dark: #13141c;
+    --o-bg-darker: #0e0e14;
+    --o-bg-light: #24283b;
+    --o-fg: #a9b1d6;
+    --o-fg-dim: #565f89;
+    --o-fg-light: #b4bee6;
+    --o-fg-bright: #c0caf5;
+    --o-accent: #7aa2f7;
+    --o-selection: #292e42;
+    --o-red: #f7768e;
+    --o-yellow: #e0af68;
+    --o-orange: #eb927b;
+    --o-green: #9ece6a;
+    --o-cyan: #449dab;
+    --o-blue: #7aa2f7;
+    --o-magenta: #ad8ee6;
+}
+
+/* Vantablack (dark) */
+[data-theme="vantablack"] {
+    --o-mode: dark;
+    --o-bg: #000000;
+    --o-bg-dark: #090909;
+    --o-bg-darker: #070707;
+    --o-bg-light: #1a1a1a;
+    --o-fg: #ffffff;
+    --o-fg-dim: #505050;
+    --o-fg-light: #ececec;
+    --o-fg-bright: #ffffff;
+    --o-accent: #8d8d8d;
+    --o-selection: #1a1a1a;
+    --o-red: #a4a4a4;
+    --o-yellow: #cecece;
+    --o-orange: #b9b9b9;
+    --o-green: #b6b6b6;
+    --o-cyan: #b0b0b0;
+    --o-blue: #8d8d8d;
+    --o-magenta: #9b9b9b;
+}
+
+/* Catppuccin Latte (light) */
+[data-theme="catppuccin-latte"] {
+    --o-mode: light;
+    --o-bg: #eff1f5;
+    --o-bg-dark: #e3e4e8;
+    --o-bg-darker: #d7d8dc;
+    --o-bg-light: #dce0e8;
+    --o-fg: #4c4f69;
+    --o-fg-dim: #9ca0b0;
+    --o-fg-light: #5c5f77;
+    --o-fg-bright: #4c4f69;
+    --o-accent: #1e66f5;
+    --o-selection: #ccd0da;
+    --o-red: #d20f39;
+    --o-yellow: #df8e1d;
+    --o-orange: #d84e2b;
+    --o-green: #40a02b;
+    --o-cyan: #179299;
+    --o-blue: #1e66f5;
+    --o-magenta: #ea76cb;
+}
+
+/* Flexoki Light (light) */
+[data-theme="flexoki-light"] {
+    --o-mode: light;
+    --o-bg: #fffcf0;
+    --o-bg-dark: #f2efe4;
+    --o-bg-darker: #e5e2d8;
+    --o-bg-light: #e6e4d9;
+    --o-fg: #100f0f;
+    --o-fg-dim: #878580;
+    --o-fg-light: #403e3c;
+    --o-fg-bright: #100f0f;
+    --o-accent: #205ea6;
+    --o-selection: #cecdc3;
+    --o-red: #d14d41;
+    --o-yellow: #d0a215;
+    --o-orange: #d0772b;
+    --o-green: #879a39;
+    --o-cyan: #3aa99f;
+    --o-blue: #205ea6;
+    --o-magenta: #ce5d97;
+}
+
+/* Lupine (light) */
+[data-theme="lupine"] {
+    --o-mode: light;
+    --o-bg: #fafafa;
+    --o-bg-dark: #ececec;
+    --o-bg-darker: #dedede;
+    --o-bg-light: #f5f5f5;
+    --o-fg: #212121;
+    --o-fg-dim: #757575;
+    --o-fg-light: #424242;
+    --o-fg-bright: #000000;
+    --o-accent: #3264eb;
+    --o-selection: #d0d0d0;
+    --o-red: #c900c4;
+    --o-yellow: #026fde;
+    --o-orange: #026fde;
+    --o-green: #4a2fd0;
+    --o-cyan: #0c67de;
+    --o-blue: #3264eb;
+    --o-magenta: #8a4ad7;
+}
+
+/* Rosé Pine (light) */
+[data-theme="rose-pine"] {
+    --o-mode: light;
+    --o-bg: #faf4ed;
+    --o-bg-dark: #ede7e1;
+    --o-bg-darker: #e1dbd5;
+    --o-bg-light: #f2e9e1;
+    --o-fg: #575279;
+    --o-fg-dim: #9893a5;
+    --o-fg-light: #6e6a86;
+    --o-fg-bright: #575279;
+    --o-accent: #56949f;
+    --o-selection: #dfdad9;
+    --o-red: #b4637a;
+    --o-yellow: #ea9d34;
+    --o-orange: #cf8057;
+    --o-green: #286983;
+    --o-cyan: #d7827e;
+    --o-blue: #56949f;
+    --o-magenta: #907aa9;
+}
+
+/* White (light) */
+[data-theme="white"] {
+    --o-mode: light;
+    --o-bg: #ffffff;
+    --o-bg-dark: #f5f5f5;
+    --o-bg-darker: #e8e8e8;
+    --o-bg-light: #c0c0c0;
+    --o-fg: #000000;
+    --o-fg-dim: #c0c0c0;
+    --o-fg-light: #000000;
+    --o-fg-bright: #000000;
+    --o-accent: #6e6e6e;
+    --o-selection: #c0c0c0;
+    --o-red: #2a2a2a;
+    --o-yellow: #4a4a4a;
+    --o-orange: #4a4a4a;
+    --o-green: #3a3a3a;
+    --o-cyan: #3e3e3e;
+    --o-blue: #1a1a1a;
+    --o-magenta: #2e2e2e;
+}
+
+/*
+ * FOLLOW SYSTEM. The dark pair is the base value, so an unsupported browser still
+ * gets a usable theme; the media query then overrides it for a light preference.
+ *
+ * The ids are Catppuccin and Catppuccin Latte: the same palette in the two modes,
+ * so the OS preference chooses between two looks that were designed together.
+ *
+ * This is the same result the inline script in views/partials/theme.ejs produces,
+ * so a browser without scripting still gets the system's preference.
+ */
+@media (prefers-color-scheme: light) {
+    [data-theme="system"] {
+        --o-mode: light;
+        --o-bg: #eff1f5;
+        --o-bg-dark: #e3e4e8;
+        --o-bg-darker: #d7d8dc;
+        --o-bg-light: #dce0e8;
+        --o-fg: #4c4f69;
+        --o-fg-dim: #9ca0b0;
+        --o-fg-light: #5c5f77;
+        --o-fg-bright: #4c4f69;
+        --o-accent: #1e66f5;
+        --o-selection: #ccd0da;
+        --o-red: #d20f39;
+        --o-yellow: #df8e1d;
+        --o-orange: #d84e2b;
+        --o-green: #40a02b;
+        --o-cyan: #179299;
+        --o-blue: #1e66f5;
+        --o-magenta: #ea76cb;
+}
+}
+
+[data-theme="system"] {
+    --o-mode: dark;
+    --o-bg: #1e1e2e;
+    --o-bg-dark: #161622;
+    --o-bg-darker: #101019;
+    --o-bg-light: #313244;
+    --o-fg: #cdd6f4;
+    --o-fg-dim: #6c7086;
+    --o-fg-light: #bac2de;
+    --o-fg-bright: #cdd6f4;
+    --o-accent: #89b4fa;
+    --o-selection: #45475a;
+    --o-red: #f38ba8;
+    --o-yellow: #f9e2af;
+    --o-orange: #f6b6ab;
+    --o-green: #a6e3a1;
+    --o-cyan: #94e2d5;
+    --o-blue: #89b4fa;
+    --o-magenta: #f5c2e7;
+}
