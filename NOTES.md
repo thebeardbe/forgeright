@@ -401,7 +401,25 @@ and push again on green. That push gets reviewed in turn.
 A subagent goes **idle the moment it reports**. A report means it is finished and
 waiting to be told what to do next, not that it is continuing.
 
-This stalled twice in one session. The shape both times:
+This stalled **four times in one session**, and writing it down did not stop it,
+which is the point worth recording. The failure is not a knowledge gap: the note
+was accurate and the behaviour continued. It is that sending the next instruction
+has no trigger of its own — it is a separate step at the end of a turn that
+already feels finished.
+
+**So do not rely on remembering it. Make it structural:**
+
+After committing an agent's work, the next instruction goes in the SAME tool
+block as the commit, or in the very next one before anything else. Not after
+answering the user, and never in a later turn.
+
+If there is genuinely nothing to send, say so explicitly, in the message. A turn
+that ends "and now X is working" without an X-ward call in it is the bug.
+
+The 30-minute check is a backstop, not the mechanism. It has caught this only
+because the owner noticed first, three times out of four.
+
+The shape of the failure, every time:
 
 1. the agent reports a section
 2. the parent commits it and answers the user
