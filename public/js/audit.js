@@ -157,12 +157,26 @@
             appendMessage('ai', S.aiLabel, data.content);
             state.conversation.push({ role: 'assistant', content: data.content });
 
-            if (data.status === 'complete' && data.audit) {
-                state.audit = data.audit;
+            // THE PAYLOAD ARRIVES AS `audit`, NORMALISED BY THE SERVER, whatever
+            // shape the model used: an interview reply carries `processes` and the
+            // server wraps it, so the client does not have to know both shapes.
+            //
+            // It still falls back to `processes` directly, because a client that
+            // only understood one shape is how this defect happened one layer up:
+            // the parser demanded `audit` while the prompt had moved to
+            // `processes`. Reading both here means a future change to the
+            // server's normalisation cannot silently break the page.
+            const payload = data.audit
+                || (Array.isArray(data.processes) && data.processes.length > 0
+                    ? { workflows: data.processes, illustrative: data.illustrative, note: data.note }
+                    : null);
+
+            if (data.status === 'complete' && payload) {
+                state.audit = payload;
                 $('input-area').classList.add('hidden');
                 // Persist against the invitation, so a returning participant (and
                 // a reset link) finds this work rather than an empty form.
-                await saveResponse(data.audit);
+                await saveResponse(payload);
                 await runScoring();
             }
         } catch (err) {
