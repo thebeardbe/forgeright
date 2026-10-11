@@ -228,6 +228,26 @@ export function fieldsPresentIn(process) {
  * than in FIELD_SHAPES: the step table is small and fixed, and a step's `name` is
  * prose for the same reason a process's `task` is.
  */
+/**
+ * Whether a step's basis is a judgement rather than a rule.
+ *
+ * ONE DEFINITION OF "NEEDS REASONING", because two callers ask it for different
+ * figures: `judgementBandFor` below averages a SHARE of flagged steps within one
+ * workflow to set the complexity band, and the console counts the MERGED steps
+ * that need a person to show a reader the automation boundary. Those numbers are
+ * not the same number, but they are the same comparison, and a comparison written
+ * twice is a comparison that drifts. Both call this.
+ *
+ * A non-boolean is NOT a flag: an absent or malformed value says nothing rather
+ * than saying "false", because only `true` moves the boundary.
+ *
+ * @param {object} step
+ * @returns {boolean}
+ */
+export function stepNeedsReasoning(step) {
+    return Boolean(step) && step.needsReasoning === true;
+}
+
 export function stepIsComplete(step) {
     if (!step || typeof step !== 'object' || Array.isArray(step)) return false;
 
@@ -357,10 +377,12 @@ export function judgementBandFor(workflow) {
     const steps = workflow && Array.isArray(workflow.steps) ? workflow.steps : null;
     if (!steps || steps.length === 0) return 3;
 
+    // `flagged` has a KNOWN boolean, so a step whose flag is absent or malformed is
+    // not counted either way rather than being read as "no judgement needed".
     const flagged = steps.filter((step) => step && typeof step.needsReasoning === 'boolean');
     if (flagged.length === 0) return 3;
 
-    const reasoningSteps = flagged.filter((step) => step.needsReasoning === true).length;
+    const reasoningSteps = flagged.filter(stepNeedsReasoning).length;
     const share = reasoningSteps / flagged.length;
 
     // No reasoning steps -> 5. Every step -> 1. Rounded, so a five-step chain with

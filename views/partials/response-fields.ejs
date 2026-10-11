@@ -1,0 +1,69 @@
+<% /*
+    The participant's own fields, rendered once for both views.
+
+    SHARED SO THE TWO VIEWS CANNOT DRIFT: a field added here appears everywhere it
+    is shown, and the escaping rule is written once. Every value goes through &lt;%= */ %>,
+    which escapes: the text came from a participant or a model and must never be
+    inserted as markup.
+
+    Empty and absent are different, and shown differently: a field the participant
+    did not give is omitted rather than rendered blank, so a reader can tell "they
+    said nothing about this" from "they said nothing".
+%>
+<%
+    const FIELDS = [
+        { key: 'task', label: 'The work' },
+        { key: 'trigger', label: 'What starts it' },
+        { key: 'frequencyPerWeek', label: 'Times per week' },
+        { key: 'timePerPeriod', label: 'Time per period' },
+        { key: 'peopleAffected', label: 'People involved' },
+        { key: 'handoffTo', label: 'Handed to' },
+        { key: 'waitsFor', label: 'Waits for' },
+        { key: 'dependsOn', label: 'Depends on' },
+        { key: 'systems', label: 'Systems' },
+        { key: 'touchedDepartments', label: 'Departments' },
+        { key: 'mistakesPerPeriod', label: 'Mistakes' },
+        { key: 'mistakeConsequence', label: 'What a mistake costs' },
+        { key: 'currentState', label: 'How it is done today' },
+        { key: 'frustration', label: 'The worst part' }
+    ];
+
+    // A list renders as commas, a period as "6 hours per week", a number plainly.
+    // One formatter, so the same field reads the same way in both views.
+    function show(value) {
+        if (Array.isArray(value)) return value.join(', ');
+        if (value && typeof value === 'object' && value.hours !== undefined) {
+            return value.hours + ' hours per ' + (value.period || 'period');
+        }
+        return String(value);
+    }
+%>
+<% if (!data) { %>
+    <p class="empty">This answer has no stored fields.</p>
+<% } else { %>
+    <% FIELDS.filter(function (field) { return data[field.key] !== undefined && data[field.key] !== null; })
+             .forEach(function (field) { %>
+        <p class="words"><strong><%= field.label %>:</strong> <%= show(data[field.key]) %></p>
+    <% }); %>
+
+    <% /* The steps, with the reasoning flag marked: the flag IS the automation boundary,
+        so it is shown rather than left in the data. */ %>
+    <% /* OMITTED when the caller passes includeSteps false: the roadmap renders the
+        process's merged steps above, and showing them again under every answer would
+        repeat the same sequence once per participant. */ %>
+    <% if ((typeof includeSteps === 'undefined' || includeSteps) && Array.isArray(data.steps) && data.steps.length > 0) { %>
+        <h3>Steps</h3>
+        <% data.steps.forEach(function (step) { %>
+            <div class="step<%= step.needsReasoning ? ' reasoning' : '' %>">
+                <div class="step-name">
+                    <%= step.name || 'A step' %>
+                    <% if (step.needsReasoning) { %><span class="tag reasoning">needs reasoning</span><% } %>
+                </div>
+                <% if (step.whatHappens) { %><p class="step-what"><%= step.whatHappens %></p><% } %>
+                <% if (step.decidedHow) { %>
+                    <p class="step-basis"><span class="why">on what basis:</span> <%= step.decidedHow %></p>
+                <% } %>
+            </div>
+        <% }); %>
+    <% } %>
+<% } %>

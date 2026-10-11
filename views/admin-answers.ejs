@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Answers - forgeright</title>
+    <%- include('partials/theme-head', { pageStyles: ['console'] }) %>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1><%= organisation.name %></h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+            <form method="post" action="<%= basePath %>/admin/logout">
+                <button type="submit" class="secondary">Sign out</button>
+            </form>
+        </div>
+    </header>
+
+    <div class="views">
+        <a href="<%= basePath %>/admin" class="">Console</a>
+        <a href="<%= basePath %>/admin/answers" class="active">Every answer</a>
+        <a href="<%= basePath %>/admin/roadmap" class="">Roadmap</a>
+    </div>
+
+    <%- include('partials/console-notice', { subject: 'The answer' }) %>
+
+    <p class="intro">
+        Every answer, as the participant gave it. Open one to see which process it was
+        matched to and why, and the score that process carries. The paragraph is checked
+        against these words, not the other way round.
+    </p>
+
+    <% if (responses.length === 0) { %>
+        <div class="card"><p class="empty">No one has answered yet.</p></div>
+    <% } %>
+
+    <% /* A response is the subject here: "this answer was read wrong". */ %>
+    <% responses.forEach(function (response) { %>
+        <details class="item">
+            <summary>
+                <span class="summary-main">
+                    <strong><%= (response.data && response.data.task) || 'Untitled answer' %></strong>
+                    <div class="meta">
+                        <%= response.department %>
+                        &middot; answered <%= response.created_at %>
+                    </div>
+                </span>
+                <span class="summary-side">
+                    <% if (response.grouping) { %>
+                        <span class="tag<%= response.grouping.decidedBy === 'admin' ? ' departments' : '' %>">
+                            <%
+                                // The tag names whether a person asked for this grouping,
+                                // so an admin can see which results came from a rejudge.
+                            %><%= response.grouping.decidedBy === 'admin' ? 'regrouped' : 'grouped' %>
+                        </span>
+                    <% } else { %>
+                        <span class="tag">not yet read</span>
+                    <% } %>
+                </span>
+            </summary>
+
+            <div class="detail">
+                <h3>What the participant said</h3>
+                <% /* The participant's own words, which the paragraph is checked against. */ %>
+                <%- include('partials/response-fields', { data: response.data }) %>
+
+                <% if (response.grouping) { %>
+                    <h3>Read as this process</h3>
+                    <p class="who"><%= response.grouping.processName %></p>
+                    <p class="meta">
+                        <%= response.grouping.confidence %> confidence
+                        &middot; <%= response.grouping.decidedBy %>
+                        &middot; <%= response.grouping.decidedAt %>
+                        &middot; contributed: <%= response.grouping.contributed.join(', ') || 'not recorded' %>
+                    </p>
+
+                    <h3>Why it was matched there</h3>
+                    <% /* The model's reasoning, shown because the spec makes it the only way
+                        a grouping can be reviewed. Escaped like every other value. */ %>
+                    <p class="paragraph"><%= response.grouping.reasoning %></p>
+                <% } else { %>
+                    <p class="empty">This answer has not been identified into a process yet.</p>
+                <% } %>
+
+                <% if (response.transcript && response.transcript.length > 0) { %>
+                    <h3>The conversation it came from</h3>
+                    <% /* Stored so an answer can be read against its question: "eight minutes"
+                        means one thing asked about duration and another about the count. */ %>
+                    <% response.transcript.forEach(function (turn) { %>
+                        <p class="words"><strong><%= turn.role === 'assistant' ? 'Analyst' : 'Participant' %>:</strong> <%= turn.content %></p>
+                    <% }); %>
+                <% } %>
+
+                <% /* A rejudge is a request with a reason, never a category to pick. */ %>
+                <form class="rejudge" method="post" action="<%= basePath %>/admin/answers/<%= response.id %>/rejudge">
+                    <label for="reason-<%= response.id %>">This answer was read wrong</label>
+                    <textarea id="reason-<%= response.id %>" name="reason" required
+                              placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, and is free to disagree."></textarea>
+                    <button type="submit" class="secondary">Rejudge this answer</button>
+                </form>
+            </div>
+        </details>
+    <% }); %>
+</div>
+</body>
+</html>

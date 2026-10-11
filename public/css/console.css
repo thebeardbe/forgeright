@@ -1,0 +1,157 @@
+/*
+ * The console views: answers and the roadmap.
+ *
+ * SPLIT FROM app.css so both files stay readable. app.css carries the roles and
+ * the components every page shares; this carries the two views of the workflow
+ * output, which appear together and nowhere else.
+ *
+ * It names no palette colour, only the semantic roles from app.css, so it reads
+ * the same in all 22 themes.
+ */
+
+/* ─── The console views ───────────────────────────────────────────────────────
+ *
+ * The two views the spec calls for. They use the semantic roles above, so they
+ * read correctly in all 22 palettes and no rule here names a theme colour.
+ */
+
+/* A response or a process that opens to its detail. <details> rather than a
+   script: it expands without JavaScript, it is keyboard accessible, and the
+   content is present for a page search even while collapsed. */
+.item {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    margin-bottom: 12px;
+}
+
+.item > summary {
+    padding: 14px 16px;
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    flex-wrap: wrap;
+}
+
+.item > summary::-webkit-details-marker { display: none; }
+.item > summary::after {
+    content: '+';
+    font-weight: 700;
+    color: var(--muted);
+    flex: 0 0 auto;
+}
+.item[open] > summary::after { content: '−'; }
+.item > summary:hover { background: var(--hover); border-radius: var(--radius); }
+
+.item .summary-main { flex: 1 1 60%; min-width: 0; }
+.item .summary-side { flex: 0 0 auto; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* The body of an expanded item. */
+.detail { padding: 0 16px 16px; border-top: 1px solid var(--line); margin-top: -1px; }
+.detail h3 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin: 18px 0 8px;
+}
+.detail h3:first-child { margin-top: 14px; }
+
+/* The score, which is the headline the roadmap is sorted by. */
+.weight { font-size: 1.6rem; font-weight: 700; line-height: 1; color: var(--ink-bright); }
+.weight-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+
+/* The paragraph explaining a score, set apart from the raw fields because it is
+   the model's reading rather than the participant's words. */
+.paragraph {
+    background: var(--sunken);
+    border-left: 3px solid var(--accent);
+    padding: 12px 14px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+/* The participant's own words, which the paragraph is checked against. */
+.words {
+    background: var(--raised);
+    border-radius: var(--radius-sm);
+    padding: 12px 14px;
+    margin: 0 0 10px;
+    white-space: pre-wrap;
+    font-size: 0.88rem;
+}
+
+/* The ten terms. A definition list rather than a table, so a phone can wrap it. */
+.terms { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; }
+.term { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; padding: 6px 9px; background: var(--raised); border-radius: 6px; }
+.term dt { color: var(--muted); }
+.term dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* A cost term reads high-is-worse, which a reader must not have to remember. */
+.term.cost dd { color: var(--o-orange); }
+
+/* A step, with its reasoning flag marked. The flag is the automation boundary,
+   so it is marked rather than implied. */
+.step { border-left: 3px solid var(--line); padding: 6px 0 6px 12px; margin: 0 0 10px; }
+.step.reasoning { border-left-color: var(--o-orange); }
+.step-name { font-weight: 600; font-size: 0.88rem; }
+.step-what { color: var(--muted); font-size: 0.84rem; margin: 2px 0 0; }
+.step-basis { font-size: 0.84rem; margin: 4px 0 0; }
+.step-basis .why { color: var(--muted); }
+
+/* A marker for the terms that count against a process. */
+.tag {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 99px;
+    background: var(--idle-bg);
+    color: var(--idle-ink);
+}
+.tag.reasoning { background: var(--warn-bg); color: var(--warn-ink); }
+.tag.departments { background: var(--notice-bg); color: var(--notice-ink); }
+
+/* A rejudge is a reasoned request, never a category to pick. */
+.rejudge { margin-top: 14px; }
+.rejudge textarea {
+    width: 100%;
+    min-height: 70px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    color: var(--ink);
+    background: var(--raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    resize: vertical;
+}
+.rejudge label { margin-bottom: 6px; }
+
+/* The version history: earlier groupings and earlier scores, kept readable. */
+.history { font-size: 0.84rem; }
+.history .revision { border-left: 3px solid var(--line); padding: 4px 0 4px 12px; margin-bottom: 8px; }
+.history .revision.current { border-left-color: var(--accent); }
+.history .when { color: var(--muted); font-size: 0.78rem; }
+
+/* The view switcher, which is two links rather than tabs with script. */
+.views { display: flex; gap: 8px; margin: 4px 0 18px; flex-wrap: wrap; }
+.views a {
+    padding: 7px 13px;
+    border: 1px solid var(--line);
+    border-radius: 99px;
+    font-size: 0.85rem;
+    text-decoration: none;
+    color: var(--ink);
+    background: var(--card);
+}
+.views a.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
+
+/* A department with its count, from the merged responses. */
+.depts { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
+.depts li { font-size: 0.8rem; padding: 3px 9px; background: var(--raised); border-radius: 99px; }

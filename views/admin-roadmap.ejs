@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Roadmap - forgeright</title>
+    <%- include('partials/theme-head', { pageStyles: ['console'] }) %>
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1><%= organisation.name %></h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+            <form method="post" action="<%= basePath %>/admin/logout">
+                <button type="submit" class="secondary">Sign out</button>
+            </form>
+        </div>
+    </header>
+
+    <div class="views">
+        <a href="<%= basePath %>/admin">Console</a>
+        <a href="<%= basePath %>/admin/answers">Every answer</a>
+        <a href="<%= basePath %>/admin/roadmap" class="active">Roadmap</a>
+    </div>
+
+    <%- include('partials/console-notice', { subject: 'The process' }) %>
+
+    <p class="intro">
+        Every process, highest score first, because early results compound. Open one to
+        see its steps with the reasoning marked, the paragraph explaining the score, and
+        the answers behind it. A process that was grouped badly sits lower down, and can
+        be rejudged where you find it.
+    </p>
+
+    <% if (processes.length === 0) { %>
+        <div class="card"><p class="empty">No processes have been identified yet.</p></div>
+    <% } %>
+
+    <% processes.forEach(function (process) { %>
+        <%
+            // THE MERGING AND THE COUNTING LIVE IN A MODULE, not here.
+            // `mergeProcessSteps` is pure and unit-tested, which the inline version
+            // could never be: a rule about where a person stays in the loop was
+            // reachable only by rendering a page and reading it. The view renders
+            // what it returns and decides nothing.
+            const responses = (process.grouping && process.grouping.responses) || [];
+            const merged = mergeProcessSteps(responses);
+            const steps = merged.steps;
+            const describedBy = merged.describedBy;
+            const reasoningSteps = merged.reasoningSteps;
+        %>
+        <details class="item">
+            <summary>
+                <span class="summary-main">
+                    <strong><%= process.name %></strong>
+                    <div class="meta">
+                        described by <%= responses.length %> <%= responses.length === 1 ? 'person' : 'people' %>
+                        <% if (describedBy.length > 0) { %>
+                            &middot; <%= describedBy.map(function (pair) { return pair[0] + ' ' + pair[1]; }).join(', ') %>
+                        <% } %>
+                        <% if (reasoningSteps > 0) { %>
+                            &middot; <span class="tag reasoning"><%= reasoningSteps %> <%= reasoningSteps === 1 ? 'step needs' : 'steps need' %> a person</span>
+                        <% } else if (steps.length > 0) { %>
+                            &middot; <span class="tag">no step needs a person</span>
+                        <% } %>
+                    </div>
+                </span>
+                <span class="summary-side">
+                    <% if (process.score) { %>
+                        <div class="weight"><%= process.score.value %></div>
+                        <div class="weight-label">weight</div>
+                    <% } else { %>
+                        <span class="tag">not weighed</span>
+                    <% } %>
+                </span>
+            </summary>
+
+            <div class="detail">
+                <h3>The steps, in order</h3>
+                <% if (steps.length === 0) { %>
+                    <p class="empty">No steps were recorded for this process.</p>
+                <% } %>
+                <% steps.forEach(function (step) { %>
+                    <div class="step<%= step.needsReasoning ? ' reasoning' : '' %>">
+                        <div class="step-name">
+                            <%= step.name || 'A step' %>
+                            <% if (step.needsReasoning) { %><span class="tag reasoning">needs reasoning</span><% } %>
+                        </div>
+                        <% if (step.whatHappens) { %><p class="step-what"><%= step.whatHappens %></p><% } %>
+                        <% if (step.decidedHow) { %>
+                            <p class="step-basis"><span class="why">on what basis:</span> <%= step.decidedHow %></p>
+                        <% } %>
+                    </div>
+                <% }); %>
+
+                <h3>Departments, and how many described it</h3>
+                <ul class="depts">
+                    <% describedBy.forEach(function (pair) { %>
+                        <li><%= pair[0] %> <%= pair[1] %></li>
+                    <% }); %>
+                </ul>
+                <p class="meta">
+                    This counts the people who described the process, not the teams the work
+                    crosses. Response rate is a fact about the invitations, and lives on the
+                    console page.
+                </p>
+
+                <% if (process.score) { %>
+                    <h3>Why it got this weight</h3>
+                    <p class="paragraph"><%= process.score.reasoning %></p>
+
+                    <h3>The terms behind it</h3>
+                    <% /* Cost terms are marked, because a reader must not have to remember
+                        which way each one points: high is worse for four of the ten. */ %>
+                    <dl class="terms">
+                        <% Object.entries(process.score.terms).forEach(function (pair) { %>
+                            <div class="term<%= isCostTerm(pair[0]) ? ' cost' : '' %>">
+                                <dt><%= pair[0] %><%= isCostTerm(pair[0]) ? ' (high is worse)' : '' %></dt>
+                                <dd><%= pair[1] %></dd>
+                            </div>
+                        <% }); %>
+                    </dl>
+                <% } else { %>
+                    <h3>Why it has no weight</h3>
+                    <p class="empty">This process has not been weighed, so it has no number. It sorts last rather than disappearing.</p>
+                <% } %>
+
+                <h3>Read together because</h3>
+                <% if (process.grouping) { %>
+                    <p class="paragraph"><%= process.grouping.reasoning %></p>
+                    <p class="meta">
+                        <%= process.grouping.confidence %> confidence
+                        &middot; <%= process.grouping.decidedBy %>
+                        &middot; <%= process.grouping.decided_at %>
+                    </p>
+                <% } else { %>
+                    <p class="empty">This process has no current grouping.</p>
+                <% } %>
+
+                <h3>The answers behind it</h3>
+                <% if (responses.length === 0) { %>
+                    <p class="empty">No answers are linked to this process.</p>
+                <% } %>
+                <% responses.forEach(function (response) { %>
+                    <p class="meta">
+                        <%= response.department %>
+                        &middot; contributed: <%= (response.contributed || []).join(', ') || 'not recorded' %>
+                    </p>
+                    <%- include('partials/response-fields', { data: response.data, includeSteps: false }) %>
+                <% }); %>
+
+                <h3>Earlier versions</h3>
+                <div class="history">
+                    <%# REVISIONS, NOT ONLY THE CURRENT ONE. A rejudge groups again, which
+                        makes a new revision and restarts the weighing count at 1, so
+                        "weighing 1" appears twice over the life of a process. The
+                        grouping revision is shown beside it for that reason: it is what
+                        tells the earlier score from the new one. %>
+                    <% (process.scoreHistory || []).forEach(function (score, index) { %>
+                        <%
+                            // Only the newest reading of the CURRENT grouping is the
+                            // number at the top of this page. Everything else is history,
+                            // including a score on an older revision.
+                            const isCurrentScore = index === 0
+                                && process.score
+                                && score.score === process.score.value
+                                && score.created_at === process.score.weighed_at;
+                        %>
+                        <div class="revision<%= isCurrentScore ? ' current' : '' %>">
+                            <strong>weighing <%= score.revision_no %></strong>
+                            of grouping <%= score.grouping_revision %>
+                            <%= isCurrentScore ? '(current)' : '(earlier)' %>
+                            <span class="when"><%= score.created_at %></span>
+                            <p class="meta">scored <%= score.score %></p>
+                            <p class="meta"><%= score.reasoning %></p>
+                        </div>
+                    <% }); %>
+                    <% if (!process.scoreHistory || process.scoreHistory.length === 0) { %>
+                        <p class="empty">This process has never been weighed.</p>
+                    <% } %>
+                </div>
+
+                <% /* The second entry point. The same mechanism as the one on an answer. */ %>
+                <form class="rejudge" method="post" action="<%= basePath %>/admin/roadmap/<%= process.id %>/rejudge">
+                    <label for="reason-<%= process.id %>">This flow is wrong</label>
+                    <textarea id="reason-<%= process.id %>" name="reason" required
+                              placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, then weighs the result again."></textarea>
+                    <button type="submit" class="secondary">Rejudge this process</button>
+                </form>
+            </div>
+        </details>
+    <% }); %>
+</div>
+</body>
+</html>

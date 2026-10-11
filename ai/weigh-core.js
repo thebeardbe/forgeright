@@ -26,6 +26,7 @@ import { generateText } from './provider.js';
 import { sanitizeInput, checkPromptInjection } from './security.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
+import { mergeProcessSteps } from './merge-steps.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
@@ -154,17 +155,35 @@ function mergeParticipants(responses) {
     return merged;
 }
 
-/** The steps across every response, in the order each participant gave them. */
+/**
+ * The steps across every response, MERGED BY NAME into one sequence.
+ *
+ * THIS USED TO CONCATENATE, AND THAT CHANGED SCORES. Every participant describing
+ * the same work lists the same steps, so concatenating sent the model each step
+ * once per participant: on the fixture's two accounts of invoice processing, NINE
+ * step entries for FIVE distinct steps. The prompt asks the model to return
+ * `reasoningSteps` - how many steps need a person - and that term is a COST, so a
+ * model shown nine steps where five exist counts nine, and the process scores
+ * lower than its own description supports. The inflation grew with the number of
+ * people who described the process, which is backwards: more agreement made the
+ * work look worse.
+ *
+ * THE SAME MERGE THE ROADMAP DISPLAYS, from `ai/merge-steps.js`, so the list the
+ * model weighs and the list a reader sees are one list rather than two
+ * derivations of it. It also settles the flags the same way, taking `true` when
+ * two accounts disagree, because the automation boundary is where a person is
+ * still needed.
+ *
+ * NOTHING IS DROPPED. A step only one participant mentioned survives: the fixture
+ * carries the case deliberately ("Query a mismatch" exists in one account only),
+ * and it is a real step somebody does. Merging by name collapses duplicates, it
+ * does not intersect.
+ *
+ * @param {Array<object>} responses
+ * @returns {Array<object>} Steps in first-seen order, one entry per distinct name.
+ */
 function collectSteps(responses) {
-    const steps = [];
-
-    for (const response of responses) {
-        for (const step of response.data?.steps ?? []) {
-            if (step && typeof step === 'object') steps.push(step);
-        }
-    }
-
-    return steps;
+    return mergeProcessSteps(responses).steps;
 }
 
 /** Distinct values, compared by their JSON form so objects and arrays work. */

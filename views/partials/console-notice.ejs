@@ -1,0 +1,30 @@
+<%
+    // The outcome of a rejudge, read from the redirect's query string.
+    //
+    // SHOWN RATHER THAN ONLY LOGGED because the outcome is not always success: a
+    // regrouping can be recorded while the new weighing fails, and an admin who is
+    // not told would see an unchanged number and assume the tool ignored them.
+    //
+    // Every value below is escaped by the template engine, so a model's own words
+    // in a note cannot become markup, and a thrown error's message is inert.
+%>
+<% if (typeof notice !== 'undefined' && notice) { %>
+    <% if (notice.error) { %>
+        <div class="problem"><%= notice.error %></div>
+    <% } %>
+    <% if (notice.rejudged) { %>
+        <%# THE SUBJECT COMES FROM THE VIEW. "The answer was regrouped" is wrong on the
+            roadmap, where the admin rejudged a process, and the same mechanism serving
+            two places must not describe itself in the language of one of them. %>
+        <div class="notice">
+            <%= subject %> was <%= notice.rejudged %>.
+            <% if (notice.weighed) { %>
+                A new score was produced.
+            <% } else if (notice.note) { %>
+                <%= notice.note %>
+            <% } %>
+        </div>
+    <% } else if (notice.note) { %>
+        <div class="notice"><%= notice.note %></div>
+    <% } %>
+<% } %>
