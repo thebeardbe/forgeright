@@ -303,6 +303,28 @@ CREATE INDEX IF NOT EXISTS idx_process_score_revision ON process_score(revision_
 -- AN EXISTING FILE MAY ALREADY HOLD A DUPLICATE, and creating this index would then
 -- fail on open. That is the honest outcome for a file whose numbering was already
 -- broken by the race above: the alternative is to keep writing rows nobody can order.
+--
+-- WHAT IS COVERED, AND WHAT IS NOT, so the remaining gap is a decision rather than an
+-- omission. Two separate things keep numbering unique, and they are covered
+-- differently:
+--
+--   - the DERIVATION (`insertScore` computing the number inside its transaction
+--     rather than the caller computing it outside) IS covered by
+--     `test/score-numbering.test.js`, and so is THIS INDEX: removing either fails the
+--     suite;
+--   - the CONCURRENCY is not covered, and cannot be by these tests. A single-process
+--     test cannot stage the race, because `node:sqlite` is synchronous on the calling
+--     thread, so two writers in one process cannot interleave. The race needs two OS
+--     processes or a worker thread holding the write lock, which is why this is a
+--     stated gap rather than a test somebody forgot. The project has the shape for
+--     it: the NOTES.md section "The write-contention test trap" documents
+--     `test/helpers/hold-write-lock.mjs` and the two ways such a test can pass for the
+--     wrong reason. Use that rather than a third version.
+--
+-- So TODAY the numbering logic and the constraint are both pinned, and what is
+-- unpinned is only the case that needs two writers at once. The index is what makes
+-- that case loud if it ever happens again, rather than a pair of rows nobody can
+-- order.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_process_score_number
     ON process_score(revision_id, revision_no);
 -- At most ONE current score per revision, so the database refuses a second rather

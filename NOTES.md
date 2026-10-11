@@ -224,7 +224,7 @@ The measured rate, at each output cap, reproduced:
 | cap | replies returned | parsed |
 |---|---|---|
 | 2048 | 162, 1348, 163 characters | 1 of 3 |
-| 4096 | 505, 1320, 481 | 1 of 4 |
+| 4096 | 505, 1320, 481 | 1 of 3 |
 | 8192 | 1139, 1101, 1243 | 3 of 3 |
 
 **A failed reply is SHORTER than a good one.** That is the measurement that rules out
