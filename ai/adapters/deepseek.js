@@ -4,6 +4,29 @@
  * DeepSeek exposes an OpenAI-compatible /chat/completions endpoint. It gets its
  * own adapter rather than sharing the OpenAI one so the endpoint, JSON-mode
  * handling and error mapping are explicit and can be tested in isolation.
+ *
+ * JSON MODE IS NOT SENT TO DEEPSEEK, and that is a measured decision rather than
+ * caution. With `response_format: {type:"json_object"}` the API returns 11 to 16
+ * SPACES with `finish_reason: "stop"` and HTTP 200, once a conversation has more
+ * than about two exchanges, and only in plain mode is the reply stable:
+ *
+ *   JSON mode, real 7-message conversation:   0/6 non-blank
+ *   plain mode, same conversation:            6/6 non-blank
+ *   JSON mode by turns:  2->4/4  3->3/4  4->3/4  5->3/4  6->1/4
+ *   plain mode by turns: 2->4/4  5->4/4       (stable)
+ *
+ * It is DeepSeek-specific: Gemini on the same conversation returned 4/4, so the
+ * flag stays on there. The full measurements, and every explanation that was
+ * tested and falsified (token length, turn count, truncation, rate limiting,
+ * the model name), are in NOTES-deepseek-json-mode.md.
+ *
+ * The consequence is that this provider's replies arrive as PROSE with the JSON
+ * inside them, so the response is parsed by ai/json-extract.js rather than
+ * handed to JSON.parse. The prompt still demands JSON and nothing outside it; the
+ * extractor is what makes a fence or a stray sentence survivable.
+ *
+ * The flag is `sendJsonMode` in config/ai-config.json, so this behaviour is a
+ * config change per provider rather than a switch in code.
  */
 export async function generate({ model, messages, systemInstruction, temperature, maxTokens, responseMimeType, providerConfig }) {
     const apiKey = process.env[providerConfig.apiKeyEnv];
@@ -25,9 +48,25 @@ export async function generate({ model, messages, systemInstruction, temperature
         max_tokens: maxTokens ?? 4096
     };
 
-    // DeepSeek supports OpenAI-style JSON mode. Ask for it when JSON is required.
-    if (responseMimeType === 'application/json') {
+    // JSON mode is asked for ONLY when the provider's config says it works.
+    //
+    // The default is true, so a new provider gets the stronger contract until it
+    // is measured otherwise. DeepSeek is set false, for the reason in the header:
+    // its JSON mode returns whitespace, silently, with a 200 and a stopped
+    // finish reason, which is the worst kind of failure because it looks like a
+    // successful empty reply rather than an error.
+    const wantsJson = responseMimeType === 'application/json';
+    const jsonModeWorks = providerConfig?.sendJsonMode !== false;
+
+    if (wantsJson && jsonModeWorks) {
         body.response_format = { type: 'json_object' };
+    } else if (wantsJson) {
+        // Said once per request, because a silent difference between providers is
+        // what made this hard to find in the first place.
+        console.info(
+            `[deepseek] JSON is required but this provider's JSON mode is disabled ` +
+            `(sendJsonMode: false in ai-config.json); asking in plain mode and extracting the JSON`
+        );
     }
 
     const response = await fetch(url, {

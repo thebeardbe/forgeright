@@ -93,6 +93,25 @@ CREATE TABLE IF NOT EXISTS response (
     -- questionnaire spec and lib/scoring.js, not in this schema. It is stored
     -- as a blob so a new question does not need a migration per organisation.
     data          TEXT NOT NULL,
+    -- JSON: THE WHOLE CONVERSATION, in order, as [{role, content}, ...].
+    --
+    -- WHY IT IS STORED AT ALL. An answer is only meaningful against its question:
+    -- "eight minutes" means one thing asked about duration and another asked
+    -- about the invoice count. Keeping the extracted fields alone gives text with
+    -- no referent, so a non-answer cannot be told from a good one, and the
+    -- QUESTIONS -- where the interview's quality actually lives -- are lost with
+    -- the browser tab.
+    --
+    -- NULLABLE because a row can predate this column, or be written by a caller
+    -- that has no transcript to give. A response with no transcript is still a
+    -- valid response; it is the transcript that is missing, and the two are
+    -- different states.
+    --
+    -- A BLOB, NOT A TABLE PER MESSAGE. A long interview is about twenty turns, so
+    -- the whole transcript is a few kilobytes and there is nothing to query about
+    -- an individual turn. Twenty rows per response would buy nothing and cost a
+    -- join on every read.
+    transcript    TEXT,
     created_at    TEXT NOT NULL,
     updated_at    TEXT NOT NULL,
     -- Set when this round is finalised. Rounds are independent: a second round
@@ -103,9 +122,18 @@ CREATE TABLE IF NOT EXISTS response (
 CREATE INDEX IF NOT EXISTS idx_response_invitation ON response(invitation_id);
 
 -- Schema bookkeeping for this file.
+--
+-- VERSION 4 ADDS `transcript` TO `response`, AND THERE IS NO MIGRATION PATH.
+--
+-- That is deliberate and wanted. This is the proof of concept: V2 is a rewrite on
+-- a different database, so carrying an upgrade path here would be work spent on a
+-- schema with no future. The version check exists to REFUSE a file this code does
+-- not understand -- reading version 3 with version 4 queries would answer the
+-- wrong question quietly -- not to upgrade one. An older file is a loud error,
+-- and someone who wants the data should export it before deleting the file.
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '3');
+INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '4');

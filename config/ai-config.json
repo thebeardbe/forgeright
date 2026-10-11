@@ -1,5 +1,6 @@
 {
   "defaultProvider": "mock",
+  "_note_jsonMode": "`sendJsonMode` is PER PROVIDER and defaults to true. It is set false for DeepSeek because its JSON mode returns 11-16 spaces with finish_reason 'stop' and HTTP 200 as a conversation grows, so that provider is asked in plain mode and its replies are parsed out of prose. Measurements and every explanation that was falsified are in NOTES-deepseek-json-mode.md. Gemini's JSON mode was checked on the same conversation and is fine, so it keeps it.",
   "providers": {
     "mock": {
       "active": true,
@@ -13,7 +14,8 @@
       "baseUrl": "https://generativelanguage.googleapis.com",
       "apiVersion": "v1beta",
       "defaultModel": "gemini-2.5-flash",
-      "fallbackModels": ["gemini-3.1-flash-lite-preview"]
+      "fallbackModels": ["gemini-3.1-flash-lite-preview"],
+      "sendJsonMode": true
     },
     "deepseek": {
       "active": true,
@@ -22,7 +24,8 @@
       "baseUrl": "https://api.deepseek.com",
       "apiVersion": "v1",
       "defaultModel": "deepseek-chat",
-      "fallbackModels": []
+      "fallbackModels": [],
+      "sendJsonMode": false
     }
   }
 }

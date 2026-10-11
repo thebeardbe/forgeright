@@ -61,10 +61,64 @@ change.
 | :--- | :--- |
 | `mock` | Canned questions, then a structured audit from a fixture. Default. |
 | `gemini` | Needs `GEMINI_API_KEY`. |
-| `deepseek` | Needs `DEEPSEEK_API_KEY`. OpenAI-compatible endpoint. |
+| `deepseek` | Needs `DEEPSEEK_API_KEY`. OpenAI-compatible endpoint, **asked in plain mode**: its JSON mode silently returns whitespace as a conversation grows. See below. |
 
 A missing key warns at startup and fails at request time, rather than silently
 falling back to something else.
+
+### DeepSeek is not asked for JSON mode
+
+`response_format: {type:"json_object"}` returns **11 to 16 spaces** with
+`finish_reason: "stop"` and HTTP 200, once a conversation has more than about two
+exchanges. Not an error, so it looked like a model that had nothing to say.
+
+```
+JSON mode, real 7-message conversation:   0/6 non-blank
+plain mode, same conversation:            6/6 non-blank
+Gemini, same conversation, JSON mode:     4/4 non-blank   (unaffected)
+```
+
+So DeepSeek is asked in plain mode (`sendJsonMode: false` in
+`config/ai-config.json`, a per-provider setting) and its replies are parsed out of
+prose by `ai/json-extract.js`, which handles a fenced block, surrounding
+sentences, and a brace inside a string.
+
+Reproduced on this machine when the workaround was written: with JSON mode forced
+back on, one of three calls came back blank; with it off, all three returned JSON.
+The measurements, and every explanation that was tested and falsified (token
+length, turn count, truncation, rate limiting, the model name), are in
+`NOTES-deepseek-json-mode.md`.
+
+**Dropping JSON mode traded one failure for another, and that is fixed too.**
+Without `response_format`, DeepSeek answers as bare prose at conversation length:
+
+```
+DeepSeek, no help:  "What starts one of these off?"           0/5 usable
+```
+
+It does not honour the prompt's "one JSON object, nothing outside it" however that
+is worded or placed. The fix is a synthetic **trailing assistant turn** in
+`runAuditTurn`, which ends the conversation with the assistant's own commitment to
+the format, so the model continues in that form:
+
+```
+without:  4 turns 0/4   6 turns 0/4
+with:     3 turns 4/4   4 turns 4/4   6 turns 4/4   10 turns 4/4   15 turns 4/4
+```
+
+**It is added for every provider**, because a provider-specific branch is exactly
+the kind of exception that hid this behaviour in the first place, and it costs
+nothing where it is not needed.
+
+**A contradiction worth recording:** the builder measured Gemini returning prose
+without the turn; three separate tests here could not reproduce that, including
+one through Gemini's own adapter with JSON mode on, which returned usable JSON
+5/5. Both sets of measurements are real, and they disagree. It does not change the
+outcome — Gemini works either way, and the turn is harmless there — but the
+Gemini-needs-it claim should not be trusted until someone reproduces it.
+
+The turn is added only when the last message is a participant turn, and it is
+never stored, so it cannot appear in the transcript.
 
 ## How scoring works
 
@@ -178,6 +232,21 @@ The accepted limit: **a person with direct access to the database file can join
 the two tables and see who said what.** That is a deliberate decision, not an
 oversight. The honest phrasing is *"the admin console does not show who said
 what"*, never *"answers are anonymous"*.
+
+**The stored transcript makes that limit wider, and this is accepted too.** Each
+response keeps the whole conversation, not just the extracted fields, because an
+answer is only meaningful against its question and the questions are where the
+interview's quality lives. The transcript holds **whatever the participant
+typed**, and free text can contain a name, an employer or a customer even though
+the prompt tells the model not to ask for personal data and the guardrails screen
+injection. Nothing in this system prevents a participant volunteering one.
+
+That does not change the property above: the console still cannot join an answer
+to a person, and the transcript is not shown anywhere in the admin view. What
+changed is that the raw text now exists in the database file, so "do not read the
+file if you should not know who said what" is load-bearing rather than a
+formality. Exporting or sharing an organisation's file now shares the
+conversations too.
 
 ### Editable until closed
 

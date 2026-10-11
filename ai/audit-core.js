@@ -22,6 +22,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
 import { sanitizeInput, checkPromptInjection } from './security.js';
+import { extractJsonObject } from './json-extract.js';
+import { withFormatCommitment } from './format-commitment.js';
 import { ALL_PROCESS_FIELD_NAMES, reconcileMatrix } from './matrix.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -83,7 +85,7 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
     }
 
     const raw = await generateText({
-        messages: safeMessages,
+        messages: withFormatCommitment(safeMessages),
         systemInstruction: systemPrompt,
         temperature: 0.3,
         maxTokens: 4096,
@@ -93,6 +95,7 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
 
     return parseModelResponse(raw);
 }
+
 
 /** Pluralises a count for an error message the operator reads. */
 function countReason(count, singular, plural) {
@@ -189,15 +192,36 @@ export function validateWorkflows(workflows) {
  * than a dropped field).
  */
 export function parseModelResponse(raw) {
-    let parsed;
-    try {
-        parsed = JSON.parse(raw);
-    } catch {
-        console.error('[audit] model returned invalid JSON:', String(raw).slice(0, 200));
-        return { status: 'error', content: 'The analysis service returned an unreadable response. Please try again.' };
+    // PARSED OUT OF PROSE, not handed to JSON.parse.
+    //
+    // DeepSeek's JSON mode returns whitespace as a conversation grows, so that
+    // provider is asked in plain mode and its replies arrive with the object
+    // somewhere inside them, often in a ```json fence. The prompt still demands
+    // JSON and nothing outside it; the extractor is what makes a fence or a stray
+    // sentence survivable rather than fatal. See ai/json-extract.js and
+    // NOTES-deepseek-json-mode.md.
+    //
+    // A reply with NO object is reported as unreadable rather than parsed into a
+    // fragment, so a silently empty model response surfaces as a clear error
+    // instead of a downstream field access that fails for no visible reason.
+    const parsed = extractJsonObject(raw);
+    if (parsed === null) {
+        // WHAT CAME BACK IS LOGGED, not just that it was unreadable. The message
+        // alone ("returned an unreadable response") sent an earlier investigation
+        // back to the live API to find out what the model had actually said, when
+        // the answer was a bare prose question. Truncated at 120 characters: enough
+        // to see the shape, short enough not to dump a whole reply into the log.
+        console.error(
+            `[audit] no JSON object in the model reply (${String(raw).length} chars): ` +
+            (String(raw).trim() === '' ? '(blank reply)' : JSON.stringify(String(raw).slice(0, 120)))
+        );
+        return {
+            status: 'error',
+            content: 'The analysis service returned an unreadable response. Please try again.'
+        };
     }
 
-    if (!parsed || typeof parsed !== 'object' || !parsed.status) {
+    if (!parsed.status) {
         console.error('[audit] model response had no status field');
         return { status: 'error', content: 'The analysis service returned an unexpected response. Please try again.' };
     }

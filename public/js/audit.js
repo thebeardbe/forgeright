@@ -197,6 +197,23 @@
      * participant has their analysis on screen, and an error box would suggest
      * their answers were lost when they were not.
      */
+    /**
+     * Stores the completed answers, WITH the conversation that produced them.
+     *
+     * THE TRANSCRIPT GOES WITH THE PAYLOAD because the raw data has to exist. An
+     * answer is only meaningful against its question: "eight minutes" means one
+     * thing asked about duration and another asked about the invoice count, so
+     * storing the extracted fields alone gives text with no referent, and the
+     * questions -- where the interview's quality lives -- are lost with the tab.
+     *
+     * The conversation is already here in `state.conversation`, so this passes
+     * what exists rather than building anything new.
+     *
+     * Only when the page was reached from an invitation link, since that is what
+     * identifies the participant. A failure is logged rather than shown: the
+     * participant has their analysis on screen, and an error box would suggest
+     * their answers were lost when they were not.
+     */
     async function saveResponse(audit) {
         if (!hasToken) return;
         try {
@@ -205,7 +222,13 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     token: TOKEN,
-                    data: audit
+                    data: audit,
+                    // Role and content for every turn, in order. The store keeps it
+                    // as one JSON column rather than a row per message.
+                    transcript: state.conversation.map((turn) => ({
+                        role: turn.role,
+                        content: turn.content
+                    }))
                 })
             });
             if (!res.ok) {
