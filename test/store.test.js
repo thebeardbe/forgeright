@@ -103,9 +103,11 @@ test('a token from one organisation cannot write into another', () => {
 
     // The token belongs to B; writing it against A must be refused, not silently
     // attached to A.
+    // The message is client-facing copy and must not be pinned verbatim; the
+    // property is that the write is refused and nothing lands in A.
     assert.throws(
         () => store.addResponse(a.id, invB.token, { department: 'Finance', data: { x: 1 } }),
-        /token matches no invitation/
+        /resolves to no invitation/
     );
     assert.deepEqual(store.getResponsesForAnalysis(a.id), [], 'nothing may have been written to A');
 });
@@ -163,10 +165,11 @@ test('an update naming one organisation cannot touch a response id from another'
     );
     assert.deepEqual(store.getResponsesByToken(a.id, invA.token)[0].data, { owner: 'A' });
 
-    // A's token, editing B's response id.
+    // A's token, editing B's response id. A's token is unknown in B, so this is
+    // refused as an unresolvable token. The message is copy and not pinned.
     assert.throws(
         () => store.updateResponse(b.id, invA.token, rowB.id, { owner: 'hijacked' }),
-        /token matches no invitation/
+        /resolves to no invitation/
     );
     assert.deepEqual(store.getResponsesByToken(b.id, invB.token)[0].data, { owner: 'B' });
 });
@@ -659,18 +662,19 @@ test('writes throw for an empty or non-string token', () => {
 
 test('writes throw for a well-formed but UNKNOWN token', () => {
     // Both writes behave the same way for an unknown token, so a caller does not
-    // have to remember which of the two returns null.
+    // have to remember which of the two returns null. The message is not pinned
+    // verbatim: it names a likely cause and may be reworded.
     const org = newOrg('Unknown write token');
     const inv = invite(org.id);
     const row = store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
 
     assert.throws(
         () => store.addResponse(org.id, 'no-such-token', { department: 'Finance', data: { x: 1 } }),
-        /token matches no invitation/
+        /resolves to no invitation/
     );
     assert.throws(
         () => store.updateResponse(org.id, 'no-such-token', row.id, { x: 2 }),
-        /token matches no invitation/
+        /resolves to no invitation/
     );
 });
 
@@ -752,12 +756,127 @@ test('the stored token is the hash, never the raw value', () => {
     store.closeAll();
 
     const db = new DatabaseSync(store.orgDbPath(org.id));
-    const row = db.prepare('SELECT token FROM invitation').get();
+    const row = db.prepare('SELECT token_hash FROM participant_tokens WHERE invitation_id = ?').get(inv.id);
     db.close();
 
-    assert.notEqual(row.token, inv.token, 'the raw token must not be stored');
-    assert.equal(row.token, store.hashToken(inv.token), 'the stored value must be the hash of the token');
-    assert.match(row.token, /^[0-9a-f]{64}$/);
+    assert.ok(row, 'a token row exists for the invitation');
+    assert.notEqual(row.token_hash, inv.token, 'the raw token must not be stored');
+    assert.equal(row.token_hash, store.hashToken(inv.token), 'the stored value must be the hash of the token');
+    assert.match(row.token_hash, /^[0-9a-f]{64}$/);
+});
+
+test('the raw token appears nowhere in the database file', () => {
+    // Stronger than reading one column back: scan the bytes. A raw token written
+    // into any table, index or free page would show up here, and the login link
+    // is a credential, so nothing usable may be recoverable from the file.
+    const org = newOrg('File scan');
+    const inv = invite(org.id, 'scan@example.com');
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
+    store.closeAll();
+
+    const bytes = fs.readFileSync(store.orgDbPath(org.id));
+    assert.equal(bytes.includes(Buffer.from(inv.token)), false, 'the bearer value must not be in the file');
+});
+
+test('several tokens may be live for one invitation, and each resolves', () => {
+    // The capability the single-column model could not express: "Send a link"
+    // adds a working link without retiring the one already held.
+    const org = newOrg('Several live tokens');
+    const inv = invite(org.id, 'several@example.com');
+
+    const second = store.issueAdditionalLink(org.id, inv.id);
+
+    assert.notEqual(second, inv.token, 'a fresh token is issued');
+    assert.notEqual(store.invitationForToken(org.id, inv.token), null, 'the first token is still live');
+    assert.notEqual(store.invitationForToken(org.id, second), null, 'the second token is live too');
+});
+
+test('an additional link leaves earlier tokens live', () => {
+    // "Send a link" must not break a link the participant already holds: a second
+    // mail is not a reason to invalidate the first.
+    const org = newOrg('Send a link');
+    const inv = invite(org.id);
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { keep: true } });
+
+    const second = store.issueAdditionalLink(org.id, inv.id);
+
+    assert.deepEqual(store.getResponsesByToken(org.id, inv.token).map((r) => r.data), [{ keep: true }]);
+    assert.deepEqual(store.getResponsesByToken(org.id, second).map((r) => r.data), [{ keep: true }]);
+});
+
+test('a reset revokes every token and issues one replacement', () => {
+    const org = newOrg('Reset revokes all');
+    const inv = invite(org.id);
+    const second = store.issueAdditionalLink(org.id, inv.id);
+
+    const replacement = store.resetAccess(org.id, inv.id);
+
+    assert.equal(store.invitationForToken(org.id, inv.token), null, 'the first token is revoked');
+    assert.equal(store.invitationForToken(org.id, second), null, 'the second token is revoked');
+    assert.notEqual(store.invitationForToken(org.id, replacement), null, 'the replacement resolves');
+});
+
+test('a reset leaves existing responses attached to the invitation', () => {
+    // THE PROPERTY invitation.id EXISTS FOR, and the most valuable test here: a
+    // bug in this silently loses a participant's work rather than failing loudly.
+    // End to end: answer on the old token, reset, and reach the same answers on
+    // the new one.
+    const org = newOrg('Reset keeps answers');
+    const inv = invite(org.id);
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { answer: 'my work' } });
+
+    const replacement = store.resetAccess(org.id, inv.id);
+
+    const viaNewToken = store.getResponsesByToken(org.id, replacement);
+    assert.deepEqual(viaNewToken.map((r) => r.data), [{ answer: 'my work' }], 'the answers survived the reset');
+    // The old token no longer reads them, but the work itself is still there.
+    assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
+    assert.equal(store.getResponsesForAnalysis(org.id).length, 1, 'the answer is still in the organisation');
+});
+
+test('an expired token is refused by both read paths', () => {
+    const org = newOrg('Expired token');
+    const inv = invite(org.id);
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
+    store.closeAll();
+
+    const db = new DatabaseSync(store.orgDbPath(org.id));
+    db.prepare('UPDATE participant_tokens SET expires_at = ? WHERE invitation_id = ?')
+        .run(new Date(Date.now() - 1000).toISOString(), inv.id);
+    db.close();
+
+    assert.equal(store.invitationForToken(org.id, inv.token), null);
+    assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
+});
+
+test('a revoked token is refused by both read paths', () => {
+    const org = newOrg('Revoked token');
+    const inv = invite(org.id);
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
+
+    // A reset revokes the old token; it must stop resolving immediately.
+    assert.notEqual(store.invitationForToken(org.id, inv.token), null, 'live before the reset');
+    store.resetAccess(org.id, inv.id);
+
+    assert.equal(store.invitationForToken(org.id, inv.token), null);
+    assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
+});
+
+test('the console lists how many tokens are live and which are revoked', () => {
+    const org = newOrg('Token listing');
+    const inv = invite(org.id);
+    store.issueAdditionalLink(org.id, inv.id);
+
+    const live = store.listTokensForInvitation(org.id, inv.id);
+    assert.equal(live.length, 2);
+    assert.equal(live.filter((t) => t.live).length, 2, 'both are live before a reset');
+    assert.equal(JSON.stringify(live).includes('token_hash'), false, 'a hash must never be listed');
+
+    store.resetAccess(org.id, inv.id);
+    const after = store.listTokensForInvitation(org.id, inv.id);
+    assert.equal(after.length, 3, 'the reset keeps the revoked rows for the audit trail');
+    assert.equal(after.filter((t) => t.live).length, 1, 'exactly one is live after the reset');
+    assert.equal(JSON.stringify(after).includes('token_hash'), false, 'a hash must never be listed');
 });
 
 test('the raw token does not appear anywhere in the database file', () => {
@@ -1183,7 +1302,7 @@ test('a malformed stored hash does not authenticate the token', () => {
     store.closeAll();
 
     const db = new DatabaseSync(store.orgDbPath(org.id));
-    db.prepare('UPDATE invitation SET token = ?').run('not-a-valid-hash');
+    db.prepare('UPDATE participant_tokens SET token_hash = ? WHERE invitation_id = ?').run('not-a-valid-hash', inv.id);
     db.close();
 
     // The token no longer resolves, and nothing throws on the read path.
@@ -1201,23 +1320,20 @@ test('a truncated stored hash does not authenticate the token', () => {
     store.closeAll();
 
     const db = new DatabaseSync(store.orgDbPath(org.id));
-    db.prepare('UPDATE invitation SET token = ?').run(store.hashToken(inv.token).slice(0, 32));
+    db.prepare('UPDATE participant_tokens SET token_hash = ? WHERE invitation_id = ?')
+        .run(store.hashToken(inv.token).slice(0, 32), inv.id);
     db.close();
 
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
 });
 
 // The stored hash is compared as exact text against the lowercase hash of the
-// presented token (`SELECT ... WHERE token = ?`). An uppercase row is therefore
-// never selected, and it behaves like a missing invitation: the credential fails
-// closed rather than matching something. There is deliberately no normalisation
-// step, because it could only run after the row was found, where it could not
-// change the outcome. Normalising inside the query instead (lower(token) = ?)
-// would lose the index: EXPLAIN QUERY PLAN shows the exact comparison using
-// sqlite_autoindex_invitation_2, while lower(token) = ? degrades to a full table
-// scan. The lookup runs for every participant request, so the scan was not worth
-// paying to accept a form the application cannot write. This test pins the
-// consequence: an uppercase row does not resolve, and fails closed.
+// presented token (`WHERE token_hash = ?`). An uppercase row is therefore never
+// selected and behaves like a missing invitation: the credential fails closed.
+// There is deliberately no normalisation, because it could only run after the row
+// was found, where it could not change the outcome, and normalising in the query
+// (lower(token_hash) = ?) would lose the index. This test pins the consequence:
+// an uppercase row does not resolve.
 test('an uppercase stored hash does not resolve, and fails closed', () => {
     const org = newOrg('Uppercase hash');
     const inv = invite(org.id);
@@ -1225,9 +1341,9 @@ test('an uppercase stored hash does not resolve, and fails closed', () => {
     store.closeAll();
 
     const db = new DatabaseSync(store.orgDbPath(org.id));
-    const stored = db.prepare('SELECT token FROM invitation').get().token;
+    const stored = db.prepare('SELECT token_hash FROM participant_tokens WHERE invitation_id = ?').get(inv.id).token_hash;
     assert.match(stored, /^[0-9a-f]{64}$/, 'the code writes lowercase hex');
-    db.prepare('UPDATE invitation SET token = ?').run(stored.toUpperCase());
+    db.prepare('UPDATE participant_tokens SET token_hash = ? WHERE invitation_id = ?').run(stored.toUpperCase(), inv.id);
     db.close();
 
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), [], 'the uppercase row is not matched');
@@ -1394,8 +1510,8 @@ test('an uppercase stored hash fails closed end to end, and the outcome matches 
     store.closeAll();
 
     const db = new DatabaseSync(store.orgDbPath(org.id));
-    const stored = db.prepare('SELECT token FROM invitation').get().token;
-    db.prepare('UPDATE invitation SET token = ?').run(stored.toUpperCase());
+    const stored = db.prepare('SELECT token_hash FROM participant_tokens WHERE invitation_id = ?').get(inv.id).token_hash;
+    db.prepare('UPDATE participant_tokens SET token_hash = ? WHERE invitation_id = ?').run(stored.toUpperCase(), inv.id);
     db.close();
 
     assert.equal(tokenHashesMatch(stored.toUpperCase(), store.hashToken(inv.token)), false, 'the comparator refuses the form');
