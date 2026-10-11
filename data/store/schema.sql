@@ -282,6 +282,29 @@ CREATE TABLE IF NOT EXISTS process_score (
 );
 
 CREATE INDEX IF NOT EXISTS idx_process_score_revision ON process_score(revision_id);
+-- One weighing number per revision, so "weighing 3" names one row and the version
+-- history has a defined order. The same constraint the revisions carry, for the
+-- same reason.
+--
+-- IT WAS REACHABLE, UNLIKE THE REVISION CASE, and the fix was in the code rather
+-- than here. `nextScoreRevision` was called AT THE CALL SITE, so its
+-- `MAX(revision_no)` read sat outside `insertScore`'s transaction: six concurrent OS
+-- processes were measured producing two rows numbered 18. The revision numbering
+-- never had this, because `nextRevision` is called inside the enclosing
+-- transaction. `insertScore` now computes the number inside its own transaction, so
+-- this index asserts a property the code holds rather than repairing one it does
+-- not. Without that fix the index would have converted a silent duplicate into a
+-- hard failure for whichever writer lost the race.
+--
+-- NO schema_version BUMP, for the same reason as the revision index: a unique index
+-- is applied by CREATE ... IF NOT EXISTS on an existing file's next open with
+-- nothing to migrate, and bumping would REFUSE every existing file to gain nothing.
+--
+-- AN EXISTING FILE MAY ALREADY HOLD A DUPLICATE, and creating this index would then
+-- fail on open. That is the honest outcome for a file whose numbering was already
+-- broken by the race above: the alternative is to keep writing rows nobody can order.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_process_score_number
+    ON process_score(revision_id, revision_no);
 -- At most ONE current score per revision, so the database refuses a second rather
 -- than the code remembering. The same guard the revisions carry.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_process_score_current

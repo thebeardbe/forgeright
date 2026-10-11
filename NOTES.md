@@ -208,6 +208,46 @@ The reviewer's full report is the source for these. Ordered by what matters.
   whether the judgement question elicits a usable answer. Needs a real provider
   and a real conversation.
 
+## The weighing call fails intermittently, and the mechanism is not understood
+
+**This is in the code too, beside `maxTokens` in `ai/weigh-core.js`. It is repeated
+here because it is a client-facing step that fails at a rate nobody has explained,
+so it should be found when the model or the provider changes rather than when it
+recurs in front of somebody.**
+
+What fails: `runWeighing` intermittently returns a reply the JSON extractor correctly
+refuses as a truncated fragment. The failure looks like a bad model until the
+truncation point is read, because the extractor's error is the only visible symptom.
+
+The measured rate, at each output cap, reproduced:
+
+| cap | replies returned | parsed |
+|---|---|---|
+| 2048 | 162, 1348, 163 characters | 1 of 3 |
+| 4096 | 505, 1320, 481 | 1 of 4 |
+| 8192 | 1139, 1101, 1243 | 3 of 3 |
+
+**A failed reply is SHORTER than a good one.** That is the measurement that rules out
+the obvious explanation: an exhausted output budget would cut a long reply short, not
+produce a 162-character stub, so the cap is not being consumed by truncation. What is
+measured is only that the failure rate falls as the cap rises.
+
+**What was ruled out, and is now removed rather than left as a story:** the earlier
+explanation was that Gemini counts the request against the cap. The same numbers
+contradict it, so that guess is gone from the code comment. Do not reinstate it
+without a measurement.
+
+**Why it matters:** the cap is at 8192 today and the step is the one whose output is
+the deliverable, so a failure here produces no score at all. The cost of the current
+value is latency on a longer allowance, which was chosen over an intermittent
+failure.
+
+**What would settle it:** the provider's own reason for a short reply, which no one
+has captured. A reply that carries a finish reason, or a diagnostic that logs the raw
+response when the extractor refuses one, would turn this from a rate into a cause.
+Until then, **do not raise the number again** if it recurs at 8192: that is treating
+the symptom, and 2048 to 8192 already showed the rate is not a simple threshold.
+
 ## Decisions still open
 
 - **Sample domain.** Currently a generic Flemish operational SME with finance,
