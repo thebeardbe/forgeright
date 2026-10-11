@@ -38,7 +38,7 @@ WORKFLOW 2  Identification   is this the same process someone else described?
 WORKFLOW 3  Weighing         one number per process, with reasoning
             |
             v
-PRESENTATION  View 1: every answer        View 2: the sorted roadmap
+PRESENTATION  View 1: every answer   View 2: every process   View 3: the roadmap
 ```
 
 Each workflow is a **separate LLM session with one job**. They do not share a
@@ -275,22 +275,58 @@ where that happens.
 
 ## Presentation
 
-**Two views in the console.**
+**Three views in the console.** The middle one exists because workflow 2's output
+has to be inspected somewhere, and the roadmap is downstream and sorted, so the
+worst groupings would be the least visible there.
 
 ### View 1 — every answer
 
-- every answer, listed
-- **expandable** to its reasoning: how it was identified, what it matched, why
+- every answer, listed as the participant gave it
+- **expandable** to its reasoning: which process it was matched to, and why
 - the score and the paragraph explaining it
-- the participants' own words, so the paragraph can be checked
-- **"rejudge"** with a reason, which returns to workflow 2
+- **"rejudge"** with a reason
 - earlier versions kept
 
-**This is the review mechanism for the one step no test can pin.** A wrong
-grouping produces a plausible roadmap of the wrong things, so the working is
-visible and challengeable.
+**The subject here is one response.** *"This answer was read wrong"* — matched to
+the wrong process, or miscategorised.
 
-### View 2 — the roadmap
+### View 2 — every process
+
+**The assembled processes**, which is what workflow 2 actually produced:
+
+- each process: its name, its steps in order, the answers behind it
+- **expandable** to the full flow, the departments it touches, and the reasoning
+  for the grouping
+- the score and the paragraph explaining it
+- **"rejudge"** with a reason
+- earlier versions kept
+
+**The subject here is one process.** *"This flow is wrong"* — the steps are
+mis-ordered, two things that are not the same were merged, or a description was
+segmented badly.
+
+**Without this view the only place to notice a bad grouping is the roadmap,
+which is sorted and summarised** — so the worst groupings would be the hardest to
+find.
+
+### Two entry points, one mechanism
+
+**Both views offer a rejudge, and both do the same thing:**
+
+```
+from an ANSWER   "this answer was read wrong"
+from a PROCESS   "this flow is wrong"
+       |
+       v
+  workflow 2 re-identifies, with the admin's reasoning
+  workflow 3 regenerates the score and its paragraph
+```
+
+**They are two places, not two mechanisms.** The subject differs; the path does
+not, because a process cannot be reweighed before it is certain what the process
+is.
+
+### View 3 — the roadmap
 
 - the sorted priority list, highest weight first
 - **each item expands** to its detail
