@@ -313,3 +313,45 @@ separate concerns and one variable cannot express both** — that is the gap
 
 `tailscaled` connects from `127.0.0.1`, confirmed by the established connections
 to the other app on that host, so `TRUST_PROXY=127.0.0.1` is the correct setting.
+
+## Subagent stalls: how to detect and recover
+
+Recorded after two stalls in one session (the builder for about two hours, the
+test-writer for one), where the parent agent polled `subagent status` and learned
+nothing.
+
+**`status` cannot distinguish progress from a hang.** It resolves to:
+
+    const busy = (await api.snapshot(LiveDoc, id))?.run !== undefined;
+    `${name}: ${busy ? "working" : "idle"}`
+
+`run` is present for the whole duration of a task, so a crashed, wedged or
+waiting subagent reports `working` indefinitely. Polling it is not a progress
+signal.
+
+**What actually indicates progress:** the working tree. File mtimes, `git status`,
+and whether the suite result changed.
+
+**But watch the right files.** In the second case the parent agent watched
+`test/auth.test.js`, saw no change for an hour, and concluded the test-writer was
+stuck. It was working on `test/routes.test.js` and had fixed 16 failures in that
+time. One file standing still says nothing about the task; `git status` across the
+whole tree, or the suite result, is the signal. A conclusion drawn from one file
+was wrong and confidently reported.
+
+Only ONE of the two reported stalls was real. The builder's was: file timestamps
+showed a two-hour gap across the whole tree while `status` reported `working`, and
+the owner had independently seen it crash.
+
+The runtime does hold better evidence but does not expose it. `LiveState` has
+`generation.attempt`, `generation.retry.at` and **`generation.retry.error`**, plus
+`toolSlots[].status`. A tool slot stuck at `running` is where it hangs, and
+`retry.error` names the cause. `status` surfaces none of this. If this recurs
+often, that is the thing to expose.
+
+**To unstick:** `stop` the agent (it calls `abort`, cancelling the hung run), then
+`send` the task again. Nudging a wedged run with another message does not clear it.
+
+**To make a stall cheap:** split the work so each piece is independently
+reportable, and ask for a report after each. A stall then costs one piece rather
+than the whole task.
