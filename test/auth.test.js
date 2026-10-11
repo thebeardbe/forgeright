@@ -750,9 +750,11 @@ test('a newline in the subject cannot become a second argument or header', async
     assert.equal(value, subject, 'the whole subject is one argument value');
 
     // No injected argument: the subject's own text must not appear as a separate
-    // argv entry, and nothing after --subject may look like a fresh flag from it.
+    // argv entry, and the argument list must be exactly the intended flags, each
+    // with its value. `--body -` means the body never reaches argv at all.
     assert.equal(seen.argv.includes('Bcc: attacker@example.com'), false, 'no fragment became its own argument');
-    assert.equal(seen.argv.filter((a) => a.startsWith('--')).length, 5, 'only the intended flags are present');
+    assert.equal(seen.argv.filter((a) => a.startsWith('--')).length, 4, 'only --profile, --to, --subject and --body are flags');
+    assert.equal(seen.argv.length, 11, 'the argument list is fixed: four flags with their values, plus the subcommand');
 
     // And the body, newline-bearing text included, went to stdin, not argv.
     assert.equal(seen.stdin, 'x');
