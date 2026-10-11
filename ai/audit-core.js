@@ -310,15 +310,21 @@ export function parseModelResponse(raw) {
     // same shape as the defect this replaced, one field deeper.
     //
     // So the decision is made on CONTENT, not on nullness: if a usable workflows
-    // array exists anywhere, it wins and is wrapped; only when neither source has
-    // one does the raw `audit` survive for validation to reject.
+    // array exists anywhere, it wins and is wrapped.
+    //
+    // `workflowsFrom` IS THE ONLY RESOLVER, and that is why there is no fallback
+    // arm here. There used to be one, `: parsed.audit`, which read as a safety net;
+    // it was unreachable. `workflowsFrom` already returns `parsed.audit.workflows`
+    // when that is the only source, so `best` is an array in every case that
+    // reaches this line: a `complete` reply without a payload returned earlier, and
+    // an `asking` reply's `audit` field is meaningless. An arm that cannot run
+    // while looking like protection is worse than no arm, because it suggests a
+    // case is handled that nothing has ever exercised.
     const best = workflowsFrom(parsed);
 
     return {
         ...parsed,
-        audit: Array.isArray(best)
-            ? normaliseProcessesPayload(parsed, best)
-            : parsed.audit,
+        audit: normaliseProcessesPayload(parsed, best),
         have: computed.have,
         missing: computed.missing,
         processes

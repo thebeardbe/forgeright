@@ -166,6 +166,15 @@ export const ALL_PROCESS_FIELD_NAMES = Object.freeze([
 function hasShape(value, shape, field) {
     if (value === undefined || value === null) return false;
 
+    // A LOWER BOUND ONLY, and only for numbers. This is not a general range check:
+    // there is no upper limit, and a value that is not a number falls through to
+    // the shape switch below, which refuses it there. Written this way because the
+    // one rule that exists (`frequencyPerWeek` above zero) is a minimum, and
+    // reading it as a range check would invite an upper bound to be added here
+    // later without the shape being consulted at all.
+    //
+    // The comparison is STRICT (`!(value > min)` rather than `value <= min`), so a
+    // fractional frequency like `0.25` passes a minimum of 0.
     if (field !== undefined && Object.hasOwn(FIELD_MINIMUMS, field)
         && typeof value === 'number' && !(value > FIELD_MINIMUMS[field])) {
         // Reported as not supplied so the interview asks again, which is the safe

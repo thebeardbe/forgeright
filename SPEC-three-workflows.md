@@ -122,12 +122,14 @@ automated. Scored per step, the five steps that follow rules are visible as
 automatable and the boundary is pinned to one step.
 
 **The boundary does not reach the score at this length, and that is accepted.**
-The band is a SHARE of flagged steps, so one judgement step among six reads as one
-sixth and rounds near the top of the band. Measured, `judgementBandFor` gives 4
-for five mechanical steps plus one judgement call, against 5 for six mechanical
-steps: nearly the same, and nowhere near the 1 a single judgement step in a short
-chain scores. The boundary survives in the per-step flags and in what the console
-shows, not in the number. These bands are guidelines rather than fixed-answer
+The band is a SHARE of flagged steps, because `judgementBandFor` computes
+`5 - (flagged / total) * 4` and rounds to 1-5. Measured, one judgement step among
+six gives `5 - (1/6) * 4 = 4.33`, which rounds to 4, against 5 for six mechanical
+steps: nearly the same, and nowhere near the 1 that a single judgement step scored
+alone produces. The share is one sixth; the band is 4 of 5.
+
+The boundary survives in the per-step flags and in what the console shows, not in
+the number. These bands are guidelines rather than fixed-answer
 logic, so a long chain diluting its one judgement step is a known and acceptable
 reading. An earlier version of this paragraph implied the score carried the
 boundary at every length; it does not.

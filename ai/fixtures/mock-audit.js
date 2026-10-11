@@ -121,6 +121,15 @@ const WORKFLOWS = [
  * BASIS, and `needsReasoning` is the derived flag: `false` for a fixed threshold
  * or a checklist, `true` where the decision turns on the case in front of them.
  *
+ * Every step also carries `reasoningBasis`, the quotation from its own
+ * `decidedHow` that decided the flag. This is the reference pair the prompt
+ * teaches against, so it has to demonstrate the distinction rather than only
+ * assert it: `Match the amounts` quotes the threshold (`false`, the number
+ * decides) while `Query a mismatch` quotes the discretion (`true`, a person
+ * decides what to do about the exception). A step whose quotation is a threshold
+ * and whose flag is `true` would contradict the prompt, and it is exactly the
+ * misreading the prompt's worked example exists to prevent.
+ *
  * ILLUSTRATIVE. Written to exercise the shape, not measured from a real client.
  *
  * Note `invoice-processing` and its second respondent: the SAME process, with one
@@ -134,11 +143,11 @@ const DETAIL = {
         trigger: "an invoice arrives in the shared inbox",
         systems: ["Outlook", "Excel", "Bookkeeping package"],
         steps: [
-            { name: 'Open the invoice', whatHappens: 'Read the incoming invoice email and save the PDF.', decidedHow: 'the invoice is in the shared inbox', needsReasoning: false },
-            { name: 'Find the purchase order', whatHappens: 'Search the bookkeeping package by invoice number.', decidedHow: 'I search on the invoice number', needsReasoning: false },
-            { name: 'Match the amounts', whatHappens: 'Compare the invoice total with the order total.', decidedHow: 'if they differ by more than 2 euros I stop and ask', needsReasoning: false },
-            { name: 'Query a mismatch', whatHappens: 'Email the supplier or the buyer about the difference.', decidedHow: 'depends what the difference is and who replies fastest', needsReasoning: true },
-            { name: 'Book the invoice', whatHappens: 'Key the invoice into the bookkeeping package.', decidedHow: 'the booking is per the matched order', needsReasoning: false }
+            { name: 'Open the invoice', whatHappens: 'Read the incoming invoice email and save the PDF.', decidedHow: 'the invoice is in the shared inbox', needsReasoning: false, reasoningBasis: 'the invoice is in the shared inbox' },
+            { name: 'Find the purchase order', whatHappens: 'Search the bookkeeping package by invoice number.', decidedHow: 'I search on the invoice number', needsReasoning: false, reasoningBasis: 'I search on the invoice number' },
+            { name: 'Match the amounts', whatHappens: 'Compare the invoice total with the order total.', decidedHow: 'if they differ by more than 2 euros I stop and ask', needsReasoning: false, reasoningBasis: 'they differ by more than 2 euros' },
+            { name: 'Query a mismatch', whatHappens: 'Email the supplier or the buyer about the difference.', decidedHow: 'depends what the difference is and who replies fastest', needsReasoning: true, reasoningBasis: 'depends what the difference is' },
+            { name: 'Book the invoice', whatHappens: 'Key the invoice into the bookkeeping package.', decidedHow: 'the booking is per the matched order', needsReasoning: false, reasoningBasis: 'the booking is per the matched order' }
         ],
         handoffTo: ['Finance manager'],
         waitsFor: ["the buyer's confirmation on a mismatch"],
@@ -154,10 +163,10 @@ const DETAIL = {
         trigger: "an invoice arrives by email",
         systems: ["Outlook", "Excel"],
         steps: [
-            { name: 'Open the invoice', whatHappens: 'Read the invoice email and save the PDF.', decidedHow: 'it arrives in the shared inbox', needsReasoning: false },
-            { name: 'Find the purchase order', whatHappens: 'Search the bookkeeping package for the order.', decidedHow: 'I search on the supplier and the date', needsReasoning: false },
-            { name: 'Match the amounts', whatHappens: 'Compare invoice and order totals.', decidedHow: 'depends on the supplier, sometimes we let a small difference through', needsReasoning: true },
-            { name: 'Book the invoice', whatHappens: 'Key the invoice into the bookkeeping package.', decidedHow: 'per the matched order', needsReasoning: false }
+            { name: 'Open the invoice', whatHappens: 'Read the invoice email and save the PDF.', decidedHow: 'it arrives in the shared inbox', needsReasoning: false, reasoningBasis: 'it arrives in the shared inbox' },
+            { name: 'Find the purchase order', whatHappens: 'Search the bookkeeping package for the order.', decidedHow: 'I search on the supplier and the date', needsReasoning: false, reasoningBasis: 'I search on the supplier and the date' },
+            { name: 'Match the amounts', whatHappens: 'Compare invoice and order totals.', decidedHow: 'depends on the supplier, sometimes we let a small difference through', needsReasoning: true, reasoningBasis: 'depends on the supplier' },
+            { name: 'Book the invoice', whatHappens: 'Key the invoice into the bookkeeping package.', decidedHow: 'per the matched order', needsReasoning: false, reasoningBasis: 'per the matched order' }
         ],
         handoffTo: ['Finance manager'],
         waitsFor: ['the supplier to reply'],
@@ -173,10 +182,10 @@ const DETAIL = {
         trigger: "the month ending",
         systems: ["Time system", "Excel", "Payroll package"],
         steps: [
-            { name: 'Pull the hours', whatHappens: 'Export hours from the time system into Excel.', decidedHow: 'the export is everything since the last run', needsReasoning: false },
-            { name: 'Check against contracts', whatHappens: 'Compare each line with contracted hours.', decidedHow: 'over 10 hours of overtime I check with the manager first', needsReasoning: false },
-            { name: 'Resolve an exception', whatHappens: 'Work out what someone should actually be paid.', decidedHow: 'depends on their contract and what they tell me', needsReasoning: true },
-            { name: 'Release the run', whatHappens: 'Approve the payroll run for payment.', decidedHow: 'the totals match the previous month', needsReasoning: false }
+            { name: 'Pull the hours', whatHappens: 'Export hours from the time system into Excel.', decidedHow: 'the export is everything since the last run', needsReasoning: false, reasoningBasis: 'the export is everything since the last run' },
+            { name: 'Check against contracts', whatHappens: 'Compare each line with contracted hours.', decidedHow: 'over 10 hours of overtime I check with the manager first', needsReasoning: false, reasoningBasis: 'over 10 hours of overtime' },
+            { name: 'Resolve an exception', whatHappens: 'Work out what someone should actually be paid.', decidedHow: 'depends on their contract and what they tell me', needsReasoning: true, reasoningBasis: 'depends on their contract' },
+            { name: 'Release the run', whatHappens: 'Approve the payroll run for payment.', decidedHow: 'the totals match the previous month', needsReasoning: false, reasoningBasis: 'the totals match the previous month' }
         ],
         handoffTo: ['Payroll bureau'],
         waitsFor: ['the manager to confirm overtime'],
@@ -192,10 +201,10 @@ const DETAIL = {
         trigger: "an incident on the line",
         systems: ["Paper form", "Excel", "Outlook"],
         steps: [
-            { name: 'Record the incident', whatHappens: 'Fill in the paper form at the line.', decidedHow: 'the form has the fields it has', needsReasoning: false },
-            { name: 'Rate the severity', whatHappens: 'Decide how serious it was.', decidedHow: 'depends what happened and whether anyone was hurt', needsReasoning: true },
-            { name: 'Enter it in the register', whatHappens: 'Type the form into the Excel register.', decidedHow: 'the register mirrors the form', needsReasoning: false },
-            { name: 'Report it', whatHappens: 'Email the monthly summary to the safety officer.', decidedHow: 'it goes out on the first Monday', needsReasoning: false }
+            { name: 'Record the incident', whatHappens: 'Fill in the paper form at the line.', decidedHow: 'the form has the fields it has', needsReasoning: false, reasoningBasis: 'the form has the fields it has' },
+            { name: 'Rate the severity', whatHappens: 'Decide how serious it was.', decidedHow: 'depends what happened and whether anyone was hurt', needsReasoning: true, reasoningBasis: 'depends what happened' },
+            { name: 'Enter it in the register', whatHappens: 'Type the form into the Excel register.', decidedHow: 'the register mirrors the form', needsReasoning: false, reasoningBasis: 'the register mirrors the form' },
+            { name: 'Report it', whatHappens: 'Email the monthly summary to the safety officer.', decidedHow: 'it goes out on the first Monday', needsReasoning: false, reasoningBasis: 'it goes out on the first Monday' }
         ],
         handoffTo: ['Safety officer'],
         waitsFor: ['the form to come back from the line'],
@@ -211,10 +220,10 @@ const DETAIL = {
         trigger: "a client sending a draft contract",
         systems: ["Word", "Outlook"],
         steps: [
-            { name: 'Read the contract', whatHappens: 'Read the whole document, clause by clause.', decidedHow: 'clauses that limit our liability get a closer read', needsReasoning: false },
-            { name: 'Judge the risk', whatHappens: 'Decide whether a clause is acceptable.', decidedHow: 'depends on the deal and on how the client negotiates', needsReasoning: true },
-            { name: 'Write the comments', whatHappens: 'Mark up the document with track changes.', decidedHow: 'in our standard wording where we have it', needsReasoning: false },
-            { name: 'Send it back', whatHappens: 'Email the marked-up contract to the client.', decidedHow: 'it goes to whoever sent it', needsReasoning: false }
+            { name: 'Read the contract', whatHappens: 'Read the whole document, clause by clause.', decidedHow: 'clauses that limit our liability get a closer read', needsReasoning: false, reasoningBasis: 'clauses that limit our liability' },
+            { name: 'Judge the risk', whatHappens: 'Decide whether a clause is acceptable.', decidedHow: 'depends on the deal and on how the client negotiates', needsReasoning: true, reasoningBasis: 'depends on the deal' },
+            { name: 'Write the comments', whatHappens: 'Mark up the document with track changes.', decidedHow: 'in our standard wording where we have it', needsReasoning: false, reasoningBasis: 'in our standard wording' },
+            { name: 'Send it back', whatHappens: 'Email the marked-up contract to the client.', decidedHow: 'it goes to whoever sent it', needsReasoning: false, reasoningBasis: 'it goes to whoever sent it' }
         ],
         handoffTo: ['Sales', 'the client'],
         waitsFor: ['the client to come back on our comments'],
@@ -230,10 +239,10 @@ const DETAIL = {
         trigger: "the week ending",
         systems: ["Excel", "Outlook"],
         steps: [
-            { name: 'Send the reminder', whatHappens: 'Email everyone who has not submitted.', decidedHow: 'the Friday before, everyone on the list', needsReasoning: false },
-            { name: 'Chase the stragglers', whatHappens: 'Contact the people still missing.', decidedHow: 'depends who it is and how often they are late', needsReasoning: true },
-            { name: 'Check the entries', whatHappens: 'Check totals against the project codes.', decidedHow: 'a total over the contracted hours gets checked', needsReasoning: false },
-            { name: 'Close the week', whatHappens: 'Lock the sheet and send it to payroll.', decidedHow: 'once every line is in', needsReasoning: false }
+            { name: 'Send the reminder', whatHappens: 'Email everyone who has not submitted.', decidedHow: 'the Friday before, everyone on the list', needsReasoning: false, reasoningBasis: 'the Friday before' },
+            { name: 'Chase the stragglers', whatHappens: 'Contact the people still missing.', decidedHow: 'depends who it is and how often they are late', needsReasoning: true, reasoningBasis: 'depends who it is' },
+            { name: 'Check the entries', whatHappens: 'Check totals against the project codes.', decidedHow: 'a total over the contracted hours gets checked', needsReasoning: false, reasoningBasis: 'over the contracted hours' },
+            { name: 'Close the week', whatHappens: 'Lock the sheet and send it to payroll.', decidedHow: 'once every line is in', needsReasoning: false, reasoningBasis: 'once every line is in' }
         ],
         handoffTo: ['Payroll'],
         waitsFor: ['everyone to submit'],
@@ -249,11 +258,11 @@ const DETAIL = {
         trigger: "a client asking for a proposal",
         systems: ["Word", "Outlook", "CRM"],
         steps: [
-            { name: 'Gather the requirements', whatHappens: 'Collect what the client asked for.', decidedHow: 'whatever is in the brief and the last call', needsReasoning: false },
-            { name: 'Choose the approach', whatHappens: 'Decide how we would solve it.', decidedHow: 'depends on the client, the budget and what we have done before', needsReasoning: true },
-            { name: 'Write the proposal', whatHappens: 'Draft the document from our template.', decidedHow: 'the template covers the structure', needsReasoning: false },
-            { name: 'Price it', whatHappens: 'Work out what to charge.', decidedHow: 'I use the rate card and adjust for the deal', needsReasoning: true },
-            { name: 'Send it', whatHappens: 'Email the proposal to the client.', decidedHow: 'after the partner has read it', needsReasoning: false }
+            { name: 'Gather the requirements', whatHappens: 'Collect what the client asked for.', decidedHow: 'whatever is in the brief and the last call', needsReasoning: false, reasoningBasis: 'whatever is in the brief' },
+            { name: 'Choose the approach', whatHappens: 'Decide how we would solve it.', decidedHow: 'depends on the client, the budget and what we have done before', needsReasoning: true, reasoningBasis: 'depends on the client' },
+            { name: 'Write the proposal', whatHappens: 'Draft the document from our template.', decidedHow: 'the template covers the structure', needsReasoning: false, reasoningBasis: 'the template covers the structure' },
+            { name: 'Price it', whatHappens: 'Work out what to charge.', decidedHow: 'I use the rate card and adjust for the deal', needsReasoning: true, reasoningBasis: 'adjust for the deal' },
+            { name: 'Send it', whatHappens: 'Email the proposal to the client.', decidedHow: 'after the partner has read it', needsReasoning: false, reasoningBasis: 'after the partner has read it' }
         ],
         handoffTo: ['the client', 'the partner'],
         waitsFor: ['the partner to review'],
@@ -269,10 +278,10 @@ const DETAIL = {
         trigger: "a decision to buy from someone new",
         systems: ["Outlook", "PDF forms", "Bookkeeping package"],
         steps: [
-            { name: 'Request the documents', whatHappens: 'Email the supplier for their details.', decidedHow: 'the checklist lists what we need', needsReasoning: false },
-            { name: 'Check the documents', whatHappens: 'Verify the VAT number and the bank details.', decidedHow: 'the number matches the register and the bank letter matches', needsReasoning: false },
-            { name: 'Judge an unusual supplier', whatHappens: 'Decide whether to accept a supplier outside the EU.', decidedHow: 'depends on the country and on what we are buying', needsReasoning: true },
-            { name: 'Create the supplier record', whatHappens: 'Add the supplier to the bookkeeping package.', decidedHow: 'once everything checks out', needsReasoning: false }
+            { name: 'Request the documents', whatHappens: 'Email the supplier for their details.', decidedHow: 'the checklist lists what we need', needsReasoning: false, reasoningBasis: 'the checklist lists what we need' },
+            { name: 'Check the documents', whatHappens: 'Verify the VAT number and the bank details.', decidedHow: 'the number matches the register and the bank letter matches', needsReasoning: false, reasoningBasis: 'the number matches the register' },
+            { name: 'Judge an unusual supplier', whatHappens: 'Decide whether to accept a supplier outside the EU.', decidedHow: 'depends on the country and on what we are buying', needsReasoning: true, reasoningBasis: 'depends on the country' },
+            { name: 'Create the supplier record', whatHappens: 'Add the supplier to the bookkeeping package.', decidedHow: 'once everything checks out', needsReasoning: false, reasoningBasis: 'once everything checks out' }
         ],
         handoffTo: ['Purchasing'],
         waitsFor: ['the supplier to send their papers'],

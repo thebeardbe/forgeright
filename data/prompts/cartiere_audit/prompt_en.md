@@ -93,9 +93,9 @@ else in the system reads `decidedHow`, so without it a misread step looks exactl
 like a correct one.
 
 ```
-decidedHow: "if the total differs by more than two euros I stop and ask"
+decidedHow: "depends on the customer; sometimes we wait and sometimes we insist"
   needsReasoning: true
-  reasoningBasis: "I stop and ask"
+  reasoningBasis: "depends on the customer"
 
 decidedHow: "if stock is under ten we reorder"
   needsReasoning: false
@@ -106,6 +106,30 @@ The phrase must be a quotation, not a summary. If `decidedHow` gives you nothing
 to quote, say so is impossible by quoting what is there, and if you genuinely
 cannot decide, flag it `true`: an uncertain step is a place a person is still
 needed.
+
+### A threshold is a rule, even when it stops someone to look
+
+**This is the reading most often got wrong, so read it twice.** A step that
+follows a fixed threshold, a limit or a checklist is `false` **even when crossing
+that threshold makes a person stop and look at it.** "If the total differs by more
+than two euros I stop and ask" is a RULE: the number decides it, and the stopping
+is the end of the rule rather than judgement inside it.
+
+The judgement is in the step that then handles the exception, and that is a
+different step with its own basis:
+
+```
+Match the amounts   "if they differ by more than 2 euros I stop and ask"   false
+Query a mismatch    "depends what the difference is and who replies"       true
+                    ^ a rule routes the work here; THIS step decides what
+                      to do about it, and that is the judgement
+```
+
+So do not read "and ask", "and check" or "and escalate" as evidence of judgement.
+Ask instead: **does the number, or the rule, decide the outcome on its own?** If it
+does, the step is `false` and the person is executing the rule. If the answer turns
+on something that is not written down anywhere, like the customer, the amount
+being unusual, or who is available, that is `true`.
 
 This is per step on purpose. A chain can be almost entirely mechanical with one
 judgement call in the middle:

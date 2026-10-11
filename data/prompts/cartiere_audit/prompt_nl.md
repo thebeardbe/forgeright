@@ -96,9 +96,9 @@ niets anders in het systeem leest `decidedHow`, dus zonder die citatie ziet een
 verkeerd gelezen stap er precies zo uit als een juiste.
 
 ```
-decidedHow: "als het totaal meer dan twee euro afwijkt, stop ik en vraag het"
+decidedHow: "hangt van de klant af; soms wachten we en soms dringen we aan"
   needsReasoning: true
-  reasoningBasis: "stop ik en vraag het"
+  reasoningBasis: "hangt van de klant af"
 
 decidedHow: "als de voorraad onder tien komt, bestellen we"
   needsReasoning: false
@@ -108,6 +108,30 @@ decidedHow: "als de voorraad onder tien komt, bestellen we"
 De zin moet een citaat zijn, geen samenvatting. Geeft `decidedHow` je niets om te
 citeren, citeer dan wat er staat; kun je het echt niet beslissen, zet de vlag dan
 op `true`: een onzekere stap is een plek waar nog een mens nodig is.
+
+### Een drempel is een regel, ook als iemand ervoor stopt om te kijken
+
+**Deze lezing gaat het vaakst mis, dus lees dit twee keer.** Een stap die een vaste
+drempel, een limiet of een checklist volgt is `false`, **ook als het overschrijden
+van die drempel iemand doet stoppen om ernaar te kijken.** "Als het totaal meer dan
+twee euro afwijkt, stop ik en vraag het" is een REGEL: het getal beslist, en het
+stoppen is het einde van de regel, geen oordeel erbinnen.
+
+Het oordeel zit in de stap die de uitzondering daarna behandelt, en dat is een
+andere stap met een eigen basis:
+
+```
+Bedragen vergelijken  "als ze meer dan 2 euro afwijken, stop ik en vraag het"   false
+Een verschil navragen "hangt af van het verschil en wie het snelst antwoordt"   true
+                      ^ een regel leidt het werk hierheen; DEZE stap beslist
+                        wat ermee gebeurt, en dat is het oordeel
+```
+
+Lees "en vraag het", "en controleer" of "en escaleer" dus niet als bewijs van
+oordeel. Vraag in plaats daarvan: **beslist het getal, of de regel, de uitkomst
+helemaal zelf?** Als dat zo is, is de stap `false` en voert de persoon de regel
+uit. Draait het antwoord om iets wat nergens opgeschreven staat, zoals de klant,
+een ongewoon bedrag, of wie er beschikbaar is, dan is het `true`.
 
 Dit is met opzet per stap. Een keten kan bijna volledig mechanisch zijn met één
 oordeel in het midden:
