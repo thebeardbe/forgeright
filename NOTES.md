@@ -382,3 +382,16 @@ pass for the wrong reason:
    rolls the transaction back, and the lock is released before the parent writes.
 
 Use that helper rather than writing a fourth version.
+
+## The working loop
+
+    builder      -> commit
+    test-writer  -> commit
+    tests green  -> PUSH
+    reviewer     -> reads that push; findings become the next commit
+
+**Every push has green tests.** The review is the step after a push, not a gate
+before it, so nothing waits on anything and each step leaves a commit behind.
+
+When the reviewer finds something: fix via the builder or test-writer, commit,
+and push again on green. That push gets reviewed in turn.
