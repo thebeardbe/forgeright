@@ -118,7 +118,19 @@ stock reservation        rules
 ```
 
 Scored at process level this reads as "needs a person" and nothing gets
-automated. Scored per step, five steps are automatable and the boundary is known.
+automated. Scored per step, the five steps that follow rules are visible as
+automatable and the boundary is pinned to one step.
+
+**The boundary does not reach the score at this length, and that is accepted.**
+The band is a SHARE of flagged steps, so one judgement step among six reads as one
+sixth and rounds near the top of the band. Measured, `judgementBandFor` gives 4
+for five mechanical steps plus one judgement call, against 5 for six mechanical
+steps: nearly the same, and nowhere near the 1 a single judgement step in a short
+chain scores. The boundary survives in the per-step flags and in what the console
+shows, not in the number. These bands are guidelines rather than fixed-answer
+logic, so a long chain diluting its one judgement step is a known and acceptable
+reading. An earlier version of this paragraph implied the score carried the
+boundary at every length; it does not.
 
 **This is what makes workflow 3 possible**, because "how many steps need
 reasoning" and "what parts can be automated" are readings of these flags.

@@ -63,6 +63,16 @@
                 <% if (step.decidedHow) { %>
                     <p class="step-basis"><span class="why">on what basis:</span> <%= step.decidedHow %></p>
                 <% } %>
+                <%# THE EVIDENCE FOR THE FLAG, beside it. Nothing in the code reads
+                    decidedHow, so this quotation is the only way a reader can check
+                    that the flag was derived from the basis rather than assumed. The
+                    absence is stated rather than left blank, because a model that did
+                    not quote is different from one whose quotation was empty. %>
+                <% if (step.reasoningBasis) { %>
+                    <p class="step-quote"><span class="why">decided by:</span> &ldquo;<%= step.reasoningBasis %>&rdquo;</p>
+                <% } else { %>
+                    <p class="step-quote missing"><span class="why">decided by:</span> no phrase was quoted</p>
+                <% } %>
             </div>
         <% }); %>
     <% } %>

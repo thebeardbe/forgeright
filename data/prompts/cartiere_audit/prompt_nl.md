@@ -39,6 +39,7 @@ name                  een kort label voor de stap
 whatHappens           wat er bij die stap gedaan wordt
 decidedHow            de BASIS waarop iemand beslist, in hun woorden
 needsReasoning        JOUW lezing van decidedHow (zie hieronder)
+reasoningBasis        de zin uit decidedHow die de vlag besliste (zie hieronder)
 ```
 
 ### `frequencyPerWeek` OF `timePerPeriod`, niet beide
@@ -53,6 +54,18 @@ verkeerd is.
 Gebruik bij doorlopend werk `timePerPeriod`, met een periode:
 `{ "hours": 6, "period": "week" }`. **Kies er één en zeg welke** je gebruikt hebt
 in de `have`-lijst. Vul nooit beide.
+
+**Een frequentie moet groter zijn dan nul, en nul is nooit een plaatsvervanger.**
+Maandelijks werk is `frequencyPerWeek: 0.25`, per kwartaal is `0.08`. Breuken zijn
+verwacht en correct, dus een klein getal is een echt antwoord. Maar **nul betekent
+dat het proces niet gebeurt**, en werk dat niet gebeurt is geen proces: schrijf
+geen `0` omdat de deelnemer geen frequentie gaf, en niet omdat het werk
+occasioneel is. Laat het veld uit `have` en vraag opnieuw. Hetzelfde geldt voor
+`timePerPeriod`: `{ "hours": 0, "period": "week" }` is geen beschrijving van werk
+dat iemand doet.
+
+`mistakesPerPeriod: 0` is anders en IS een echt antwoord: "het gaat nooit mis" is
+iets wat een deelnemer eerlijk kan zeggen over een proces dat gebeurt.
 
 ## De oordeelsvraag, en de fout die je moet vermijden
 
@@ -75,6 +88,26 @@ A: "Hangt van de klant af, soms wachten we"          -> decidedHow: "hangt van d
 `decidedHow` is een weergave van hun basis, zo dicht bij hun woorden als je kunt
 houden. `needsReasoning` is een boolean die JIJ afleidt, en die gaat over **die
 stap**, niet over het proces.
+
+**Citeer in `reasoningBasis` de zin die de beslissing bepaalde.** Neem de woorden
+over uit `decidedHow` die je ertoe brachten de stap als regel of als oordeel te
+lezen. Dat is het bewijs voor je vlag, en een lezer legt de twee naast elkaar:
+niets anders in het systeem leest `decidedHow`, dus zonder die citatie ziet een
+verkeerd gelezen stap er precies zo uit als een juiste.
+
+```
+decidedHow: "als het totaal meer dan twee euro afwijkt, stop ik en vraag het"
+  needsReasoning: true
+  reasoningBasis: "stop ik en vraag het"
+
+decidedHow: "als de voorraad onder tien komt, bestellen we"
+  needsReasoning: false
+  reasoningBasis: "als de voorraad onder tien komt"
+```
+
+De zin moet een citaat zijn, geen samenvatting. Geeft `decidedHow` je niets om te
+citeren, citeer dan wat er staat; kun je het echt niet beslissen, zet de vlag dan
+op `true`: een onzekere stap is een plek waar nog een mens nodig is.
 
 Dit is met opzet per stap. Een keten kan bijna volledig mechanisch zijn met één
 oordeel in het midden:
@@ -115,7 +148,8 @@ Zolang er nog iets ontbreekt:
           "name": "De bestelbon zoeken",
           "whatHappens": "In het boekhoudpakket de passende bestelbon opzoeken.",
           "decidedHow": "ik zoek op het factuurnummer",
-          "needsReasoning": false
+          "needsReasoning": false,
+          "reasoningBasis": "ik zoek op het factuurnummer"
         }
       ]
     }

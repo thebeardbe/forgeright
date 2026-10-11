@@ -83,10 +83,25 @@ messages from client
 The model contract is a JSON object, never prose. That is what lets the scoring
 layer be pure logic: it receives structured data instead of parsing a document.
 
+The interview contract also carries the completeness matrix and, on completion,
+the `processes` payload. `processes` is the authoritative field: `parseModelResponse`
+resolves the payload BY CONTENT, so a valid `processes` beats an empty or stale
+`audit.workflows`. The older single-shot shape is still accepted.
+
 ```
-{ "status": "asking",   "content": "<one question>" }
-{ "status": "complete", "content": "<closing line>", "audit": { "workflows": [...] } }
+{ "status": "asking",   "content": "<one question>",
+  "have": [...], "missing": [...], "processes": [ ... ] }
+
+{ "status": "complete", "content": "<closing line>",
+  "have": [...], "missing": [], "processes": [ ... ] }
 ```
+
+`have` and `missing` are the model's claim about the matrix. `reconcileMatrix`
+recomputes both from `processes` and the model's claim is only reconciled against
+it, never trusted: a reply claiming `complete` with a field still missing is
+downgraded to `asking` rather than closing. A step's `needsReasoning` is derived
+by the model, and `reasoningBasis` optionally carries the phrase from
+`decidedHow` that decided it, so a misread step is visible to a reader.
 
 ### Providers
 
@@ -126,6 +141,12 @@ reduces those flags to a band 1–5, and `RULES_FACTOR` runs 0.15 to 1.00 from i
 **Per step, not per process, and that is the point.** A chain of five mechanical
 steps with one judgement call in the middle reads as five automatable steps with a
 known boundary, rather than as a whole process that needs a person.
+
+**That boundary is carried by the flags, not by the score.** The band is a share
+of flagged steps, so one judgement call among six dilutes: `judgementBandFor`
+gives 4, against 5 for a purely mechanical chain. The per-step flags and the
+console still show the boundary plainly. The bands are guidelines, not
+fixed-answer logic, so the dilution is accepted rather than corrected here.
 
 Buckets: do first, do later, do not automate. Judgement-bound work is separated
 before the score threshold is applied, because a high-effort task needing

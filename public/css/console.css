@@ -102,6 +102,13 @@
 .step-basis { font-size: 0.84rem; margin: 4px 0 0; }
 .step-basis .why { color: var(--muted); }
 
+/* The quotation that decided the flag, set apart from the basis it came from so
+   the two read as a claim and its evidence rather than as one block of prose. */
+.step-quote { font-size: 0.84rem; margin: 4px 0 0; padding-left: 8px;
+              border-left: 2px solid var(--border); }
+.step-quote .why { color: var(--muted); }
+.step-quote.missing { color: var(--muted); font-style: italic; }
+
 /* A marker for the terms that count against a process. */
 .tag {
     display: inline-block;

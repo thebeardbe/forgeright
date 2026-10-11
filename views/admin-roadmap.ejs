@@ -94,6 +94,13 @@
                         <% if (step.decidedHow) { %>
                             <p class="step-basis"><span class="why">on what basis:</span> <%= step.decidedHow %></p>
                         <% } %>
+                        <%# The phrase that decided the flag, so a misread step is
+                            visible rather than hidden behind a tidy boolean. %>
+                        <% if (step.reasoningBasis) { %>
+                            <p class="step-quote"><span class="why">decided by:</span> &ldquo;<%= step.reasoningBasis %>&rdquo;</p>
+                        <% } else { %>
+                            <p class="step-quote missing"><span class="why">decided by:</span> no phrase was quoted</p>
+                        <% } %>
                     </div>
                 <% }); %>
 

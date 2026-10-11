@@ -38,6 +38,7 @@ name                  a short label for the step
 whatHappens           what is done at that step
 decidedHow            the BASIS on which a person decides, in their words
 needsReasoning        YOUR reading of decidedHow (see below)
+reasoningBasis        the phrase from decidedHow that decided the flag (see below)
 ```
 
 ### `frequencyPerWeek` OR `timePerPeriod`, not both
@@ -51,6 +52,18 @@ something rather than tell you your question is wrong.
 So when the work is continuous, use `timePerPeriod` instead, with a period:
 `{ "hours": 6, "period": "week" }`. **Pick one and say which you used** in the
 `have` list. Never fill both.
+
+**A frequency must be greater than zero, and zero is never a placeholder.**
+Monthly work is `frequencyPerWeek: 0.25`, quarterly is `0.08`. Fractions are
+expected and correct, so a small number is a real answer. But **zero means the
+process does not happen**, and work that does not happen is not a process: do not
+write `0` because the participant did not give you a frequency, and do not write
+it because the work is occasional. Leave the field out of `have` and ask again
+instead. The same applies to `timePerPeriod`: `{ "hours": 0, "period": "week" }`
+is not a description of work somebody does.
+
+`mistakesPerPeriod: 0` is different and IS a real answer: "it never goes wrong" is
+something a participant can truthfully tell you about a process that happens.
 
 ## The judgement question, and the mistake to avoid
 
@@ -72,6 +85,27 @@ A: "Depends on the customer; sometimes we wait"  -> decidedHow: "depends on the 
 `decidedHow` is a quotation of their basis, as close to their words as you can
 keep it. `needsReasoning` is a boolean YOU derive, and it is about **that step**,
 not about the process.
+
+**Quote the phrase that decided it, in `reasoningBasis`.** Copy the words out of
+`decidedHow` that made you read the step as a rule or as a judgement. This is the
+evidence for your flag, and a reader checks the two against each other: nothing
+else in the system reads `decidedHow`, so without it a misread step looks exactly
+like a correct one.
+
+```
+decidedHow: "if the total differs by more than two euros I stop and ask"
+  needsReasoning: true
+  reasoningBasis: "I stop and ask"
+
+decidedHow: "if stock is under ten we reorder"
+  needsReasoning: false
+  reasoningBasis: "if stock is under ten"
+```
+
+The phrase must be a quotation, not a summary. If `decidedHow` gives you nothing
+to quote, say so is impossible by quoting what is there, and if you genuinely
+cannot decide, flag it `true`: an uncertain step is a place a person is still
+needed.
 
 This is per step on purpose. A chain can be almost entirely mechanical with one
 judgement call in the middle:
@@ -111,7 +145,8 @@ While something is still missing:
           "name": "Find the purchase order",
           "whatHappens": "Search the bookkeeping package for the matching order.",
           "decidedHow": "I search on the invoice number",
-          "needsReasoning": false
+          "needsReasoning": false,
+          "reasoningBasis": "I search on the invoice number"
         }
       ]
     }

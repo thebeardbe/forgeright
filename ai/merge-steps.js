@@ -63,7 +63,9 @@ function stepKey(step) {
  * Where two accounts of the same step differ in wording, the LONGER `whatHappens`
  * wins (it carries more of what somebody said) and the FIRST non-empty `decidedHow`
  * wins (a basis is a basis; the first account to state one is not made wrong by a
- * second that omits it).
+ * second that omits it). `reasoningBasis`, the quotation behind the flag, follows
+ * the same rule as `decidedHow`: first non-empty wins, so a later account that
+ * quoted is not dropped for arriving second.
  *
  * @param {Array<object>} responses Response rows, each with `data.steps`.
  * @returns {{
@@ -108,6 +110,16 @@ export function mergeProcessSteps(responses) {
             }
             if (!existing.decidedHow && step.decidedHow) existing.decidedHow = step.decidedHow;
             if (stepNeedsReasoning(step)) existing.needsReasoning = true;
+
+            // THE QUOTATION IS CARRIED THE SAME WAY AS THE BASIS IT COMES FROM. The
+            // first account to state one is not made wrong by a second that omits
+            // it, and a second account that DID quote must not have its evidence
+            // dropped just because the first one did not. Without this the field
+            // survived only when the first response happened to carry it, which is
+            // the sort of asymmetry that reads as a model being inconsistent.
+            if (!existing.reasoningBasis && step.reasoningBasis) {
+                existing.reasoningBasis = step.reasoningBasis;
+            }
         }
     }
 
