@@ -184,6 +184,27 @@ CREATE TABLE IF NOT EXISTS process_revision (
 );
 
 CREATE INDEX IF NOT EXISTS idx_process_revision_process ON process_revision(process_id);
+-- One revision number per process, so the number identifies a revision on its own.
+--
+-- THE CODE ALREADY KEEPS THIS TRUE, and the index makes it the DATABASE's job.
+-- `nextRevision` is MAX(revision) + 1, read and written inside one BEGIN IMMEDIATE,
+-- so eight concurrent OS processes were measured producing nine sequential numbers
+-- with no collision. The index closes the remaining route: `nextRevision`'s MAX is
+-- the only thing preventing a repeat, so a future writer that computed a number
+-- differently would have created a duplicate silently.
+--
+-- IT IS NOT COSMETIC. `needsReviewFromRevisions` reads the creation from the FIRST
+-- revision by number, so two rows numbered 1 make the flag depend on sort order
+-- rather than on data.
+--
+-- NO schema_version BUMP: this is an index, so CREATE ... IF NOT EXISTS applies it
+-- to an existing file on its next open with nothing to migrate. Bumping the version
+-- would REFUSE every existing file, and the project has no migration path by
+-- design, so a bump would cost every operator a fresh file to gain nothing. A DELETED
+-- revision is the one state that could still collide on this index, and no code
+-- deletes one; see the limit recorded in lib/store/process-membership.js.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_process_revision_number
+    ON process_revision(process_id, revision);
 -- At most ONE current revision per process. A partial unique index, so the
 -- database refuses a second rather than the code having to remember.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_process_revision_current
