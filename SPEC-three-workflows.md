@@ -281,8 +281,10 @@ where that happens.
 
 - every answer, listed
 - **expandable** to its reasoning: how it was identified, what it matched, why
-- **"ask for a rerank"** with a reason
-- the earlier versions kept
+- the score and the paragraph explaining it
+- the participants' own words, so the paragraph can be checked
+- **"rejudge"** with a reason, which returns to workflow 2
+- earlier versions kept
 
 **This is the review mechanism for the one step no test can pin.** A wrong
 grouping produces a plausible roadmap of the wrong things, so the working is
