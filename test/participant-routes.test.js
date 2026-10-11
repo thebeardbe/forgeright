@@ -180,6 +180,24 @@ function responsesInFile(orgId) {
 }
 
 /**
+ * The transcript column for every response in one organisation's file, read
+ * directly. `null` is no transcript; `[]` is an empty one.
+ *
+ * @param {string} orgId
+ * @returns {Array<Array<object>|null>}
+ */
+function transcriptsInFile(orgId) {
+    const db = new DatabaseSync(path.join(STORE_DIR, 'orgs', `${orgId}.db`));
+    try {
+        return db.prepare('SELECT transcript FROM response ORDER BY created_at, id')
+            .all()
+            .map((row) => (row.transcript === null ? null : JSON.parse(row.transcript)));
+    } finally {
+        db.close();
+    }
+}
+
+/**
  * Creates an organisation and one invitation by driving the public store API
  * directly, so the test owns the ids and the tokens it will use over HTTP.
  *
@@ -446,7 +464,107 @@ test('after a write as A, analysis for B is empty of it and for A contains it', 
 });
 
 // ===========================================================================
-// 7. LOST-LINK: THE FORM, AND ITS RESPONSE DOES NOT LEAK WHETHER AN ADDRESS EXISTS
+// 7. THE TRANSCRIPT OVER HTTP
+// ===========================================================================
+//
+// The client sends the raw conversation with the answers. A malformed one is
+// refused with 400 rather than silently dropped, so a transcript the console
+// cannot render never reaches the store.
+
+test('a valid transcript is stored and read back in order over HTTP', async () => {
+    const turns = [
+        { role: 'assistant', content: 'What is the task?' },
+        { role: 'user', content: 'Supplier invoices.' },
+        { role: 'assistant', content: 'How often?' }
+    ];
+
+    const res = await post('/api/response', { token: TOKEN_A, department: 'Finance', data: { marker: 'with-transcript' }, transcript: turns });
+    assert.equal(res.status, 200);
+    assert.equal(res.json().transcriptMessages, 3, 'the route reports how many turns it stored');
+    await settle();
+
+    const stored = transcriptsInFile(ORG_A.id).find((t) => Array.isArray(t) && t.some((turn) => turn.content === 'Supplier invoices.'));
+    assert.deepEqual(stored, turns, 'every turn is stored in order, roles and content intact');
+});
+
+test('a malformed transcript is refused with 400, not silently dropped', async () => {
+    // Every shape the builder exercised, plus the two a caller is most likely to
+    // send by mistake. None may be stored.
+    const before = responsesInFile(ORG_A.id).length;
+    const badTranscripts = [
+        'not an array',
+        { role: 'user', content: 'an object, not an array' },
+        42,
+        [42],
+        [null],
+        [{ role: 'user' }],
+        [{ content: 'hi' }],
+        [{ role: '', content: 'hi' }],
+        [{ role: 'user', content: 42 }],
+        [{ role: 'user', content: 'hi' }, { role: 'user' }]
+    ];
+
+    for (const transcript of badTranscripts) {
+        const res = await post('/api/response', { token: TOKEN_A, department: 'Finance', data: { marker: 'bad-transcript' }, transcript });
+        assert.equal(res.status, 400, `transcript ${JSON.stringify(transcript)} must be refused`);
+        assert.match(res.json().error, /conversation could not be read/i);
+    }
+
+    await settle();
+    assert.equal(responsesInFile(ORG_A.id).length, before, 'a refused transcript stored nothing');
+});
+
+test('an ABSENT transcript is accepted and stored as no transcript', async () => {
+    // A caller with none to give is not blocked, and it is distinct from an empty
+    // conversation.
+    const res = await post('/api/response', { token: TOKEN_A, department: 'Finance', data: { marker: 'no-transcript' } });
+    assert.equal(res.status, 200);
+    assert.equal(res.json().transcriptMessages, 0);
+    await settle();
+
+    const stored = transcriptsInFile(ORG_A.id);
+    // The newest row is the one just written; its transcript is null.
+    assert.equal(stored.at(-1), null, 'no transcript is stored as null, not as []');
+});
+
+test('an EMPTY transcript is accepted and stored as an empty array', async () => {
+    const res = await post('/api/response', { token: TOKEN_A, department: 'Finance', data: { marker: 'empty-transcript' }, transcript: [] });
+    assert.equal(res.status, 200);
+    assert.equal(res.json().transcriptMessages, 0);
+    await settle();
+
+    assert.deepEqual(transcriptsInFile(ORG_A.id).at(-1), [], 'an empty transcript is stored as []');
+});
+
+test('THE FORMAT COMMITMENT IS NEVER STORED in a transcript', async () => {
+    // The synthetic assistant turn commits to the JSON format and exists only in
+    // the outgoing request to the model. It must not reach the transcript, which
+    // records what was actually said: a leak would put words in the participant's
+    // mouth and corrupt the evidence.
+    //
+    // The commitment's text is read from the module, not restated, so a change to
+    // it cannot leave this test looking for the wrong string.
+    const { withFormatCommitment } = await import('../ai/format-commitment.js');
+    const conversation = [{ role: 'user', content: 'Invoices, every morning.' }];
+    const withCommitment = withFormatCommitment(conversation);
+    const commitmentText = withCommitment.at(-1).content;
+
+    await post('/api/response', { token: TOKEN_A, department: 'Finance', data: { marker: 'commitment-check' }, transcript: conversation });
+    await settle();
+
+    const stored = transcriptsInFile(ORG_A.id).find((t) => Array.isArray(t) && t.some((turn) => turn.content === 'Invoices, every morning.'));
+    assert.deepEqual(stored, conversation, 'only the turns the client sent are stored');
+    assert.equal(
+        JSON.stringify(stored).includes(commitmentText),
+        false,
+        'the format commitment appears nowhere in the stored transcript'
+    );
+    // And the client's own array was not mutated to contain it.
+    assert.equal(conversation.length, 1, 'the caller\'s conversation is unchanged');
+});
+
+// ===========================================================================
+// 8. LOST-LINK: THE FORM, AND ITS RESPONSE DOES NOT LEAK WHETHER AN ADDRESS EXISTS
 // ===========================================================================
 
 test('GET /lost-link serves the form', async () => {

@@ -1649,3 +1649,90 @@ test('timedWrite does not report a fast success as having waited for a lock', ()
         'a fast write must not be logged as contention'
     );
 });
+
+// ===========================================================================
+// 13. THE TRANSCRIPT
+// ===========================================================================
+//
+// A response carries the raw conversation that produced it. An answer is only
+// meaningful against its question, so the transcript is the evidence the analysis
+// rests on: "eight minutes" means one thing asked about duration and another asked
+// about the invoice count. It is stored as one JSON column, optionally null.
+
+test('a stored transcript reads back with every turn in order, roles and content intact', () => {
+    const org = newOrg('Transcript round trip');
+    const inv = invite(org.id);
+
+    const turns = [
+        { role: 'assistant', content: 'What is the task that takes the most time?' },
+        { role: 'user', content: 'Entering supplier invoices.' },
+        { role: 'assistant', content: 'How often does that happen?' },
+        { role: 'user', content: 'Every morning, about 20 a day.' }
+    ];
+
+    const created = store.addResponse(org.id, inv.token, { department: 'Finance', data: { a: 1 }, transcript: turns });
+    assert.deepEqual(created.transcript, turns, 'the returned row carries the transcript it was given');
+
+    const readBack = store.getResponsesByToken(org.id, inv.token)[0];
+    assert.deepEqual(readBack.transcript, turns, 'the order and the roles and content survive the round trip');
+});
+
+test('the transcript is present on the analysis row too', () => {
+    const org = newOrg('Transcript analysis');
+    const inv = invite(org.id);
+    const turns = [{ role: 'user', content: 'Only a question was asked here.' }];
+
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { a: 1 }, transcript: turns });
+
+    const row = store.getResponsesForAnalysis(org.id)[0];
+    assert.deepEqual(row.transcript, turns);
+});
+
+test('no transcript is stored as null, and an EMPTY transcript as []', () => {
+    // The reason the column is nullable: "no transcript" and "an empty one" are
+    // different states, and collapsing them would lose that distinction.
+    const org = newOrg('Transcript absent vs empty');
+    const inv = invite(org.id);
+
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { marker: 'absent' } });
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { marker: 'empty' }, transcript: [] });
+
+    const rows = store.getResponsesByToken(org.id, inv.token);
+    const absent = rows.find((r) => r.data.marker === 'absent');
+    const empty = rows.find((r) => r.data.marker === 'empty');
+
+    assert.equal(absent.transcript, null, 'no transcript reads back as null, not as []');
+    assert.deepEqual(empty.transcript, [], 'an empty transcript reads back as an empty array');
+    assert.notDeepEqual(absent.transcript, empty.transcript, 'the two states are distinct');
+});
+
+test('the raw conversation is stored as text in the database, not as a second table', () => {
+    // One column, as documented: a long interview is one value rather than a row
+    // per message.
+    const org = newOrg('Transcript storage');
+    const inv = invite(org.id);
+    const turns = [{ role: 'user', content: 'hello' }];
+    store.addResponse(org.id, inv.token, { department: 'Finance', data: { a: 1 }, transcript: turns });
+    store.closeAll();
+
+    const db = new DatabaseSync(store.orgDbPath(org.id));
+    try {
+        const row = db.prepare('SELECT transcript FROM response').get();
+        assert.equal(typeof row.transcript, 'string', 'stored as JSON text');
+        assert.deepEqual(JSON.parse(row.transcript), turns);
+    } finally {
+        db.close();
+    }
+});
+
+test('a non-array transcript is refused at the store boundary', () => {
+    // The store refuses anything that is not an array rather than stringifying it,
+    // so a malformed value cannot become an unreadable column.
+    const org = newOrg('Transcript refused');
+    const inv = invite(org.id);
+
+    assert.throws(
+        () => store.addResponse(org.id, inv.token, { department: 'Finance', data: { a: 1 }, transcript: 'not an array' }),
+        /transcript must be an array/
+    );
+});
