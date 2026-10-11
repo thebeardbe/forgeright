@@ -427,5 +427,8 @@ plus 2 console failures that appear only under parallel execution.
 Neither was a defect, and neither belonged in a push. The pushed commit happened
 to be a test file and was fine, but that was luck rather than judgement.
 
-**Check `git status` before running the suite, and do not push while any agent
-has uncommitted changes.** Green means green on a tree nobody is editing.
+**Check `git status` before running the suite.** What matters is not "an agent is
+working" but **"would this push contain its half-finished work"**. A commit
+touching only files the agent is not editing is safe to push; a commit spanning
+the tree it is editing is not. Run the suite on the state the commit will produce,
+not on whatever the tree happens to be mid-edit.
