@@ -89,8 +89,8 @@ not about the process.
 **Quote the phrase that decided it, in `reasoningBasis`.** Copy the words out of
 `decidedHow` that made you read the step as a rule or as a judgement. This is the
 evidence for your flag, and a reader checks the two against each other: nothing
-else in the system reads `decidedHow`, so without it a misread step looks exactly
-like a correct one.
+else in the system derives the flag from `decidedHow`, so without it a misread
+step looks exactly like a correct one.
 
 ```
 decidedHow: "depends on the customer; sometimes we wait and sometimes we insist"
@@ -103,9 +103,9 @@ decidedHow: "if stock is under ten we reorder"
 ```
 
 The phrase must be a quotation, not a summary. If `decidedHow` gives you nothing
-to quote, say so is impossible by quoting what is there, and if you genuinely
-cannot decide, flag it `true`: an uncertain step is a place a person is still
-needed.
+worth quoting, quote what is there anyway rather than leaving it out; and if you
+genuinely cannot decide, flag it `true`: an uncertain step is a place a person is
+still needed.
 
 ### A threshold is a rule, even when it stops someone to look
 
@@ -150,8 +150,8 @@ threshold flags the order and the next step decides what to do about it, which i
 where a person is genuinely needed. A sign-off is not judgement on its own: an
 approval that checks something stated, like "the totals match last month" or "the
 order is over ten thousand", is `false` however much care it takes, because the
-check decides it rather than the person. The fixture behind this prompt has
-exactly that pair, and it is the reference to follow:
+check decides it rather than the person. Go back to the pair above, because it is
+the reference and it is worth reading twice with this in mind:
 
 ```
 Match the amounts   "if they differ by more than 2 euros I stop and ask"   false
@@ -231,7 +231,7 @@ same JSON object:
       "timePerPeriod": null,
       "minutesPerInstance": 8,
       "peopleAffected": 3,
-      "steps": [ { "... as above, with decidedHow and needsReasoning ..." } ],
+      "steps": [ { "... as above, with decidedHow, needsReasoning and reasoningBasis ..." } ],
       "handoffTo": ["Warehouse"],
       "waitsFor": ["the supplier's confirmation"],
       "dependsOn": ["the order being placed"],

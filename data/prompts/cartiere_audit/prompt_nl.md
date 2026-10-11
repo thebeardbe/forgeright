@@ -92,8 +92,8 @@ stap**, niet over het proces.
 **Citeer in `reasoningBasis` de zin die de beslissing bepaalde.** Neem de woorden
 over uit `decidedHow` die je ertoe brachten de stap als regel of als oordeel te
 lezen. Dat is het bewijs voor je vlag, en een lezer legt de twee naast elkaar:
-niets anders in het systeem leest `decidedHow`, dus zonder die citatie ziet een
-verkeerd gelezen stap er precies zo uit als een juiste.
+niets anders in het systeem leidt de vlag af uit `decidedHow`, dus zonder die
+citatie ziet een verkeerd gelezen stap er precies zo uit als een juiste.
 
 ```
 decidedHow: "hangt van de klant af; soms wachten we en soms dringen we aan"
@@ -153,8 +153,9 @@ drempel markeert de order en de volgende stap beslist wat ermee gebeurt; daar is
 echt een mens nodig. Een goedkeuring is op zichzelf geen oordeel: een akkoord dat
 een vaste controle uitvoert, zoals "de totalen kloppen met vorige maand" of "de
 order is boven de tienduizend", is `false`, hoeveel zorg het ook kost, want de
-controle beslist het en niet de persoon. De fixture achter deze prompt heeft
-precies dat paar, en dat is de referentie:
+controle beslist het en niet de persoon. Ga terug naar het paar hierboven, want
+dat is de referentie en het is de moeite waard om het met dit in gedachten nog
+eens te lezen:
 
 ```
 Bedragen vergelijken  "als ze meer dan 2 euro afwijken, stop ik en vraag het"   false
@@ -235,14 +236,14 @@ JSON-object:
       "timePerPeriod": null,
       "minutesPerInstance": 8,
       "peopleAffected": 3,
-      "steps": [ { "... zoals hierboven, met decidedHow en needsReasoning ..." } ],
+      "steps": [ { "... zoals hierboven, met decidedHow, needsReasoning en reasoningBasis ..." } ],
       "handoffTo": ["Magazijn"],
       "waitsFor": ["de bevestiging van de leverancier"],
       "dependsOn": ["de bestelling geplaatst is"],
       "systems": ["Excel", "E-mail"],
       "touchedDepartments": ["Financiën"],
       "mistakesPerPeriod": 2,
-      "mistakeConsequence": "De factuur wordt te laat betaald en we verliezen het korting.",
+      "mistakeConsequence": "De factuur wordt te laat betaald en we verliezen de korting.",
       "currentState": "Eén persoon toetst elke factuur handmatig in.",
       "frustration": "Vooral het zoeken. Het zijn elke keer dezelfde tien minuten.",
       "reportedBy": "Financiën"
