@@ -121,14 +121,109 @@ CREATE TABLE IF NOT EXISTS response (
 
 CREATE INDEX IF NOT EXISTS idx_response_invitation ON response(invitation_id);
 
+-- A process: the work itself, named, independent of who described it.
+--
+-- THE IDENTITY IS THE PROCESS, NOT THE DESCRIPTION. Three people describing the
+-- order-to-supplier loop in different words produce ONE row here and three rows
+-- in the join table below. That is what workflow 2 decides, and it is why this
+-- cannot live on a response row: a process spans responses.
+--
+-- The NAME is a convenience for the console. It is held on the process rather
+-- than on each revision because a rejudge normally refines the name rather than
+-- replacing the identity, and a reader wants the current one.
+--
+-- NOTHING ABOUT GROUPING IS HIDDEN FROM THE PARTICIPANT BY OMISSION HERE. They
+-- never see any of this: no route exposes it, deliberately, because people would
+-- write answers to influence where their process was placed. See the note on
+-- exposesToParticipant in lib/store/processes.js.
+CREATE TABLE IF NOT EXISTS process (
+    id         TEXT PRIMARY KEY,
+    -- The work as named by the model, in the language of the responses, as the
+    -- actual work rather than a category ("Matching supplier invoices", not
+    -- "Finance").
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- One grouping judgement: the reasoning, the confidence, and which responses it
+-- covered.
+--
+-- EVERY JUDGEMENT IS A REVISION AND NONE IS OVERWRITTEN. A rejudge adds one
+-- rather than editing the last, because the spec keeps both versions: an admin
+-- asks for a reclassification with a reason, and the earlier grouping has to
+-- remain readable for anyone reviewing why the result changed. `is_current`
+-- marks which one the console shows, so the common read is a cheap lookup rather
+-- than a max() over a growing table.
+--
+-- A REVISION IS IMMUTABLE. It records what was decided and why, at a moment, so
+-- editing one would falsify the record rather than correct it.
+CREATE TABLE IF NOT EXISTS process_revision (
+    id             TEXT PRIMARY KEY,
+    process_id     TEXT NOT NULL REFERENCES process(id) ON DELETE CASCADE,
+    -- Which judgement this is: 1 for the first grouping, 2 after the first
+    -- rejudge. Monotonic, so the order does not depend on timestamps.
+    revision       INTEGER NOT NULL,
+    -- 'model' for a workflow 2 decision, 'admin' for a rejudge the admin asked
+    -- for. Kept so a reader can see which groupings a person challenged.
+    decided_by     TEXT NOT NULL,
+    -- WHAT THE MODEL REPORTED: why this is or is not the same task, in one or two
+    -- sentences. NOT NULL, because the reasoning is the only way this step can be
+    -- reviewed and a grouping without it cannot be argued with.
+    reasoning      TEXT NOT NULL,
+    -- 'high' | 'medium' | 'low'. RECORDED, NEVER FILTERED ON: the spec says the
+    -- tool does not decide, so no threshold silently drops a process. A reader
+    -- sees the confidence and makes their own call.
+    confidence     TEXT NOT NULL,
+    -- The admin's own argument, when this revision came from a rejudge. Null for a
+    -- model decision. It is kept because it is the input that produced this
+    -- revision, and without it the revision cannot be explained.
+    admin_reasoning TEXT,
+    is_current     INTEGER NOT NULL DEFAULT 0,
+    created_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_process_revision_process ON process_revision(process_id);
+-- At most ONE current revision per process. A partial unique index, so the
+-- database refuses a second rather than the code having to remember.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_process_revision_current
+    ON process_revision(process_id) WHERE is_current = 1;
+
+-- Which responses a revision covers, and WHAT EACH ONE CONTRIBUTED.
+--
+-- MANY-TO-MANY, because a process spans responses: that is the whole point of
+-- workflow 2. `contributed` records the field names this response supplied to the
+-- merged process, which is how a reader can tell which participant said the
+-- eight minutes and which supplied the trigger.
+--
+-- KEYED ON THE REVISION, not on the process. A rejudge can merge two processes,
+-- so the set of responses behind a process changes with the judgement, and the
+-- earlier membership has to stay readable rather than being overwritten.
+CREATE TABLE IF NOT EXISTS process_response (
+    id          TEXT PRIMARY KEY,
+    revision_id TEXT NOT NULL REFERENCES process_revision(id) ON DELETE CASCADE,
+    response_id TEXT NOT NULL REFERENCES response(id) ON DELETE CASCADE,
+    -- JSON: an array of field names, as the model reported them.
+    contributed TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_process_response_revision ON process_response(revision_id);
+CREATE INDEX IF NOT EXISTS idx_process_response_response ON process_response(response_id);
+-- One response appears at most once in one revision. A duplicate would make
+-- "the responses behind this process" depend on how many times it was linked.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_process_response_once
+    ON process_response(revision_id, response_id);
+
 -- Schema bookkeeping for this file.
 --
--- VERSION 4 ADDS `transcript` TO `response`, AND THERE IS NO MIGRATION PATH.
+-- VERSION 5 ADDS `process`, `process_revision` and `process_response` FOR
+-- WORKFLOW 2 IDENTIFICATION, AND THERE IS STILL NO MIGRATION PATH.
 --
 -- That is deliberate and wanted. This is the proof of concept: V2 is a rewrite on
 -- a different database, so carrying an upgrade path here would be work spent on a
 -- schema with no future. The version check exists to REFUSE a file this code does
--- not understand -- reading version 3 with version 4 queries would answer the
+-- not understand -- reading version 4 with version 5 queries would answer the
 -- wrong question quietly -- not to upgrade one. An older file is a loud error,
 -- and someone who wants the data should export it before deleting the file.
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -136,4 +231,4 @@ CREATE TABLE IF NOT EXISTS schema_meta (
     value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '4');
+INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', '5');

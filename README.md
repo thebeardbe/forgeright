@@ -120,6 +120,55 @@ Gemini-needs-it claim should not be trusted until someone reproduces it.
 The turn is added only when the last message is a participant turn, and it is
 never stored, so it cannot appear in the transcript.
 
+## Workflow 2: identification
+
+**Input:** one completed response. **Output:** the process it belongs to, and the
+responses behind it.
+
+A second model session, separate from the interview, whose only job is **sameness**:
+deciding whether this describes work somebody has already described. Three people
+describing the order-to-supplier loop in different words are one process.
+
+**It reports, it does not decide.** The model returns `matches` (an existing
+process id, or null), a `confidence`, its `reasoning`, and which fields the
+response `contributed`. The code validates that shape and refuses anything
+unusable. **The confidence is recorded and never filtered on**: a threshold would
+silently drop a process, and the spec says the tool proposes rather than decides.
+
+**The reasoning is required, not decoration.** It is the only way the step can be
+reviewed, so a reply without it is refused rather than stored. An admin who
+disagrees does not set a category: they ask for a **rejudge with a reason**, which
+re-runs identification for that process with their argument. The model is free to
+push back, and measurably does when the argument turns on the desk or the system
+rather than on the work itself.
+
+**Nothing here scores or ranks.** That is workflow 3, not built.
+
+**The participant never sees any of it.** No participant route imports the process
+module, deliberately: a participant who could see where their answer was grouped
+would write to influence where it landed.
+
+### How a grouping is stored
+
+| table | what it holds |
+| :--- | :--- |
+| `process` | the work, named. The stable identity: it survives a rejudge. |
+| `process_revision` | one grouping judgement: reasoning, confidence, who decided, and the admin's argument when there was one. |
+| `process_response` | which responses a revision covers, and what each contributed. |
+
+**Every judgement is a revision and none is overwritten**, because the spec keeps
+both versions: an earlier grouping has to stay readable for anyone reviewing why a
+result changed. `is_current` marks the one the console shows, enforced by a
+partial unique index so the database refuses a second.
+
+**A revision is a snapshot of the process, not a record of one response.** When a
+response joins, the new revision carries forward every response the process
+already had, or "the responses behind this process" would lose the work it just
+merged. Each response keeps the field list **it** contributed.
+
+**One response is one process.** A description containing a chain is one process
+with several steps, not several processes, and the prompt says so explicitly.
+
 ## How scoring works
 
 ```
@@ -183,6 +232,11 @@ lib/token-index.js         which organisation owns a participant token
 lib/auth/console.js        the console, scoped to the session's organisation
 lib/auth/participant-routes.js  the questionnaire link and the lost-my-link form
 lib/store/                 per-organisation storage (step 1)
+lib/store/processes.js     workflow 2: grouping a response into a process
+lib/store/process-sql.js   the process, revision and membership statements
+ai/identify-core.js        workflow 2: the comparison, and the shared reply parsing
+ai/matrix.js               workflow 1: the completeness matrix and the judgement band
+data/prompts/*/identify_*.md  the workflow 2 prompt, per language
 lib/auth/tokens.js         sign-in links: hashed, single use, expiring
 lib/auth/session.js        signed session cookie, SESSION_SECRET check, loopback test
 lib/auth/routes.js         /admin login, logout, console, session guard
