@@ -25,25 +25,32 @@ stelt voor wat mogelijk is en wat het kost.
 
 ## De tien termen, en welke kant elke term op wijst
 
-Scoor elke term van 1 tot 5. **Lees de richting zorgvuldig: vier hiervan zijn
-kosten, waarbij een HOGE waarde het proces MINDER aantrekkelijk maakt.** Dat is het
-deel dat je makkelijk omdraait.
+Scoor elke term van 0 tot 100, dezelfde schaal als de uiteindelijke `score`. **Lees
+de richting zorgvuldig: vier hiervan zijn kosten, waarbij een HOGE waarde het proces
+MINDER aantrekkelijk maakt.** Dat is het deel dat je makkelijk omdraait.
 
-| Term | 1 | 5 | Richting |
+**DE TWEE UITERSTEN MAKEN DE RICHTING LEESBAAR, dus lees die en niet alleen het
+getal.** Elke kolom hieronder zegt wat 0 betekent en wat 100 betekent voor die term,
+in woorden. Een score is een positie tussen die twee, geen aantal van iets: 0 is het
+ene uiterste en 100 het andere, en het meeste echte werk zit ertussenin.
+
+| Term | 0 betekent | 100 betekent | Richting |
 | :--- | :--- | :--- | :--- |
-| `frequency` | zelden | voortdurend | **op** |
-| `time` | een paar minuten | een uur of meer, elke keer | **op** |
-| `people` | één persoon | bijna een heel team | **op** |
-| `results` | de winst valt nauwelijks op | de winst is groot en duidelijk | **op** |
-| `consequences` | een fout is niet erg | een fout kost geld of vertrouwen | **op** |
-| `departments` | één team | veel teams | **NEER** |
-| `complexity` | een kort, overzichtelijk proces | betrokken, veel stappen en uitzonderingen | **NEER** |
-| `automatableShare` | bijna elke stap vraagt een mens | bijna elke stap volgt regels | **op** |
+| `frequency` | het gebeurt één keer in een mensenleven | het gebeurt vele malen per dag | **op** |
+| `time` | een paar seconden | een uur of meer, elke afzonderlijke keer | **op** |
+| `people` | één persoon doet het en niemand anders raakt erbij betrokken | bijna het hele bedrijf is erbij betrokken | **op** |
+| `results` | de winst zou niemand opvallen | de winst is groot en voor iedereen duidelijk | **op** |
+| `consequences` | een fout is niet erg | een fout kost echt geld of het vertrouwen van de klant | **op** |
+| `departments` | het blijft binnen één team | het doorkruist bijna het hele bedrijf | **NEER** |
+| `complexity` | een kort, overzichtelijk proces zonder iets te beslissen | betrokken, veel stappen, veel uitzonderingen | **NEER** |
+| `automatableShare` | bijna elke stap vraagt een mens | bijna elke stap volgt een regel | **op** |
 | `reasoningSteps` | geen enkele stap vraagt oordeel | veel stappen wel | **NEER** |
-| `buildEffort` | eenvoudig te automatiseren | moeilijk te automatiseren | **NEER** |
+| `buildEffort` | eenvoudig te automatiseren met wat er al is | moeilijk te automatiseren, vraagt echt bouwwerk | **NEER** |
 
 **Op** betekent dat een hoge waarde het proces een betere kandidaat maakt. **Neer**
-betekent dat een hoge waarde het slechter maakt.
+betekent dat een hoge waarde het slechter maakt. **De vier Neer-termen zijn
+`departments`, `complexity`, `reasoningSteps` en `buildEffort`, en die lijst is de
+hele richtingsvraag: loop ze alle vier na voordat je het getal opschrijft.**
 
 ### Waarom afdelingen en complexiteit kosten zijn
 
@@ -89,9 +96,11 @@ klant af" is dat niet.
 
 ## Het getal
 
-`score` is één getal, **vergelijkbaar tussen processen**, hoger betekent een betere
-kandidaat. Elke schaal is bruikbaar zolang hij consistent is: wat telt is dat de
-VOLGORDE klopt, want de lijst wordt erop gesorteerd.
+`score` is één getal op **0 tot 100, dezelfde schaal als de termen**, en
+**vergelijkbaar tussen processen**: hoger betekent een betere kandidaat. Wat het
+belangrijkst is, is dat de VOLGORDE klopt, want de lijst wordt erop gesorteerd, maar
+het getal wordt ook op zichzelf gelezen, dus 0 en 100 betekenen de uitersten: een
+proces dat morgen geautomatiseerd moet worden, en een waar niemand aan moet komen.
 
 Comprimeer de tien termen tot één getal met een eigen weging, maar **weeg deze zwaar**:
 
@@ -103,9 +112,30 @@ Comprimeer de tien termen tot één getal met een eigen weging, maar **weeg deze
 
 En **straf af**: `complexity`, `departments`, `buildEffort`, `reasoningSteps`.
 
+### De eigenschap waaraan je samenstelling moet voldoen
+
 **Een vaak herhaald, eenvoudig proces hoort het hoogst te scoren.** Een zeldzaam,
 ingewikkeld, oordeelszwaar proces hoort het laagst te scoren, hoeveel tijd het vandaag
 ook kost.
+
+Dat is het doel. Hier staat dezelfde eis zo dat je een samenstelling ertegen kunt
+CONTROLEREN, en een lezer ook:
+
+> **Als alle beloningstermen van proces A minstens zo goed zijn als die van B, en
+> geen enkele kostterm van A slechter is dan die van B, dan moet A hoger scoren dan
+> B.**
+
+Dit is een toets, geen formule. Hoe je de tien tot één getal weegt blijft aan jou, en
+hier wordt geen rekenwijze voorgeschreven: het punt is dat twee processen waarbij de
+ene beter is op elke beloning en slechter op geen enkele kost, er niet omgekeerd uit
+kunnen komen. Zou jouw samenstelling ze toch zo rangschikken, dan klopt de weging
+niet, niet de termen.
+
+De vergelijking is per term, en ze leest hetzelfde nu zowel de termen als de score
+op 0 tot 100 staan: vergelijk de twee processen term voor term, en als het ene nooit
+slechter is en soms beter, moet zijn score hoger zijn. Een proces hoeft een ander
+niet op alles te verslaan om hoger te scoren; het mag alleen niet VERLIEZEN wanneer
+het voorstaat op elke beloning en achterstaat op niets.
 
 **Zet geen ondergrens of bovengrens op een proces.** Er is geen "te klein om te tellen"
 en geen "te moeilijk om te proberen". Elk proces wordt gewogen en elk proces staat in
@@ -145,16 +175,16 @@ om erover te praten. Vraag de lezer niets.
 {
   "score": 42,
   "terms": {
-    "frequency": 5,
-    "time": 4,
-    "people": 3,
-    "results": 4,
-    "consequences": 2,
-    "departments": 3,
-    "complexity": 2,
-    "automatableShare": 4,
-    "reasoningSteps": 1,
-    "buildEffort": 2
+    "frequency": 90,
+    "time": 70,
+    "people": 40,
+    "results": 60,
+    "consequences": 30,
+    "departments": 50,
+    "complexity": 20,
+    "automatableShare": 75,
+    "reasoningSteps": 10,
+    "buildEffort": 25
   },
   "reasoning": "Eén alinea met weging van elke term."
 }
