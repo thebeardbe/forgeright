@@ -146,10 +146,11 @@ An admin who disagrees **does not set a category.** They **ask for a
 reclassification, with a reason**:
 
 ```
-Admin sees:   this process, its responses, and why they were grouped
-Admin asks:   "ask for a rerank", and writes why they think it is wrong
-              -> the model is asked again, with that reasoning
-              -> a new grouping comes back, with its own reasoning
+Admin sees:   this process, its responses, the score, and the paragraph
+              explaining the score
+Admin asks:   "rejudge", and writes why they think it is wrong
+              -> workflow 2 re-identifies, with that reasoning
+              -> workflow 3 regenerates the score and its paragraph
               -> both versions are kept
 ```
 
@@ -157,9 +158,12 @@ Admin asks:   "ask for a rerank", and writes why they think it is wrong
 on factors nobody can enumerate in advance, so the admin's contribution is an
 **argument to the model**, not a field to set.
 
-**Settled:** a reclassification re-runs identification **for that process only**,
-unless the admin's reasoning implies a merge with another, in which case both are
-reconsidered.
+**Settled, and one path for both kinds of disagreement:** a rejudge re-runs
+**workflow 2** identification for that process with the admin's reasoning, then
+**regenerates workflow 3** from the corrected result. Whether the admin is
+disputing the score or the grouping, the flow goes back to workflow 2, because a
+process cannot be reweighed before it is certain what it is. A merge implied by
+the reasoning brings the other process in too.
 
 ---
 
@@ -228,20 +232,41 @@ cheap to automate, and that is exactly the quick win the sort exists to find.
 **Settled:** build effort is **an estimate with its reasoning**. The number sorts
 and the reasoning explains, so both are stored.
 
-### The score explains itself from the answers
+### The score comes with a paragraph, and is verifiable against the answers
 
-**No model-written explanation of the score.** The reasoning is **the evidence**:
-each term points at what the participant said, so the decision-maker checks the
-answer rather than the model's prose about its own arithmetic.
+**The model writes a paragraph explaining why the process got that score**,
+weighing every requirement it was given. That paragraph is part of the output.
+
+**It does not open a conversation.** It is a written justification attached to the
+score, not an invitation to discuss it. `getResponsesForAnalysis`-style prose, not
+a chat.
+
+**And the paragraph is not the thing you check.** The admin verifies against the
+participant's own words:
 
 ```
-effort        <- 40 a week, 8 minutes each, 3 people        (their words)
-reasoning     <- 1 of 5 steps needs a person               (their basis)
-build effort  <- trivial: the rules are already written    (the estimate)
+paragraph   why the model leaned this way            (read it)
+answers     what the participants actually said      (check it)
 ```
 
-A model explaining its own score would be plausible language about a number it
-calculated. **The answers can be pointed at; a paragraph cannot be checked.**
+**If the paragraph feels wrong, the answers are where you look** — and if they
+disagree with it, that is a rejudge, not an argument with the paragraph.
+
+### Rejudging goes back to workflow 2
+
+**Either kind of disagreement takes the same path**, because you cannot reweigh a
+process without first being sure what it is:
+
+```
+a rejudge
+  -> workflow 2 re-identifies the process, with the admin's reasoning
+  -> workflow 3 regenerates the score and paragraph from that
+```
+
+Disputing the **score** and disputing the **grouping** both go back to workflow 2,
+because the admin's reasoning might change what the process *is*, and the weight
+depends on that. The earlier score and paragraph are kept, so a rejudge is a
+revision rather than an overwrite.
 
 **The formula is provisional** and fine-tuned once there are real responses. V1 is
 where that happens.
