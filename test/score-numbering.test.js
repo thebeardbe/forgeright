@@ -99,9 +99,15 @@ test('the derived numbers are what is STORED, not only what is returned', () => 
 });
 
 test('the numbering continues from the highest existing number, not from a count', () => {
-    // `MAX + 1`, so a deletion cannot make two weighings share a number. The
-    // row with the highest number is removed and the next insert must still be
-    // higher than everything left, not equal to a surviving one.
+    // WHAT THIS STAGES, precisely: `MAX + 1` never collides with a LIVE row, so
+    // deleting the HIGHEST number cannot make the next insert equal a surviving one.
+    // That is the `MAX`-derivation half of the guarantee, and it is exercised here.
+    //
+    // THE OTHER HALF IS THE INDEX, which is what this test does NOT stage: removing
+    // `idx_process_score_number` leaves this test passing, because the case it builds
+    // never asks the database to refuse anything. The refusal is covered separately
+    // by "inserting two rows with the same (revision_id, revision_no) is REFUSED".
+    // Stated because the sentence above used to claim the whole guarantee.
     const { org, revisionId } = orgWithRevision();
     const db = registry.connectionFor(org.id);
 
@@ -225,13 +231,18 @@ test('the same number on a DIFFERENT revision is allowed, so the index is per re
 // WHAT IS NOT TESTED, AND WHY
 // ===========================================================================
 //
-// THE RACE ITSELF IS NOT STAGED, deliberately. The reviewer's finding is that it
-// cannot be done reliably in a single-process test: `node:sqlite` is synchronous on
-// the calling thread, so two writers cannot interleave at the `MAX` read from one
-// thread. The repo HAS a precedent for exactly this kind of constraint - the
-// worker-thread write-contention harness in `test/helpers/hold-write-lock.mjs`,
-// used by `test/store.test.js` to make a synchronous write genuinely wait for a
-// lock - and it was considered here.
+// THE RACE ITSELF IS NOT STAGED, deliberately, BUT NOT BECAUSE IT CANNOT BE. An
+// earlier version of this note said a single-process test could not stage it because
+// `node:sqlite` is synchronous on the calling thread. THAT WAS WRONG and it was
+// falsified by running it: three WORKER THREADS in one process, each doing the
+// pre-fix `SELECT MAX` -> `BEGIN IMMEDIATE` -> `INSERT`, produced five duplicate
+// numbers across 74 rows. Registers return, so threads DO interleave - at the READ,
+// which is the mechanism, and not at lock acquisition as the old note implied.
+//
+// WHAT IS TRUE is narrower and more useful: the interleave cannot be produced
+// THROUGH THE PUBLIC API, because `insertScore` opens the transaction that the
+// pre-fix code left open until after the read. Staging it therefore needs the
+// reverted pattern, not a call to `insertScore`.
 //
 // IT DOES NOT FIT THIS CASE. That harness holds a WRITE LOCK so the parent's write
 // can be made to block; what the numbering race needs is two writers INTERLEAVING
@@ -243,6 +254,16 @@ test('the same number on a DIFFERENT revision is allowed, so the index is per re
 // duplicate through the public API, because the transaction prevents it - which is
 // the fix working.
 //
-// So the honest coverage is above: the NUMBER is derived and consecutive (the cause
-// fix), and the INDEX refuses a duplicate (the loud handling of a recurrence). A
-// test that pretended to race and proved nothing would be worse than these two.
+// So the honest coverage is above, and it is TWO PINNED POINTS rather than one: the
+// NUMBER is derived and consecutive, asserted on what is STORED and not only what is
+// returned (the cause fix, pinned with no concurrency at all), and the INDEX refuses
+// a duplicate (the loud handling of a recurrence). Both were verified by mutation:
+// reverting the derivation fails five tests here, and removing the index fails two.
+//
+// What is unpinned is only the third thing, the interleave between two writers, and
+// a test for it would have to embed the reverted code and assert on a state the
+// shipped build cannot reach. That is the trap the repo already documents in the
+// NOTES.md section "The write-contention test trap", not a gap somebody forgot. For
+// anyone who ever does need to stage it: with the fix in place, three worker threads
+// calling `insertScore` produce zero duplicates across 60 rows, because
+// `BEGIN IMMEDIATE` serialises the read and the insert.

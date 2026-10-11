@@ -304,27 +304,42 @@ CREATE INDEX IF NOT EXISTS idx_process_score_revision ON process_score(revision_
 -- fail on open. That is the honest outcome for a file whose numbering was already
 -- broken by the race above: the alternative is to keep writing rows nobody can order.
 --
--- WHAT IS COVERED, AND WHAT IS NOT, so the remaining gap is a decision rather than an
--- omission. Two separate things keep numbering unique, and they are covered
--- differently:
+-- WHAT IS COVERED, in three parts, because "the numbering is tested" hides which part.
 --
---   - the DERIVATION (`insertScore` computing the number inside its transaction
---     rather than the caller computing it outside) IS covered by
---     `test/score-numbering.test.js`, and so is THIS INDEX: removing either fails the
---     suite;
---   - the CONCURRENCY is not covered, and cannot be by these tests. A single-process
---     test cannot stage the race, because `node:sqlite` is synchronous on the calling
---     thread, so two writers in one process cannot interleave. The race needs two OS
---     processes or a worker thread holding the write lock, which is why this is a
---     stated gap rather than a test somebody forgot. The project has the shape for
---     it: the NOTES.md section "The write-contention test trap" documents
---     `test/helpers/hold-write-lock.mjs` and the two ways such a test can pass for the
---     wrong reason. Use that rather than a third version.
+-- 1. THE DERIVATION IS PINNED, and well. `test/score-numbering.test.js` calls
+--    `insertScore` twice on one revision and asserts 1 then 2, then READS THE ROWS
+--    BACK to assert that is what was STORED rather than only what was returned. That
+--    pins the cause - the number derived inside the transaction - with no concurrency
+--    involved at all.
 --
--- So TODAY the numbering logic and the constraint are both pinned, and what is
--- unpinned is only the case that needs two writers at once. The index is what makes
--- that case loud if it ever happens again, rather than a pair of rows nobody can
--- order.
+-- 2. THIS INDEX IS PINNED. Removing it fails the suite, because a test inserts two
+--    rows with the same `(revision_id, revision_no)` and expects the refusal. Note
+--    the test named "the numbering continues from the highest existing number" does
+--    NOT cover this: it exercises `MAX + 1` (deleting the highest cannot collide with
+--    a survivor) and passes with this index removed. The two halves are covered by
+--    two different tests, and their comments say which is which.
+--
+-- 3. THE INTERLEAVING IS NOT PINNED, DELIBERATELY, AND IT IS STAGEABLE. This used to
+--    say a single-process test could not stage the race because `node:sqlite` is
+--    synchronous on the calling thread. THAT WAS WRONG, and it was falsified by
+--    running it: three WORKER THREADS in one process, each doing the pre-fix
+--    `SELECT MAX` -> `BEGIN IMMEDIATE` -> `INSERT`, produced five duplicate numbers
+--    across 74 rows. Tooling that does not need registers them and returns, so threads
+--    interleave AT THE READ, which is the mechanism - NOT lock contention. Describing
+--    lock contention was the second error in that sentence.
+--
+--    WHY THERE IS STILL NO SUCH TEST, which is a decision rather than an oversight:
+--    any test that stages this must REVERT the fix, so it would embed the defective
+--    code and assert on a state the shipped build cannot reach. That is the "passes
+--    for the wrong reason" trap the NOTES.md section "The write-contention test trap"
+--    already warns about, and it is why the coverage stops at points 1 and 2.
+--
+--    For anyone who ever does need to stage it: three worker threads calling
+--    `insertScore` with the fix in place produce zero duplicates across 60 rows,
+--    because `BEGIN IMMEDIATE` serialises the read and the insert. The reverted
+--    version is the one that duplicates. `test/helpers/hold-write-lock.mjs` is the
+--    project's shape for thread-based write tests and documents two other ways they
+--    can pass for the wrong reason.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_process_score_number
     ON process_score(revision_id, revision_no);
 -- At most ONE current score per revision, so the database refuses a second rather
