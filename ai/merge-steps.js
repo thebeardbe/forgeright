@@ -84,10 +84,12 @@ function stepKey(step) {
  *   describedBy: Array<[string, number]>,
  *   stepCount: number,
  *   disagreed: boolean,
+ *   disputedSteps: number,
  *   sharedSteps: number
  * }} The merged steps with the count of steps needing a person, the departments
- *   that described the work, how many steps there are, whether any shared step
- *   was read differently by different accounts, and how many steps were shared.
+ *   that described the work, how many steps there are, whether any shared step was
+ *   read differently by different accounts, HOW MANY were read differently, and how
+ *   many were shared at all.
  */
 export function mergeProcessSteps(responses) {
     const merged = new Map();
@@ -147,9 +149,17 @@ export function mergeProcessSteps(responses) {
     // shows a note about the disagreement only when there is one: a note on every
     // multi-account process reads as boilerplate and stops being a signal that a
     // particular process needs attention.
+    //
+    // TWO COUNTS, NAMED FOR WHAT THEY ARE. `sharedSteps` is every step more than one
+    // account described; `disputedSteps` is the subset those accounts did not read
+    // the same way. They diverge as soon as a process has several shared steps and a
+    // dispute on one, and using the first for the second OVERSTATES the dispute in
+    // exactly the case the roadmap note exists for. A figure named for one thing and
+    // used for another is how that went unnoticed for four rounds.
     const all = [...merged.values()];
-    const disagreed = all.some((step) => step.flags.size > 1);
+    const disputedSteps = all.filter((step) => step.flags.size > 1).length;
     const sharedSteps = all.filter((step) => step.accounts > 1).length;
+    const disagreed = disputedSteps > 0;
 
     // The bookkeeping is dropped here, so a caller sees only step fields.
     const steps = all.map(({ accounts, flags, ...step }) => step);
@@ -162,6 +172,7 @@ export function mergeProcessSteps(responses) {
         // True when at least one merged step was described by more than one account
         // AND those accounts did not all read its flag the same way.
         disagreed,
+        disputedSteps,
         sharedSteps
     };
 }

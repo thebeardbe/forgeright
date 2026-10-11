@@ -95,7 +95,7 @@
                 <% if (merged.disagreed) { %>
                     <p class="meta">
                         Described by <%= responses.length %> people, who did not all read
-                        <%= merged.sharedSteps === 1 ? 'one step' : merged.sharedSteps + ' steps' %>
+                        <%= merged.disputedSteps === 1 ? 'one step' : merged.disputedSteps + ' steps' %>
                         the same way: where they disagreed, the step is marked as needing a
                         person and its quote comes from one account. Each account's own
                         reading is on <a href="<%= basePath %>/admin/answers">Every answer</a>.
