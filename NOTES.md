@@ -416,3 +416,16 @@ there is genuinely nothing to send, say so rather than leaving a queue.
 
 And do not trust `status` to reveal this: it only reports whether a run is in
 progress, so idle-and-waiting looks the same as idle-and-done. Check the tree.
+
+## Do not push while an agent has uncommitted changes
+
+Pushed a commit on a test count that raced a builder's edits: the suite read
+604/604 from a run that was already stale, the builder was mid-way through
+changing `ai/matrix.js`, and a re-run showed 2 failures from its work in progress
+plus 2 console failures that appear only under parallel execution.
+
+Neither was a defect, and neither belonged in a push. The pushed commit happened
+to be a test file and was fine, but that was luck rather than judgement.
+
+**Check `git status` before running the suite, and do not push while any agent
+has uncommitted changes.** Green means green on a tree nobody is editing.
