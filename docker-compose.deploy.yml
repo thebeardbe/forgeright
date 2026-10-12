@@ -100,21 +100,30 @@ services:
       # kept apart because its lifetime differs: the store is copied and retained, the
       # session is disposable and should be re-created rather than migrated.
       #
-      # THIS PATH IS WHERE THE BINARY LOOKS, not a convention of ours: XDG_CONFIG_HOME is
-      # set to /home/node/.config in the image, and proton-cli reads `proton-cli/` inside
-      # it. Sign in once, inside the running container, and it persists here:
+      # MOUNTED AT `/home/node/.config`, NOT AT `.../proton-cli` INSIDE IT, and the
+      # difference is a bug rather than a preference. A named volume takes its OWNERSHIP
+      # from the image path it is mounted over, and the image contains `.config` (chowned
+      # to `node`) but NOT `.config/proton-cli` - the binary creates that itself. Mounting
+      # one level deeper therefore handed the container a root-owned directory, and the
+      # sign-in failed with "permission denied" as the `node` user. MEASURED on a real
+      # container: `mkdir: cannot create directory ... Permission denied`.
+      #
+      # XDG_CONFIG_HOME is /home/node/.config in the image and proton-cli reads
+      # `proton-cli/` inside it, so the session still lands IN THIS VOLUME either way.
+      # Sign in once, inside the running container, and it persists here:
       #
       #   docker compose -f docker-compose.deploy.yml exec forgeright \
       #     proton-cli account login
       #
-      # NO --profile, and no MAIL_PROTON_PROFILE in `.env`: signing in without the flag
-      # creates the profile named `default`, which is what proton-cli uses when no profile
-      # is configured. Set MAIL_PROTON_PROFILE only if you deliberately sign in as a NAMED
-      # profile instead.
+      # NO `--profile` NEEDED in the common case: signing in without the flag creates the
+      # profile named `default`, which is what the app uses when MAIL_PROTON_PROFILE is
+      # unset. If you set that variable to a named profile, sign in with the same name -
+      # `proton-cli account login --profile <name>` - and the app's startup message will
+      # tell you the exact command if it cannot find a session.
       #
       # A NAMED VOLUME, not a bind mount: a bind mount would put the credential in a
       # directory on the host, which is the thing being avoided.
-      - forgeright-proton:/home/node/.config/proton-cli
+      - forgeright-proton:/home/node/.config
     # --- PUBLISHED ONLY IF YOU ASK FOR IT ---
     #
     # NOTHING IS PUBLISHED BY DEFAULT, and that is deliberate: the container is reachable by
