@@ -103,7 +103,7 @@ if (path.resolve(DEMO_STORE) === path.resolve(DEFAULT_STORE)) {
 
 const {
     createOrganisation, getOrganisation, addInvitation, addResponse, listOrganisationIds,
-    closeAll
+    closeAll, closeConnection
 } = await import('../lib/store/index.js');
 const { orgDbPath, storeDir } = await import('../lib/store/paths.js');
 const { listProcessesForConsole, recordIdentification } = await import('../lib/store/processes.js');
@@ -117,7 +117,7 @@ const { buildMockAudit } = await import('../ai/fixtures/mock-audit.js');
 // differ from the demo viewer's.
 const {
     DEMO_ORG_ID, ORG_NAME, DEMO_ADMIN_EMAIL, DEMO_NAME_MARKERS,
-    departmentFor, responseDataFor, demoEmailFor
+    departmentFor, responseDataFor, demoEmailFor, synthesiseTranscript
 } = await import('./demo-fixture.js');
 const { loadAiConfig } = await import('../ai/config.js');
 
@@ -153,12 +153,18 @@ function removePreviousDemos() {
 /**
  * Deletes one organisation's files.
  *
- * THROUGH `orgDbPath`, so the path is checked to be inside the store directory before
- * anything is removed: a deletion that resolved elsewhere would be the worst bug this
- * script could have. The WAL and SHM sidecars go with it, or a later run finds a
- * database that looks present but is not.
+ * THROUGH `orgDbPath`, so the path is checked to be inside the store before anything is
+ * removed: a deletion resolving elsewhere would be the worst bug this script could have.
+ * The WAL and SHM sidecars go with it, or a later run finds a database that only looks present.
  */
 function removeOrganisationFiles(orgId) {
+    // CLOSE FIRST, OR THE DELETION IS INVISIBLE TO THIS PROCESS. A re-run failed with
+    // "organisation already exists": the files were unlinked but the OPEN CONNECTION
+    // still held the row, so `createOrganisation` read what had just been removed. The
+    // store caches connections per organisation and a deleted file does not invalidate
+    // that. Closing also checkpoints the WAL, so the removal is complete.
+    closeConnection(orgId);
+
     const target = orgDbPath(orgId);
     for (const suffix of ['', '-wal', '-shm']) {
         if (fs.existsSync(target + suffix)) {
@@ -254,7 +260,11 @@ async function main() {
         const department = departmentFor(workflow);
         const invitation = addInvitation(orgId, { email: demoEmailFor(workflow.id), department });
         const data = responseDataFor(workflow);
-        const response = addResponse(orgId, invitation.token, { department, data });
+
+        // Synthesised, not captured: see `synthesiseTranscript` in ./demo-fixture.js.
+        // Without it the response stores null and the answers view shows no conversation.
+        const transcript = synthesiseTranscript(workflow);
+        const response = addResponse(orgId, invitation.token, { department, data, transcript });
 
         // THE REAL IDENTIFICATION PATH. `recordIdentification` defaults to a MODEL
         // decision, which is what a first pass is. The rejudge route would mark every
