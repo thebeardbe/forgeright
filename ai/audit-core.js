@@ -294,6 +294,96 @@ export function validateWorkflows(workflows) {
  * downgraded to `asking`, which is the safe direction (one more question rather
  * than a dropped field).
  */
+/**
+ * The closing question's fingerprint, so a version of it can be recognised.
+ *
+ * MATCHED AS A PHRASE RATHER THAN BY EXACT TEXT, because a model that asks the closing question
+ * early rarely quotes the prompt verbatim: the live run that prompted this said "Is there
+ * another process you'd like to improve?" and "Thank you. Is there anything else you would like
+ * to look at?" within the same interview. A literal comparison would have caught neither.
+ *
+ * THE RISK OF A PHRASE MATCH IS A FALSE POSITIVE - a real question about a second process being
+ * replaced. That direction is safe: the reply becomes a question the interview asked anyway, and
+ * the next turn can still close. The opposite direction leaves the participant staring at "is
+ * there another process?" with twelve fields unanswered, which is an abandonment trigger, so it
+ * is the risk worth taking.
+ */
+const CLOSING_QUESTION_SHAPES = [
+    /is there (?:another|any other|anything else)/i,
+    /any (?:other|more) process/i,
+    /would you like to (?:improve|look at|add)/i,
+    /anything else you(?:'|’)?d? like/i,
+    /is there anything else/i
+];
+
+/**
+ * Replaces a closing question with a real one when the matrix is not satisfied.
+ *
+ * WHY THIS IS IN CODE AND NOT ONLY IN THE PROMPT. The prompt tells the model to ask the closing
+ * question only when `missing` is empty, and a live interview was watched asking it FOUR TIMES
+ * IN A ROW with twelve fields still open. A prompt is a request; this is the rule. The server
+ * already computes `missing` and already holds the model's `content`, so the check costs nothing
+ * and cannot be talked out of.
+ *
+ * WHAT THE REPLY BECOMES. The closing question is REPLACED BY A QUESTION ABOUT THE NEXT OPEN
+ * FIELD, phrased in the field's own words - so the participant is asked something useful rather
+ * than shown a closing line that then continues. `have` and `missing` are unchanged, so the
+ * client and the next turn see the truth; only `content` differs.
+ *
+ * THE CLIENT DOES NOT STALL. It renders `content` as an ordinary analyst turn and keeps the
+ * input open, which is what it does for any `asking` reply. Nothing waits on `status` becoming
+ * "complete": a turn is finished when the reply arrives.
+ *
+ * WHEN NOTHING IS OPEN, which cannot happen here because the caller only reaches this when the
+ * matrix is unsatisfied, the original content is kept rather than inventing a question.
+ *
+ * @param {string} content The model's own question.
+ * @param {{ missing: string[], have: string[] }} computed The matrix's view.
+ * @returns {string}
+ */
+function withoutClosingQuestion(content, computed) {
+    const text = typeof content === 'string' ? content : '';
+    if (!CLOSING_QUESTION_SHAPES.some((shape) => shape.test(text))) return text;
+
+    const open = computed.missing[0];
+    if (!open) return text;
+
+    // THE FIELD'S OWN WORDS, so the question reads like something a person would ask rather
+    // than an internal field name. A field with no phrasing falls back to its name, which is
+    // still a question the participant can answer rather than a premature goodbye.
+    const phrasing = FIELD_QUESTIONS[open];
+    console.warn(
+        `[audit] the model asked the closing question with ${computed.missing.length} field(s) ` +
+        `still open; replacing it with a question about "${open}"`
+    );
+    return phrasing || `Could you tell me more about "${open}"?`;
+}
+
+/**
+ * How to ask about each field in words a participant recognises.
+ *
+ * A COSMETIC TABLE, not a rule: the interview's own prompt phrases these better, and this only
+ * ever runs when the model closed early. Kept beside the guard that uses it so the two are read
+ * together.
+ */
+const FIELD_QUESTIONS = {
+    task: 'What is the work, in your own words?',
+    trigger: 'What starts one instance of this work?',
+    steps: 'What are the steps, from beginning to end?',
+    frequencyPerWeek: 'About how many times a week does this happen?',
+    timePerPeriod: 'About how much time does this take per week?',
+    peopleAffected: 'Who else is involved in this?',
+    handoffTo: 'Who does this go to next?',
+    waitsFor: 'Does this wait on anything before it can proceed?',
+    dependsOn: 'What has to happen first, before this can start?',
+    systems: 'Which systems or tools do you use for this?',
+    touchedDepartments: 'Which departments does this cross?',
+    mistakesPerPeriod: 'How often does something go wrong with this?',
+    mistakeConsequence: 'What happens when something goes wrong?',
+    currentState: 'How is this done today, overall?',
+    frustration: 'What is the most frustrating part of this for you?'
+};
+
 export function parseModelResponse(raw) {
     // PARSED OUT OF PROSE, not handed to JSON.parse.
     //
@@ -414,18 +504,33 @@ export function parseModelResponse(raw) {
     // complete audit for having no `frustration` field, which is not this
     // function's business.
     const playingTheMatrix = processes.length > 0 || claimedMissing !== null;
-    const matrixComplete = computed.missing.length === 0 && processes.length > 0;
+
+    // COMPLETION READS `supplied`, NOT `missing`, AND THE DIFFERENCE IS ONE STATE.
+    //
+    // `missing` empty means there is no question left to ask. That is NOT the same as having
+    // evidence: a field the participant DECLINED is answered-but-unsupplied, so it leaves
+    // `missing` and does not enter `supplied`. Reading `missing` here would let an interview
+    // complete on nothing but refusals - measured on a live run, which recorded
+    // `{"said":"I have no idea"}` against seven fields and closed. See declinedIn in
+    // field-shapes.js.
+    //
+    // A MISSING FIELD STILL BLOCKS, as it always did, so nothing is loosened for the ordinary
+    // case: this is a strictly tighter gate.
+    const matrixComplete = computed.supplied.length === computed.have.length
+        && computed.missing.length === 0
+        && processes.length > 0;
 
     if (parsed.status === 'complete' && playingTheMatrix && !matrixComplete) {
         // The model thinks it is done and the matrix disagrees. Continue rather
         // than closing: one more question is cheap, a missing field is not.
-        console.warn(
-            `[audit] model claimed complete with ${computed.missing.length} field(s) still missing ` +
-            `(${computed.missing.join(', ')}); continuing`
-        );
+        const unsupplied = computed.have.filter((field) => !computed.supplied.includes(field));
+        const reasons = [];
+        if (computed.missing.length > 0) reasons.push(`${computed.missing.length} still missing (${computed.missing.join(', ')})`);
+        if (unsupplied.length > 0) reasons.push(`${unsupplied.length} declined (${unsupplied.join(', ')})`);
+        console.warn(`[audit] model claimed complete with ${reasons.join(' and ')}; continuing`);
         return {
             status: 'asking',
-            content: parsed.content,
+            content: withoutClosingQuestion(parsed.content, computed),
             have: computed.have,
             missing: computed.missing,
             stepsStillNeed,

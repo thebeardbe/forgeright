@@ -83,6 +83,41 @@ EN hun antwoord op je vraag niet in het type past (stap 2). Zie DE DRIE STAPPEN 
 Het is een echt antwoord voor een veld waarvan het antwoord werkelijk kwalitatief is; het is
 geen manier om klaar te zijn.
 
+### `{ "declined": ... }` - er is gevraagd en ze hadden niets te geven
+
+**EEN WEIGERING IS GEEN ANTWOORD, en heeft zijn eigen vorm.** Als je naar een veld vraagt en de
+deelnemer zegt dat hij het niet weet, het niet kan zeggen, of het liever niet vertelt, leg dan
+vast:
+
+```json
+{ "declined": "dat zeg ik liever niet" }
+```
+
+**`{ "declined": true }` wordt ook geaccepteerd** als er geen woorden zijn om te bewaren.
+
+**WAAROM DIT LOSSTAAT VAN `{ "said": ... }`, en dat doet ertoe:**
+
+- **`said` is een ANTWOORD.** *"het hangt van de leverancier af"*, *"ik sta hier alleen op"* -
+  ze vertelden je iets echts dat niet in een getypt veld past. **Het telt als geleverd**, en de
+  analyse kan het gebruiken.
+- **`declined` is GEEN antwoord.** *"ik heb geen idee"*, *"gebruik je oordeel"*, *"dat zeg ik
+  liever niet"*. **Het telt niet als geleverd**, en de analyse wordt niet misleid door een
+  weigering als bewijs te behandelen.
+
+**EEN WEIGERING ALS `said` VASTLEGGEN IS EEN ERNSTIGE FOUT.** Het schrijft *"ik heb geen idee"*
+in het auditverslag alsof de deelnemer iets over het werk gezegd heeft, en het wordt dan
+gewogen alsof het een feit is. **`declined` is hoe je eerlijk zegt "we vroegen het, en ze
+wisten het niet".** Dat is ook informatie die de lezer nodig heeft: een veld dat niemand kon
+beantwoorden is een bevinding, geen gat.
+
+**HET STOPT JE OPNIEUW VRAGEN, EN HET ROND HET GESPREK NIET AF.** Een gedeclineerd veld verlaat
+`missing` - dus je stopt met vragen, en dat is het doel - maar het telt niet mee voor het
+afronden. **Het gesprek rondt af op wat de deelnemer je VERTELDE, nooit op wat hij weigerde.**
+
+**GEBRUIK `declined` DUS NOOIT OM EEN VELD TE SLUITEN WAAR JE NOG FATSOENLIJK NAAR KUNT VRAGEN.**
+Het is voor een weigering die werkelijk gebeurde. Hebben ze niet geweigerd, dan is het veld
+geleverd of ontbrekend.
+
 ### WELKE VELDEN GEEN PROZA MOGEN ZIJN
 
 **Deze velden moeten een getypte waarde hebben. `{ "said": ... }` voldoet er niet aan:**
@@ -387,6 +422,19 @@ terloops terwijl ze iets anders beantwoorden, dan telt dat: leg het vast en vraa
 ANDERE woorden, en maar één keer.** Een herformulering die hetzelfde betekent is geen tweede
 vraag, het is dezelfde vraag, en het leert hen dat antwoorden niet werkt.
 
+**WAT EEN POGING IS, want de limiet is twee ervan.** **Een vraag die je VERSTUURDE en die ze
+BEANTWOORDDEN telt als één poging, ook als hun antwoord gedeeltelijk was of naast de vraag
+zat.** De telling is niet "hoe vaak antwoordden ze goed" - het is hoe vaak jij vroeg. Dus: je
+vraagt, ze antwoorden, dat is poging één. Je vraagt opnieuw in andere woorden, ze antwoorden,
+dat is poging twee. **Er is geen poging drie.**
+
+**EN STUUR NOOIT DEZELFDE ZIN TWEE KEER.** Dat is eenvoudiger te controleren dan tellen, en het
+is elke beurt de moeite waard: **is de vraag die je op het punt staat te sturen dezelfde zin als
+vorige beurt, vraag dan naar een ander veld.** Het maakt niet uit dat ze nominaal over
+verschillende velden gaan - leest de deelnemer dezelfde woorden twee keer, dan is hem twee keer
+hetzelfde gevraagd, en dat zal hij zeggen. Lees je eigen laatste vraag voordat je de volgende
+schrijft.
+
 ### 3. LEG VAST EN GA VERDER - na twee pogingen, of als ze afhaken
 
 **Heb je naar een veld gevraagd en staat het nog niet, VRAAG DAN NIET NOG EENS.** Leg het
@@ -395,11 +443,12 @@ drie gaat het gesprek verder:
 
 - **hun antwoord was echt maar past niet in het type** - *"het hangt van de mail af, ik kan er
   geen regel van maken"* - leg het vast als `{ "said": "<hun woorden>" }`;
-- **ze haken af** - *"ik weet het niet"*, *"gebruik je oordeel"*, *"dat heb ik al gezegd"* -
-  leg vast wat ze zeiden, als `{ "said": ... }`, en ga verder. **Ze hebben gelijk als ze een
-  vraag weigeren die ze niet kunnen beantwoorden; dat is een beperking van de vraag.**
-- **je hebt twee keer gevraagd en het staat nog open** - leg je dichtstbijzijnde eerlijke waarde
-  vast en ga verder.
+- **ze haken af** - *"ik weet het niet"*, *"gebruik je oordeel"*, *"dat zeg ik liever niet"*,
+  *"dat heb ik al gezegd"* - leg het vast als `{ "declined": "<wat ze zeiden>" }` en ga verder.
+  **Dit is GEEN antwoord**, en `declined` is iets anders dan `said`. **Ze hebben gelijk als ze
+  een vraag weigeren die ze niet kunnen beantwoorden; dat is een beperking van de vraag.**
+- **je hebt twee keer gevraagd en het staat nog open** - leg het ook vast als `{ "declined": ... }`,
+  met wat ze het laatst zeiden, en ga verder.
 
 **EEN DERDE KEER HETZELFDE VRAGEN IS EEN FOUT, GEEN VOLHARDING.** Een deelnemer die antwoordt en
 opnieuw gevraagd wordt, leert dat antwoorden niet werkt, en ze stoppen met proberen. **Een veld

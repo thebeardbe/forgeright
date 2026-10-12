@@ -100,6 +100,11 @@ export const TYPED_MINIMUM_FIELDS = Object.freeze([
  * through to the ordinary shape check, which refuses it. Anything else would make
  * `{ said: "" }` a way to close a field by asserting nothing.
  *
+ * THIS IS AN ANSWER, NOT A REFUSAL, and the difference is `declined` below. "It depends on
+ * the supplier" is the participant telling you something real that will not fit a typed field;
+ * "I have no idea" is them telling you nothing. Both used to arrive here, which let a refusal
+ * be recorded as an answer and complete an interview - see the note on declinedIn.
+ *
  * @param {*} value
  * @returns {string|null}
  */
@@ -109,6 +114,61 @@ export function proseSaidIn(value) {
     const said = value.said;
     if (typeof said !== 'string' || said.trim() === '') return null;
     return said;
+}
+
+/**
+ * Whether a `{ declined: ... }` marker was given, and the words that came with it.
+ *
+ * THE FOURTH STATE, and the piece that was missing. The four states of a field are:
+ *
+ *   absent     never asked                     -> in `missing`, ask about it
+ *   typed      a value of the right shape      -> in `have`, supplied
+ *   said       a real answer, in their words   -> in `have`, SUPPLIED (see the note above)
+ *   declined   asked, and no answer given      -> NOT missing, NOT supplied
+ *
+ * `declined` is the shape a refusal takes: *"I have no idea"*, *"use your judgement"*, *"I
+ * would rather not say"*, *"I already told you"*. It exists because the two things the old
+ * marker conflated are genuinely different, and the consequence of conflating them was
+ * measured: a live interview recorded `{"said":"I have no idea"}` against seven fields and
+ * COMPLETED, so a fabrication typed honestly reached the audit and then the weighing.
+ *
+ * WHY IT IS NOT SIMPLY "ANOTHER KIND OF said". A refusal must satisfy two requirements that
+ * pull in opposite directions:
+ *
+ *   - it must stop the interview ASKING AGAIN. The participant has been asked and has nothing
+ *     to give; asking a third time is the loop this system exists to prevent, and leaving the
+ *     field in `missing` would keep it open forever. So it is NOT in `missing`.
+ *   - it must NOT count as supplied, or it becomes a way to finish by refusing everything -
+ *     the same hole `said` is kept out of the typed minimum to close. So it does NOT satisfy
+ *     the completion gate.
+ *
+ * THAT IS WHY THE MATRIX HAS THREE LISTS RATHER THAN TWO. `have` means "do not ask again";
+ * `supplied` means "the analysis has something to work with". A declined field is in the
+ * first and not the second, and the completion gate reads the second.
+ *
+ * THE PARTICIPANT'S WORDS ARE KEPT, because the roadmap has to report honestly that this was
+ * asked and not answered - which is different from a field nobody ever raised.
+ *
+ * `{ declined: true }` is accepted with no words, since a refusal may come with none.
+ *
+ * @param {*} value
+ * @returns {{declined: true, words: string|null}|null}
+ */
+export function declinedIn(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (!Object.hasOwn(value, 'declined')) return null;
+
+    const declined = value.declined;
+    if (declined === true) return { declined: true, words: null };
+
+    // A string keeps what they said, so the reader sees the refusal itself rather than a
+    // summary of it. An empty string is a refusal without words, not a malformed marker.
+    if (typeof declined === 'string') {
+        const words = declined.trim();
+        return { declined: true, words: words === '' ? null : words };
+    }
+
+    return null;
 }
 
 /**
@@ -226,6 +286,12 @@ function hasShape(value, shape, field) {
     // CHECKED BEFORE THE PER-FIELD MINIMUM, so `{ said: ... }` on a numeric field is judged by
     // this rule rather than falling through to the minimum, which would report it as not
     // supplied and lose the distinction between prose and absence.
+    // A REFUSAL COUNTS AS ANSWERED-BUT-NOT-SUPPLIED, which is neither of the two things this
+    // function returns. It is resolved in fieldsPresentIn and fieldsDeclinedIn instead, and
+    // returns FALSE here so that nothing downstream mistakes it for a usable value. See
+    // declinedIn for why the two must be different.
+    if (declinedIn(value) !== null) return false;
+
     const said = proseSaidIn(value);
     if (said !== null) return !TYPED_MINIMUM_FIELDS.includes(field);
 

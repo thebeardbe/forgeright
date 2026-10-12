@@ -28,6 +28,7 @@ import {
     stepNeedsReasoning,
     stepGapsFor,
     fieldsPresentIn,
+    declinedIn,
     isPeriod,
     timePerPeriodIsScorable,
     PERIODS_IN_WEEK
@@ -63,13 +64,39 @@ export {
  * @param {object} process
  * @returns {string[]}
  */
+/**
+ * The fields a process has been asked about and the participant declined to answer.
+ *
+ * THE FOURTH STATE, and it is not the same as missing. A declined field was asked about: the
+ * participant has nothing to give, so the interview must not ask again - that is the loop this
+ * system exists to prevent. It is not supplied either, so it cannot satisfy the completion
+ * gate. See declinedIn in field-shapes.js for the full argument.
+ *
+ * @param {object} process
+ * @returns {string[]}
+ */
+export function fieldsDeclinedIn(process) {
+    if (!process || typeof process !== 'object' || Array.isArray(process)) return [];
+
+    const declined = [];
+    for (const field of ALL_PROCESS_FIELD_NAMES) {
+        if (declinedIn(process[field]) !== null) declined.push(field);
+    }
+    return declined;
+}
+
 export function fieldsMissingFrom(process) {
     const present = new Set(fieldsPresentIn(process));
+    const declined = new Set(fieldsDeclinedIn(process));
     const effortSatisfied = EFFORT_FIELDS.some((field) => present.has(field));
 
+    // A DECLINED FIELD IS NOT MISSING. It was asked about and the participant had nothing to
+    // give, so asking again is the loop this system exists to prevent. It is not SUPPLIED
+    // either - see fieldsDeclinedIn - and this function answers only "is there a question left
+    // to ask here", which for a declined field is no.
     return ALL_PROCESS_FIELD_NAMES.filter((field) => {
-        if (EFFORT_FIELDS.includes(field)) return !effortSatisfied;
-        return !present.has(field);
+        if (EFFORT_FIELDS.includes(field)) return !effortSatisfied && !declined.has(field);
+        return !present.has(field) && !declined.has(field);
     });
 }
 
@@ -99,11 +126,14 @@ export function fieldsMissingFrom(process) {
  * @param {string[]|null} args.claimedHave The model's own list, if it sent one.
  * @param {string[]|null} args.claimedMissing The model's own list, if it sent one.
  * @param {boolean} args.closing Whether the model claimed completion.
- * @returns {{ have: string[], missing: string[] }}
+ * @returns {{ have: string[], missing: string[], supplied: string[], declined: string[] }}
+ *   `have` means "do not ask again"; `supplied` means "the analysis has something to work
+ *   with". They differ for exactly one state - declined - and the completion gate reads
+ *   `supplied`, not `have`.
  */
 export function reconcileMatrix({ processes, claimedHave = null, claimedMissing = null, closing = false }) {
     if (!Array.isArray(processes) || processes.length === 0) {
-        return { have: [], missing: [...ALL_PROCESS_FIELD_NAMES] };
+        return { have: [], missing: [...ALL_PROCESS_FIELD_NAMES], supplied: [], declined: [] };
     }
 
     // What the payload can prove, across every process.
@@ -123,19 +153,40 @@ export function reconcileMatrix({ processes, claimedHave = null, claimedMissing 
     // WHILE ASKING, the claim is believed for anything the payload does not carry.
     // WHILE CLOSING, only the payload counts, because at that point it is
     // supposed to hold everything and a claim is what would let a field vanish.
-    const have = [];
-    const missing = [];
-
+    // WHAT THE PAYLOAD DECLINED, across every process. A field is declined only when EVERY
+    // process that could carry it declined: one participant saying "I have no idea" must not
+    // close a question that another participant could answer.
+    const declinedEverywhere = new Set();
     for (const field of ALL_PROCESS_FIELD_NAMES) {
-        const isHad = closing
-            ? provable.has(field)
-            : provable.has(field) || (claimedHave !== null && claimedHave.includes(field))
-                && !(claimedMissing !== null && claimedMissing.includes(field));
-
-        (isHad ? have : missing).push(field);
+        const everywhere = processes.every((process) => fieldsDeclinedIn(process).includes(field));
+        if (everywhere) declinedEverywhere.add(field);
     }
 
-    return { have, missing };
+    const have = [];
+    const missing = [];
+    const supplied = [];
+
+    for (const field of ALL_PROCESS_FIELD_NAMES) {
+        const isDeclined = declinedEverywhere.has(field);
+
+        // A DECLINED FIELD IS `have` AND NOT `supplied`. That split is the fourth state:
+        // do not ask again, but do not count it as evidence. See declinedIn in
+        // field-shapes.js for why both halves are needed.
+        const isHad = isDeclined || (closing
+            ? provable.has(field)
+            : provable.has(field) || (claimedHave !== null && claimedHave.includes(field))
+                && !(claimedMissing !== null && claimedMissing.includes(field)));
+
+        (isHad ? have : missing).push(field);
+
+        // SUPPLIED MEANS THE ANALYSIS CAN USE IT, which is `provable` for a typed value and
+        // the model's own claim while the interview is still going. A declined field is
+        // excluded however it arrived, because a claim that a field is `have` must not turn a
+        // refusal into evidence - that is the hole the fourth state exists to close.
+        if (!isDeclined && (provable.has(field) || isHad)) supplied.push(field);
+    }
+
+    return { have, missing, supplied, declined: [...declinedEverywhere] };
 }
 
 /**

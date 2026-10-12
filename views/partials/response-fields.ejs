@@ -42,6 +42,14 @@
     // stays a plain text formatter and a value cannot smuggle markup in beside it.
     function show(value) {
         if (isProse(value)) return value.said;
+        // A REFUSAL RENDERS AS THE REFUSAL, never as the object. `[object Object]` is worse
+        // than an empty line: it reads as corruption rather than as an answer that was not
+        // given. With no words recorded it still says so in the participant's own register.
+        if (isDeclined(value)) {
+            return typeof value.declined === 'string' && value.declined.trim() !== ''
+                ? value.declined
+                : 'they did not say';
+        }
         if (Array.isArray(value)) return value.join(', ');
         if (value && typeof value === 'object' && value.hours !== undefined) {
             return value.hours + ' hours per ' + (value.period || 'period');
@@ -56,6 +64,14 @@
         return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
             && typeof value.said === 'string' && value.said.trim() !== '';
     }
+
+    // The refusal marker, tested the same way the store tests it: an object carrying
+    // `declined` as `true` or a string. Mutually exclusive with isProse, so their order does
+    // not matter.
+    function isDeclined(value) {
+        return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+            && (value.declined === true || typeof value.declined === 'string');
+    }
 %>
 <% if (!data) { %>
     <p class="empty">This answer has no stored fields.</p>
@@ -67,6 +83,14 @@
             <%= show(data[field.key]) %>
             <% if (isProse(data[field.key])) { %>
                 <span class="tag" title="The participant answered in words. This is their answer, kept verbatim; it was not a figure or a list.">in their own words</span>
+            <% } else if (isDeclined(data[field.key])) { %>
+                <%#
+                    THE REFUSAL TAG. Deliberately distinct from "in their own words": that one
+                    means they answered and the answer did not fit a field, and this one means
+                    they were asked and did not answer. A reader deciding whether to follow up
+                    needs to tell those apart - one is data, the other is a gap with a reason.
+                %>
+                <span class="tag" title="The participant was asked and did not answer. It is recorded as unanswered rather than counted as a result.">not answered</span>
             <% } %>
         </p>
     <% }); %>
