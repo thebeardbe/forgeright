@@ -21,8 +21,23 @@
 # THE PROXY SETS X-Forwarded-Proto: https, WHICH THE APP HONOURS ONLY BECAUSE TRUST_PROXY
 # NAMES THIS CONTAINER. That is the other half of the trust boundary: the app resolves
 # `req.secure` from the connection, and honours a forwarded protocol header only from a
-# peer it was told to trust. Compose sets TRUST_PROXY to the Docker subnet this service
-# sits on, so a client cannot forge the header and be believed.
+# peer it was told to trust.
+#
+# COMPOSE SETS TRUST_PROXY TO THIS CONTAINER'S SINGLE PINNED ADDRESS - 172.30.0.3 by
+# default, and the compose file pins `ipv4_address` on this service to make that address
+# true rather than lucky.
+#
+# ONE ADDRESS, NOT THE SUBNET, AND THAT DIFFERENCE IS THE POINT. Trusting the whole subnet
+# would trust EVERY container on that network, so any other service added there - at any
+# time, by anyone editing this file - could set X-Forwarded-Proto for a request it did not
+# terminate and be believed. Naming this one address means only this proxy can.
+#
+# AND THE APP REFUSES THE WIDENING OUTRIGHT, which is the second half of the same guard: an
+# IPv4 CIDR such as `172.30.0.0/24` is rejected at startup with "not understood. Use an
+# address (127.0.0.1), a comma-separated list of addresses, loopback, a hop count, or leave
+# it unset". So this cannot be quietly loosened into a range - a well-meaning edit to widen
+# it stops the server instead. Only an IPv6 CIDR is accepted, because a bare IPv6 address is
+# indistinguishable from a prefix.
 
 {
 	# The admin UI is run by an operator, not by browsers at scale, and a quieter log makes

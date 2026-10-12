@@ -17,6 +17,37 @@
 # which is what the real deployment does behind its proxy. See Caddyfile.
 #
 # ===========================================================================
+# RUNNING A SECOND COPY, OR ANY COPY BESIDE ANOTHER
+# ===========================================================================
+#
+# THIS FILE RESERVES A FIXED IP RANGE, and Docker refuses two networks with the same pool.
+# A second checkout on the same machine therefore fails with
+#
+#   Network <name>_default Error: invalid pool request: Pool overlaps with other one
+#   on this address space
+#
+# which is about IP pools and says nothing about a second checkout, so the cause is hard to
+# guess from the message. THE RANGE IS FIXED BECAUSE THE TRUST BOUNDARY NEEDS A KNOWN
+# ADDRESS: the app honours `X-Forwarded-Proto` only from the proxy's address, and that
+# address has to be knowable before the container starts.
+#
+# TO RUN A SECOND COPY, set all three values in a file beside the compose file, or in the
+# shell, choosing a range nothing else uses:
+#
+#   FORGERIGHT_SUBNET=172.31.0.0/24
+#   FORGERIGHT_APP_IP=172.31.0.2
+#   FORGERIGHT_PROXY_IP=172.31.0.3
+#
+# ALL THREE, NOT JUST THE SUBNET. Changing the subnet alone fails loudly - Docker reports
+# "no configured subnet contains IP address 172.30.0.2" - because the addresses do not
+# follow the range by themselves. That failure is preferable to the silent alternative,
+# which would be an app trusting an address outside its own network and redirecting every
+# request to itself.
+#
+# A THIRD CONTAINER PORT WOULD ALSO COLLIDE, so a second copy needs its own published port
+# too: see the `ports` entry on the proxy below.
+#
+# ===========================================================================
 # THE ENVIRONMENT: WHAT COMES FROM .env AND WHAT THIS FILE FORCES
 # ===========================================================================
 #
@@ -36,7 +67,7 @@ services:
     # application itself - which would let the app trust its own forwarded headers.
     networks:
       default:
-        ipv4_address: 172.28.0.2
+        ipv4_address: ${FORGERIGHT_APP_IP:-172.30.0.2}
     build:
       context: .
       dockerfile: Dockerfile
@@ -70,7 +101,7 @@ services:
       ALLOWED_HOST: "localhost,127.0.0.1"
       # https, because the app refuses plain HTTP and redirects to this value. It is what
       # sign-in links are built from, so it must be the URL the BROWSER uses.
-      PUBLIC_BASE_URL: "https://localhost:8443"
+      PUBLIC_BASE_URL: "https://localhost:${FORGERIGHT_PORT:-8443}"
       # THE PROXY'S ADDRESS, AND ONLY THE PROXY CAN CLAIM TO BE SECURE. The app resolves
       # `req.secure` from the connection and honours X-Forwarded-Proto only from a peer
       # named here, so a client that reached this port could not forge it.
@@ -81,7 +112,7 @@ services:
       # then trusted nobody and redirected every request to its own PUBLIC_BASE_URL in a
       # 308 loop. `ipv4_address` on the proxy service is what makes this line true rather
       # than lucky.
-      TRUST_PROXY: "172.28.0.3"
+      TRUST_PROXY: "${FORGERIGHT_PROXY_IP:-172.30.0.3}"
       # Served at the origin root. A prefix needs a proxy that strips or passes it, and
       # this one does neither.
       BASE_PATH: ""
@@ -148,7 +179,10 @@ services:
     ports:
       # 8443 RATHER THAN 443, so the container needs no privileged port and the URL says
       # what it is: https://localhost:8443.
-      - "8443:443"
+      #
+      # A SECOND COPY NEEDS A DIFFERENT HOST PORT, for the same reason as the subnet above.
+      # Override it with FORGERIGHT_PORT and the container's own PUBLIC_BASE_URL follows.
+      - "${FORGERIGHT_PORT:-8443}:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Caddy's internal CA and its certificates. A named volume so the CA survives a
@@ -164,7 +198,7 @@ services:
       default:
         # A PINNED ADDRESS, so the app's TRUST_PROXY above names something guaranteed
         # rather than whatever Docker happened to allocate.
-        ipv4_address: 172.28.0.3
+        ipv4_address: ${FORGERIGHT_PROXY_IP:-172.30.0.3}
 
 networks:
   default:
@@ -173,7 +207,7 @@ networks:
     # something else later occupies.
     ipam:
       config:
-        - subnet: 172.28.0.0/24
+        - subnet: ${FORGERIGHT_SUBNET:-172.30.0.0/24}
 
 volumes:
   # Named, so it survives `down` and is only removed by `down -v`, which is the explicit way
