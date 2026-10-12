@@ -486,6 +486,27 @@
      */
     function beginWithToken() {
         $('conversation').classList.remove('hidden');
+
+        // A RESUMED ROUND REBUILDS THE CONVERSATION IT ACTUALLY HAD, so the participant
+        // can read what they said before continuing. `state.conversation` is what gets
+        // posted back on the next turn, so restoring it also means the server receives
+        // the whole conversation again rather than only the new part - which is what
+        // `recordTurn` rewrites the stored transcript from.
+        if (resumedTranscript.length > 0) {
+            state.conversation = resumedTranscript.map((turn) => ({
+                role: turn.role,
+                content: turn.content
+            }));
+            for (const turn of state.conversation) {
+                appendMessage(turn.role === 'user' ? 'user' : 'ai',
+                    turn.role === 'user' ? S.userLabel : S.aiLabel,
+                    turn.content);
+            }
+            appendMessage('ai', S.aiLabel, S.resumedNotice);
+            $('actions').classList.remove('hidden');
+            return;
+        }
+
         state.conversation = [{ role: 'assistant', content: S.initialMessage }];
         appendMessage('ai', S.aiLabel, S.initialMessage);
         $('actions').classList.remove('hidden');
