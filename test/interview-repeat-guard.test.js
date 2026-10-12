@@ -199,19 +199,16 @@ test('TERMINATION under an ECHOING model - the case that stresses the substitute
     assert.ok(exhaustedAt <= 40, `termination is bounded, not merely eventual (ended at turn ${exhaustedAt})`);
 });
 
-test('FINDING: an ECHOING model sees each substituted question TWICE', () => {
-    // A REAL WEAKNESS, recorded as today's behaviour rather than asserted as correct. When the
-    // gate substitutes, it records the substitute as `substituted: true`. If the model then ECHOES
-    // that substitute back, the guard correctly passes it through (it is the gate's own sentence)
-    // - but the pass-through is recorded as `substituted: false`, so the model's echo of it is
-    // treated as the model's OWN question and replaced on the NEXT turn. The result: each
-    // substituted question appears twice in a row to the participant.
+test('an ECHOING model NEVER sends the same question twice in a row - the fix, not the finding', () => {
+    // REWRITTEN, and the property it carries is NO CONSECUTIVE DUPLICATE. It used to assert the
+    // opposite - that an echoing model DID repeat, with `consecutiveDuplicates > 0` - because
+    // that was the state of the code and pinning it meant a fix could not land silently. The fix
+    // landed, so the assertion is inverted: an echoing model produces ZERO consecutive duplicate
+    // questions. The echo itself still happens (the model sends back what it last saw); what is
+    // gone is any pair of consecutive identical sentences reaching the participant.
     //
-    // IT TERMINATES, which is why this is a FINDING and not the loop the commit fixed: the
-    // conversation still advances a field at a time and reaches `exhausted`. But a participant
-    // answering an echoing model is asked every one of those questions twice, which is half the
-    // symptom the guard exists to remove. The common case (a model repeating ONE sentence) does
-    // not do this; the assertions for that are in the test above.
+    // The live defect was fifteen consecutive duplicate pairs, so this is the property that was
+    // wrong and is now right.
     const conversation = [];
     const replies = [];
     let incoming = 'How do you keep track of it?';
@@ -220,24 +217,72 @@ test('FINDING: an ECHOING model sees each substituted question TWICE', () => {
         const r = turn(incoming, conversation);
         replies.push(r.content);
         if (r.exhausted) break;
+        incoming = r.content; // echo: the model repeats whatever it was just shown
+    }
+
+    const consecutiveDuplicates = replies.filter((text, i) => i > 0 && text === replies[i - 1]);
+    assert.deepEqual(consecutiveDuplicates, [],
+        `no question may reach the participant twice in a row (got ${JSON.stringify(consecutiveDuplicates)}`);
+    assert.ok(replies.length > 1, 'and the conversation actually ran, so the check is not vacuous');
+});
+
+test('and an ECHOING model TERMINATES - the two fixes together, which is where it was fragile', () => {
+    // THE OTHER PROPERTY THE OLD TEST PROTECTED, from the other side. Pinning "no duplicate"
+    // without this would let a fix that never repeats but also never ends pass. So the echo run
+    // must both avoid duplicates AND reach `exhausted` in a bounded number of turns. The builder
+    // measured 12 turns and 12 distinct; the assertions are the bounded end and the distinctness
+    // so a different starting sentence does not make this brittle.
+    const conversation = [];
+    const replies = [];
+    let incoming = 'How do you keep track of it?';
+    let endedAt = null;
+
+    for (let i = 1; i <= 60; i += 1) {
+        const r = turn(incoming, conversation);
+        replies.push(r.content);
+        if (r.exhausted) { endedAt = i; break; }
         incoming = r.content;
     }
 
-    const consecutiveDuplicates = replies.filter((text, i) => i > 0 && text === replies[i - 1]).length;
-    assert.ok(consecutiveDuplicates > 0,
-        'FINDING: an echoing model produces consecutive duplicate questions');
+    assert.notEqual(endedAt, null, 'the echo run terminates rather than looping');
+    assert.ok(endedAt <= 20, `termination is bounded, not merely eventual (ended at turn ${endedAt})`);
+    assert.ok(new Set(replies).size >= 10, `the conversation still advances (got ${new Set(replies).size} distinct)`);
 });
 
-test('a SUBSTITUTE is never itself substituted - the mark that makes it terminate', () => {
-    // The mechanism directly: the conversation holds a question marked `substituted`, and the
-    // model repeats THAT sentence. The guard must pass it through, not replace the gate's own
-    // question, which is the loop moving from the model to the gate.
+test('a SUBSTITUTE the model ECHOES is REPLACED, not re-issued - and the round still terminates', () => {
+    // REWRITTEN, and the property it carries is TERMINATION. It used to assert the opposite: a
+    // marked substitute passed through UNCHANGED, which was the mechanism protecting termination
+    // (the gate must not argue with its own last sentence). That mechanism also exempted the
+    // substitute from echo matching, so a model that echoed it reached the participant twice -
+    // the FIFTEEN consecutive duplicate pairs the reviewer saw live.
+    //
+    // THE FIX KEEPS BOTH PROPERTIES, and this test holds the one it used to hold from the other
+    // side: a substitute the model echoes is REPLACED, so no sentence reaches the participant
+    // twice, AND the conversation still terminates rather than the gate replacing its own
+    // sentence forever. The mark is now carried by the TEXT, so the gate never re-argues with
+    // itself on its next turn, while an echo of it is still a match target.
     const substitute = 'Who else is involved in this?';
     const conversation = [{ content: substitute, missing: new Array(10).fill('f'), substituted: true }];
 
     const result = turn(substitute, conversation);
-    assert.equal(result.content, substitute, 'a marked substitute is not a match target');
-    assert.equal(result.substituted, false, 'and is not re-marked as a fresh substitution');
+    assert.notEqual(result.content, substitute, 'the echoed substitute is not re-issued');
+    assert.equal(result.substituted, true, 'and the replacement is itself marked as the gate\'s');
+});
+
+test('the mark survives a PASS-THROUGH, so the gate never argues with its own next turn', () => {
+    // THE HALF THAT KEEPS TERMINATION. A substitute can be echoed back and, if there is progress,
+    // passed through. The mark must travel with it, so the gate recognises its own sentence next
+    // turn rather than treating it as the model's and substituting again. This is the property
+    // the old test asserted ("the mark is not lost"); it is asserted here on the text, which is
+    // where the fix moved it.
+    const substitute = 'Who else is involved in this?';
+    // The conversation holds the substitute as the gate's own, and one field has been answered
+    // since (so the repeat is a legitimate pass-through rather than a substitution).
+    const conversation = [{ content: substitute, missing: new Array(12).fill('f'), substituted: true }];
+
+    const result = turn(substitute, conversation);
+    assert.equal(result.content, substitute, 'with progress, the substitute passes through');
+    assert.equal(result.substituted, true, 'and is STILL marked as the gate\'s, not relabelled as the model\'s');
 });
 
 // ===========================================================================
@@ -537,3 +582,205 @@ test('the console renders "nothing answered" and withholds the rejudge form on t
     assert.match(view, /if \(response\.submitted_at !== null && !response\.empty\)/,
         'and withholds the rejudge form when there is nothing to rejudge');
 });
+
+// ===========================================================================
+// 5. EXHAUSTION: MONOTONIC, AND PLACED BEFORE THE SUBSTITUTION
+// ===========================================================================
+//
+// THE DEFECT WAS THE PLACEMENT, and that mattered more than what the check compared. The old
+// check lived in the `no fresh target` branch, so a rotating `missing` kept offering fresh
+// targets and the branch was never reached - the interviewer kept asking and never closed. The
+// reviewer's live capture ran 40 turns with 26 repeats and never closed.
+//
+// So these build conversations where `missing` ROTATES, which is what defeats a check that
+// compares against the open set, and assert the round still closes.
+
+/**
+ * A payload with a chosen number of OPEN fields, so `missing` can be varied turn by turn.
+ *
+ * The open fields are the tail of the field list, and `frequencyPerWeek` is always supplied while
+ * `timePerPeriod` is always left open - so the effort pair is open and the count is controllable.
+ */
+function processWithOpenFields(openCount) {
+    const typed = matrix.ALL_PROCESS_FIELD_NAMES
+        .slice(0, matrix.ALL_PROCESS_FIELD_NAMES.length - openCount)
+        .filter((f) => f !== 'timePerPeriod' && f !== 'frequencyPerWeek');
+    const values = Object.fromEntries(typed.map((f) => [
+        f, f === 'steps'
+            ? [Object.fromEntries(matrix.STEP_FIELDS.map((s) => [s, s === 'needsReasoning' ? false : 'v']))]
+            : (f === 'needsReasoning' ? false : 'v')
+    ]));
+    return { ...values, frequencyPerWeek: 2 };
+}
+
+/**
+ * Runs a conversation where the model repeats one sentence and `missing` ROTATES every turn.
+ *
+ * Returns the turn at which the round ended, or null. The rotation is the point: a check that
+ * compares against the open SET needs each set to be seen twice before it fires, so a rotating set
+ * needs one extra cycle per set - and at a fast rotation the set is never the same twice.
+ */
+function runRotating(period, sentence = 'How do you keep track of it?', maxTurns = 200) {
+    const conversation = [];
+    const replies = [];
+    for (let t = 1; t <= maxTurns; t += 1) {
+        const openCount = (Math.floor(t / period) % 3) + 3;
+        const askedBefore = conversation.map((entry) => ({
+            text: entry.content, openCount: entry.missing.length, substituted: entry.substituted === true
+        }));
+        const raw = JSON.stringify({
+            status: 'asking', content: sentence, processes: [processWithOpenFields(openCount)], have: [], missing: []
+        });
+        const r = parseModelResponse(raw, { askedBefore });
+        conversation.push({ content: r.content, missing: r.missing, substituted: r.substituted === true });
+        replies.push(r.content);
+        if (r.exhausted) return { endedAt: t, replies };
+    }
+    return { endedAt: null, replies };
+}
+
+test('an OSCILLATING `missing` still terminates - the placement fix', () => {
+    // The shape that defeated the old check: the model varies its payload so the open set
+    // rotates, and every rotation rate must still close the interview. The old check ran out of
+    // reach here, so a failure is a return of that defect.
+    //
+    // HONEST LIMIT: I could NOT construct an offline rotation that makes the OLD sentence-based
+    // check fail - because the field QUESTIONS are a fixed set of fifteen and any rotation
+    // consumes them within a bounded number of turns, after which both checks fire. The builder's
+    // defeat was measured live (40 turns, 26 repeats) and against a reproduction (15 questions
+    // done by turn 17, ran to 25). What this test can assert offline is the OUTCOME the fix owes -
+    // every rotation terminates, bounded - and the structural test below asserts the MECHANISM.
+    // So a return of the old code passes this test but fails the structural one, which is stated
+    // rather than hidden.
+    for (const period of [1, 2, 3, 5, 7]) {
+        const { endedAt } = runRotating(period);
+        assert.notEqual(endedAt, null, `rotation period ${period} must terminate, not run indefinitely`);
+        assert.ok(endedAt <= 60, `rotation period ${period} terminates in a bounded number of turns (got ${endedAt})`);
+    }
+});
+
+test('a WIDE rotation - the open set different every turn - still terminates within a bounded run', () => {
+    // The harsher rotation: the window slides by a co-prime step so the open SET differs every
+    // turn and does not recur for many turns. This is the shape that makes a check against the
+    // open set need one extra cycle PER SET, and it is bounded here rather than unbounded.
+    const ALL = matrix.ALL_PROCESS_FIELD_NAMES;
+    const payloadFor = (t) => {
+        const open = new Set([t % ALL.length, (t + 4) % ALL.length, (t + 9) % ALL.length, (t + 13) % ALL.length]);
+        const values = {};
+        for (let i = 0; i < ALL.length; i += 1) {
+            const field = ALL[i];
+            if (field === 'frequencyPerWeek') { values[field] = 2; continue; }
+            if (open.has(i)) continue;
+            values[field] = field === 'steps'
+                ? [Object.fromEntries(matrix.STEP_FIELDS.map((f) => [f, f === 'needsReasoning' ? false : 'v']))]
+                : (field === 'needsReasoning' ? false : 'v');
+        }
+        return values;
+    };
+
+    const conversation = [];
+    const sentence = 'How do you keep track of it?';
+    let endedAt = null;
+    for (let t = 1; t <= 300; t += 1) {
+        const askedBefore = conversation.map((entry) => ({
+            text: entry.content, openCount: entry.missing.length, substituted: entry.substituted === true
+        }));
+        const r = parseModelResponse(JSON.stringify({
+            status: 'asking', content: sentence, processes: [payloadFor(t)], have: [], missing: []
+        }), { askedBefore });
+        conversation.push({ content: r.content, missing: r.missing, substituted: r.substituted === true });
+        if (r.exhausted) { endedAt = t; break; }
+    }
+
+    assert.notEqual(endedAt, null, 'a wide rotation terminates rather than running forever');
+    assert.ok(endedAt <= 200, `and it is bounded (ended at ${endedAt})`);
+});
+
+test('the old check would fail this: exhaustion must not compare against the open SET', () => {
+    // A direct statement of the fix, in the code rather than the turn count: the condition is
+    // monotonic (asked field questions only accumulate), so it does not depend on `missing`. The
+    // structural check is that `asksEveryField` reads a Set of QUESTIONS and no field list, and
+    // that the decision uses it rather than `moveOnLine`.
+    const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
+    assert.match(source, /function asksEveryField\(askedQuestions\)/, 'exhaustion is decided by a helper over asked questions');
+    assert.match(source, /phrasings\.every\(\(phrasing\) => askedQuestions\.has\(phrasing\)\)/,
+        'and it asks whether every FIELD QUESTION has been asked, not whether a set was seen');
+    assert.match(source, /if \(fresh === undefined && asksEveryField\(askedQuestions\)\)/,
+        'and the exhaustion branch is reached on a repeat with no fresh target');
+});
+
+test('a HEALTHY interview is NOT cut short - exhaustion needs a repeat to trigger', () => {
+    // The guard must not end an interview that is still moving. Two things are asserted: a
+    // conversation of DISTINCT questions never exhausts, and a repeat WITH progress (a legitimate
+    // second attempt) does not either.
+    const conversation = [];
+    const asked = [
+        'What is the work, in your own words?',
+        'What starts one instance of this work?',
+        'What are the steps, from beginning to end?',
+        'Who else is involved in this?',
+        'Who does this go to next?'
+    ];
+    for (const question of asked) {
+        const r = turn(question, conversation);
+        assert.equal(r.exhausted, false, `a distinct question must not end the round: ${JSON.stringify(question)}`);
+        assert.equal(r.content, question, 'and is passed through unchanged');
+    }
+
+    // And a repeat after progress is left alone, which is the legitimate second attempt.
+    const repeat = 'How often does this happen?';
+    const prior = [{ content: repeat, missing: new Array(12).fill('f'), substituted: false }];
+    assert.equal(turn(repeat, prior).exhausted, false, 'a repeat AFTER progress does not exhaust');
+});
+
+test('FINDING: ECHO plus ROTATION produces consecutive duplicates the fixes do not catch', () => {
+    // THE INTERACTION, and it is the thing the brief asked for. The two fixes act on different
+    // paths: the echo fix makes a substitute MATCHABLE again, and the placement fix moves the
+    // exhaustion check ahead of the substitution. Neither handles the case where the model ECHOES
+    // AND the open set ROTATES at the same time.
+    //
+    // The cascade: the model echoes the substitute; the rotation makes a DIFFERENT field the
+    // `fresh` target each turn; a substitute written for field A reappears as the fresh target
+    // for field A when the rotation brings A back, so the gate re-issues a sentence it already
+    // wrote. Measured with an echoing model and a rotation of period 1: the participant sees the
+    // SAME question three times in a row (max run 3), across 25 consecutive duplicate pairs.
+    //
+    // IT STILL TERMINATES, which is why this is a FINDING and not a termination defeat: the round
+    // closes at turn 41. What it costs is the participant's patience - the symptom the guard
+    // exists to remove, surviving in the interaction of the two fixes rather than in either one.
+    // RECORDED AS TODAY'S BEHAVIOUR so a fix turns it red on purpose.
+    const { endedAt, replies } = runRotatingEcho(1);
+
+    const maxRun = (() => {
+        let best = 0; let current = 1;
+        for (let i = 1; i < replies.length; i += 1) {
+            if (replies[i] === replies[i - 1]) { current += 1; best = Math.max(best, current); } else current = 1;
+        }
+        return best;
+    })();
+
+    assert.notEqual(endedAt, null, 'FINDING: the interaction still terminates');
+    assert.ok(maxRun >= 3, `FINDING: the same question reaches the participant ${maxRun} times in a row`);
+});
+
+/** Runs the echo model with a rotating open set: the model sends back what it last received. */
+function runRotatingEcho(period, maxTurns = 200) {
+    const conversation = [];
+    const replies = [];
+    let incoming = 'How do you keep track of it?';
+    for (let t = 1; t <= maxTurns; t += 1) {
+        const openCount = (Math.floor(t / period) % 3) + 3;
+        const askedBefore = conversation.map((entry) => ({
+            text: entry.content, openCount: entry.missing.length, substituted: entry.substituted === true
+        }));
+        const raw = JSON.stringify({
+            status: 'asking', content: incoming, processes: [processWithOpenFields(openCount)], have: [], missing: []
+        });
+        const r = parseModelResponse(raw, { askedBefore });
+        conversation.push({ content: r.content, missing: r.missing, substituted: r.substituted === true });
+        replies.push(r.content);
+        if (r.exhausted) return { endedAt: t, replies };
+        incoming = r.content;
+    }
+    return { endedAt: null, replies };
+}
