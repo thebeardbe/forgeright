@@ -474,21 +474,26 @@ test('the replacement names an OPEN field, not a closed one', () => {
 });
 
 test('the client renders a replaced question as an ordinary turn and does not stall', async () => {
-    // A suppressed question that stalls the interview would be worse than the bug, so this
-    // checks the client: it appends `content` as an assistant turn and keeps the input open for
-    // any reply that is not an error, regardless of `status`.
+    // THE INTENT, WHICH STILL HOLDS: a substituted question is rendered and recorded like any
+    // other analyst turn, so the interview does not stall on it. The line that used to be
+    // asserted here pushed `{ role, content }` and now pushes `{ role, content, substituted,
+    // missing }` - the same turn PLUS the bookkeeping this server needs to terminate the guard.
+    // So this reads the purpose: the content is rendered, and the turn is recorded with its
+    // content, whatever extra fields travel beside it.
     const client = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'js', 'audit.js'), 'utf8');
 
     // The content of every non-error reply is appended and pushed to the conversation.
     assert.match(client, /appendMessage\('ai', S\.aiLabel, data\.content\)/,
         'the reply content is rendered as an analyst turn');
-    assert.match(client, /state\.conversation\.push\(\{ role: 'assistant', content: data\.content \}\)/,
-        'and recorded, so the next turn sees it');
+    // The assistant turn is recorded WITH ITS CONTENT - the extra fields are additive, not a
+    // replacement for it, which is the thing that changing the line could have broken.
+    assert.match(client, /state\.conversation\.push\(\{\s*role: 'assistant',\s*content: data\.content/,
+        'and recorded with its content, so the next turn sees it');
 
     // Only `error` and `rejected` stop the turn; `asking` does not, so nothing waits on complete.
     assert.match(client, /if \(data\.status === 'error' \|\| data\.status === 'rejected'\) \{/,
         'the only early return is for error and rejected');
-    assert.equal(/if \(data\.status !== .complete.\).*return/s.test(client), false,
+    assert.equal(/if \(data\.status !== .complete.\)[\s\S]*return/s.test(client), false,
         'nothing returns early on a non-complete status');
 });
 
@@ -711,22 +716,25 @@ test('the derivation rules, the sweep and the typed minimum are unchanged', () =
 // dynamic and lives here rather than at the top of the file.
 
 test('the client FINALISES the round and DOES NOT SCORE it', () => {
-    // A `nothing_answered` reply must end the round (the client passes `complete: true` to the
-    // server) and must NOT go through scoring, because scoring an empty round would produce a
-    // figure from no evidence. Both halves are read from the client source, since the page's
-    // behaviour is the thing that would silently regress.
+    // THE INTENT, WHICH STILL HOLDS: a `nothing_answered` reply ends the round (the client
+    // passes `complete: true`) and does NOT go through scoring, because scoring an empty round
+    // would produce a figure from no evidence. The line that used to be asserted here was
+    // `saveResponse(toSave, isComplete || nothingAnswered)` and it now ends `|| exhausted` -
+    // BOTH statuses finalise, neither scores. So the assertion is that the round finalises with
+    // `nothingAnswered` among the conditions, and that no nothing_answered path reaches scoring.
     const client = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'js', 'audit.js'), 'utf8');
 
     assert.match(client, /const nothingAnswered = data\.status === 'nothing_answered'/,
         'the client recognises the third status');
-    assert.match(client, /await saveResponse\(toSave, isComplete \|\| nothingAnswered\)/,
+    // FINALISES: `nothingAnswered` is one of the conditions passed to saveResponse.
+    assert.match(client, /await saveResponse\(toSave, [^)]*nothingAnswered[^)]*\)/,
         'and finalises the round when it arrives');
-    // The scoring call is gated on the reply being complete, not on nothing_answered, so the
-    // empty round cannot reach `runScoring`.
+    // DOES NOT SCORE: the scoring call is gated on the reply being complete with a payload, and
+    // the nothing_answered branch returns BEFORE it, so the empty round cannot reach `runScoring`.
     assert.match(client, /if \(isComplete && payload\) \{\s*\n\s*state\.audit = payload;/,
         'scoring runs only when the round IS complete with a payload');
-    assert.equal(/nothingAnswered[\s\S]{0,400}runScoring/.test(client), false,
-        'nothing_answered does not lead to scoring');
+    assert.match(client, /if \(nothingAnswered\) \{\s*\n\s*\$\('input-area'\)\.classList\.add\('hidden'\);\s*\n\s*return;/,
+        'the nothing_answered branch returns immediately, without scoring');
     // The input is hidden, so the participant is not left able to answer a closed round.
     assert.match(client, /if \(nothingAnswered\) \{\s*\n\s*\$\('input-area'\)\.classList\.add\('hidden'\)/,
         'and the input is hidden, because there is nothing more to answer');

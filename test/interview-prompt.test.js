@@ -167,11 +167,29 @@ test('the stop rule is made detectable through the conversation, with NO new sta
 });
 
 test('the model really does receive its own earlier turns, so the stop rule rests on something true', async () => {
-    // The "no new state" claim, verified. `runAuditTurn` passes NON-USER messages straight
-    // through, so an assistant turn the model produced is in the next request's messages.
+    // THE INTENT, WHICH STILL HOLDS: an assistant turn the model produced is in the next
+    // request's messages, so the model can read its own earlier questions and the stop rule
+    // rests on something real rather than on remembered state elsewhere.
+    //
+    // THE CLAIM IS NO-NEW-STATE, NOT NO-TRANSFORMATION. The line that used to be asserted here
+    // was `safeMessages.push(msg)`, and it now pushes `{ role, content }` INSTEAD - the same
+    // turn, with the internal bookkeeping fields dropped before the provider sees them. So this
+    // reads the purpose rather than the push: non-user messages are forwarded, and the forwarded
+    // form keeps role and content.
+    //
     // Checked against the source, since a live call would need a provider.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
-    assert.match(source, /if \(msg\.role !== 'user'\) \{\s*\n\s*safeMessages\.push\(msg\);/, 'non-user messages are passed through unsanitised');
+
+    // 1. A NON-USER MESSAGE IS FORWARDED, wherever the guard builds the safe list.
+    assert.match(source, /if \(msg\.role !== 'user'\) \{[\s\S]{0,120}?safeMessages\.push\(/,
+        'non-user messages are forwarded rather than dropped');
+    // 2. THE FORWARDED FORM KEEPS ROLE AND CONTENT, which is what makes it the model's own turn.
+    assert.match(source, /safeMessages\.push\(\{ role: msg\.role, content: msg\.content \}\)/,
+        'an assistant turn is forwarded as role and content');
+    // 3. and only those, so the internal fields do not reach the provider.
+    assert.equal(/safeMessages\.push\(msg\)/.test(source), false,
+        'the raw message is not what is forwarded');
+    // 4. The whole list reaches the provider, so the forwarded turns are actually sent.
     assert.match(source, /messages: withFormatCommitment\(safeMessages\)/, 'and the whole list is sent to the provider');
 });
 
