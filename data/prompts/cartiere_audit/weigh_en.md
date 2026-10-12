@@ -52,6 +52,31 @@ high value makes it a worse one. **The four Down terms are `departments`,
 `complexity`, `reasoningSteps` and `buildEffort`, and that list is the whole
 direction question: check every one of them before you write the number.**
 
+### Some fields arrive as the participant's own words, not as figures
+
+**A field may come to you as `{"saidInTheirWords": "...", "note": "..."}` instead of a
+number or a list.** That means the participant answered, in words, in a way that did not
+fit the field's type - *"just me, nobody else touches it"* for a count, *"the advert being
+live"* for a dependency.
+
+**YOU DECIDE WHETHER THAT IS USABLE, and that is the point of sending it to you.** Read
+the words the way you would read a number:
+
+- **use it if it tells you what you need.** *"just me, nobody else touches it"* is a
+  `people` count of one. *"everybody in the warehouse"* is high. The words often carry the
+  answer more clearly than a number would;
+- **if it does not, treat the field as NOT MEASURED** - say so in your reasoning and score
+  the term from what else you have. Do not invent a figure from vague words, and do not
+  score a field zero merely because it arrived as prose: **"we could not measure this" and
+  "there is nothing here" are different statements**, and the report reads differently
+  depending on which you meant;
+- **do not treat the prose as a literal count.** *"most of the company"* is not a number of
+  people, it is a description of scale - read it as the description it is.
+
+**You are being told it is prose because nothing else could tell you.** The code does not
+filter these values out and does not convert them; it passes them with a note. Whether they
+can be scored is your judgement, not a rule applied before you saw them.
+
 ### Why departments and complexity are costs
 
 More departments means more steps, more integration and more people to agree. A

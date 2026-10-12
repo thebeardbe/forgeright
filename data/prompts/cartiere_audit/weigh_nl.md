@@ -52,6 +52,32 @@ betekent dat een hoge waarde het slechter maakt. **De vier Neer-termen zijn
 `departments`, `complexity`, `reasoningSteps` en `buildEffort`, en die lijst is de
 hele richtingsvraag: loop ze alle vier na voordat je het getal opschrijft.**
 
+### Sommige velden komen als de woorden van de deelnemer, niet als cijfers
+
+**Een veld kan bij je aankomen als `{"saidInTheirWords": "...", "note": "..."}` in plaats van
+als een getal of een lijst.** Dat betekent dat de deelnemer antwoordde, in woorden, op een
+manier die niet in het type van het veld paste - *"ik sta hier alleen op, niemand anders raakt
+het aan"* voor een aantal, *"de advertentie staat online"* voor een afhankelijkheid.
+
+**JIJ BESLIST OF DAT BRUIKBAAR IS, en daarom krijg je het toegestuurd.** Lees de woorden zoals
+je een getal zou lezen:
+
+- **gebruik het als het je vertelt wat je nodig hebt.** *"ik sta hier alleen op"* is een
+  `people`-telling van één. *"iedereen in het magazijn"* is hoog. De woorden dragen het
+  antwoord vaak duidelijker dan een getal;
+- **is het niet bruikbaar, behandel het veld dan als NIET GEMETEN** - zeg dat in je redenering
+  en scoor de term uit wat je verder hebt. Verzin geen getal uit vage woorden, en scoor een
+  veld niet nul omdat het als proza aankwam: **"dit konden we niet meten" en "hier is niets"
+  zijn verschillende uitspraken**, en het rapport leest anders afhankelijk van welke je
+  bedoelde;
+- **behandel het proza niet als een letterlijke telling.** *"het grootste deel van het bedrijf"*
+  is geen aantal mensen, het is een beschrijving van schaal - lees het als de beschrijving die
+  het is.
+
+**Je krijgt te horen dat het proza is omdat niets anders dat kon zeggen.** De code filtert deze
+waarden niet weg en zet ze niet om; hij geeft ze door met een noot. Of ze te scoren zijn is
+jouw oordeel, geen regel die is toegepast voordat jij ze zag.
+
 ### Waarom afdelingen en complexiteit kosten zijn
 
 Meer afdelingen betekent meer stappen, meer integratie en meer mensen die het eens

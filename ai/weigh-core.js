@@ -24,6 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
 import { sanitizeInput, checkPromptInjection } from './security.js';
+import { proseSaidIn } from './field-shapes.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
 import { mergeProcessSteps } from './merge-steps.js';
@@ -126,6 +127,32 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
  * @param {Array<object>} responses Responses with `data` parsed.
  * @returns {object}
  */
+/**
+ * The participant's words, labelled so the weighing model knows they are words.
+ *
+ * THE LABEL IS THE POINT. Every other value in this payload is a number, a list or a short
+ * phrase, so a bare string in a numeric field reads as a figure: `peopleAffected: "just me"`
+ * invites the model to score a participant count out of it without being told it was prose.
+ * Wrapping it in a sentence that says what it is removes that guess and leaves the JUDGEMENT
+ * where it belongs - with the weighing model, which can decide whether the words are usable.
+ *
+ * A SHAPE RATHER THAN A REWRITE, so the model sees the original wording untouched and the
+ * explanation beside it. Do not turn this into `{"just me": true}` or a bare string: both
+ * lose the distinction between a quoted answer and a typed one, which is the distinction the
+ * whole marker exists to preserve.
+ *
+ * @param {string} said The participant's words, already validated as non-empty.
+ * @returns {{saidInTheirWords: string, note: string}}
+ */
+function proseForWeighing(said) {
+    return {
+        saidInTheirWords: said,
+        note: 'This field is the participant\'s own words, not a figure. Use it if it tells you '
+            + 'what you need; if it does not, treat the field as not measured rather than '
+            + 'inventing a number from it.'
+    };
+}
+
 function mergeParticipants(responses) {
     const fields = ['task', 'trigger', 'frequencyPerWeek', 'timePerPeriod', 'peopleAffected',
         'handoffTo', 'waitsFor', 'dependsOn', 'systems', 'touchedDepartments',
@@ -136,6 +163,21 @@ function mergeParticipants(responses) {
     for (const field of fields) {
         const values = responses
             .map((response) => response.data?.[field])
+            // A PROSE ANSWER IS LABELLED BEFORE IT REACHES THE WEIGHING MODEL, and that is
+            // the whole point of this line. `{ said: "just me" }` is the participant's own
+            // words for a field that would not take a number, and passing the raw object
+            // would give the model an unexplained `{"said":"..."}` where every other field
+            // is a number or a list - it could read it as a figure, or ignore it, and either
+            // way it was not TOLD what it was looking at.
+            //
+            // The weighing model decides whether prose is usable, not this code: its job is
+            // to make sure the model knows the difference between "they said this" and "the
+            // figure is this". Whether it can score it, it works out itself.
+            //
+            // NOT FILTERED OUT. Excluding prose here would decide on the model's behalf that
+            // it is unusable, and the weighing is exactly the place that can judge whether
+            // "just me" is a participant count.
+            .map((value) => (proseSaidIn(value) === null ? value : proseForWeighing(proseSaidIn(value))))
             .filter((value) => value !== undefined && value !== null);
 
         if (values.length === 0) continue;

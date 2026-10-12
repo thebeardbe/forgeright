@@ -73,6 +73,45 @@ export const STEP_FIELDS = Object.freeze(['name', 'whatHappens', 'decidedHow', '
 export const OPTIONAL_STEP_FIELDS = Object.freeze(['reasoningBasis']);
 
 /**
+ * THE FIELDS THAT MUST CARRY A TYPED VALUE, and may never be prose.
+ *
+ * The owner's list, and only those. `{ said: ... }` does not satisfy them, so they are the
+ * floor under the completeness guarantee: a model cannot complete an interview by writing
+ * prose into every field, because these would still be missing.
+ *
+ * FIVE NAMES, FOUR REQUIREMENTS: `frequencyPerWeek` and `timePerPeriod` are the either/or
+ * effort pair, and EITHER satisfies it. Listing both is what makes each of them refuse
+ * prose - the pair rule is applied where the missing list is computed, so the two mechanisms
+ * do not need to know about each other.
+ *
+ * `peopleAffected` IS DELIBERATELY ABSENT. "I am alone on this" is a good answer that needs no
+ * number, and refusing it would make the interview ask for a figure the participant has no
+ * reason to give. See the note on the weighing for the consequence that follows from that.
+ */
+export const TYPED_MINIMUM_FIELDS = Object.freeze([
+    'task', 'trigger', 'steps', 'frequencyPerWeek', 'timePerPeriod'
+]);
+
+/**
+ * The words inside a `{ said: ... }` marker, or null when the value is not one.
+ *
+ * ONE PLACE DECIDES WHAT THE MARKER IS, so `hasShape` and every reader agree. A malformed
+ * marker - an empty string, a number, extra keys - is NOT a marker: it returns null and falls
+ * through to the ordinary shape check, which refuses it. Anything else would make
+ * `{ said: "" }` a way to close a field by asserting nothing.
+ *
+ * @param {*} value
+ * @returns {string|null}
+ */
+export function proseSaidIn(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (!Object.hasOwn(value, 'said')) return null;
+    const said = value.said;
+    if (typeof said !== 'string' || said.trim() === '') return null;
+    return said;
+}
+
+/**
  * The shape each field must have to count as supplied.
  *
  * TYPE IS PART OF THE ANSWER, NOT A DETAIL. Checking only for emptiness let a
@@ -165,6 +204,30 @@ export const ALL_PROCESS_FIELD_NAMES = Object.freeze([
  */
 function hasShape(value, shape, field) {
     if (value === undefined || value === null) return false;
+
+    // THE PROSE MARKER IS CHECKED FIRST, AND FOR EVERY SHAPE.
+    //
+    // `{ said: "<the participant's words>" }` records an answer that will not fit the field's
+    // type. It counts as supplied for any shape EXCEPT the four in TYPED_MINIMUM_FIELDS, so
+    // the interview stops asking about a field the participant has genuinely answered, and
+    // their words are kept rather than lost.
+    //
+    // WHY IT EXISTS. A model could only supply a field by placing a correctly-typed value in
+    // the payload, so an answer that was real but not a number - "it depends on the mail, no
+    // rule I can make" - had NOWHERE TO GO. The field stayed missing, the model asked the only
+    // question it had for it, and a real interview looped on the same question five times
+    // because the participant's answers could never satisfy it.
+    //
+    // IT IS NOT AN ESCAPE FROM THE GATE. The fields in TYPED_MINIMUM_FIELDS refuse it,
+    // so a model cannot complete an interview by writing prose into everything - demonstrated
+    // in the tests. `missing` still names a field that is ABSENT; this distinguishes "they
+    // answered, in words" from "they were never asked".
+    //
+    // CHECKED BEFORE THE PER-FIELD MINIMUM, so `{ said: ... }` on a numeric field is judged by
+    // this rule rather than falling through to the minimum, which would report it as not
+    // supplied and lose the distinction between prose and absence.
+    const said = proseSaidIn(value);
+    if (said !== null) return !TYPED_MINIMUM_FIELDS.includes(field);
 
     // A LOWER BOUND ONLY, and only for numbers. This is not a general range check:
     // there is no upper limit, and a value that is not a number falls through to

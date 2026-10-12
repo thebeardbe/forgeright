@@ -37,12 +37,24 @@
 
     // A list renders as commas, a period as "6 hours per week", a number plainly.
     // One formatter, so the same field reads the same way in both views.
+    // A PROSE ANSWER RETURNS THE PARTICIPANT'S WORDS AND NOTHING ELSE. The marker is
+    // rendered by the caller, which is the only place that can put it in the HTML, so this
+    // stays a plain text formatter and a value cannot smuggle markup in beside it.
     function show(value) {
+        if (isProse(value)) return value.said;
         if (Array.isArray(value)) return value.join(', ');
         if (value && typeof value === 'object' && value.hours !== undefined) {
             return value.hours + ' hours per ' + (value.period || 'period');
         }
         return String(value);
+    }
+
+    // The same test the store and the weighing use, restated because a view cannot import a
+    // module: an object carrying a non-empty `said` string is the prose marker. Anything
+    // else falls through to the ordinary rendering.
+    function isProse(value) {
+        return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+            && typeof value.said === 'string' && value.said.trim() !== '';
     }
 %>
 <% if (!data) { %>
@@ -50,7 +62,13 @@
 <% } else { %>
     <% FIELDS.filter(function (field) { return data[field.key] !== undefined && data[field.key] !== null; })
              .forEach(function (field) { %>
-        <p class="words"><strong><%= field.label %>:</strong> <%= show(data[field.key]) %></p>
+        <p class="words">
+            <strong><%= field.label %>:</strong>
+            <%= show(data[field.key]) %>
+            <% if (isProse(data[field.key])) { %>
+                <span class="tag" title="The participant answered in words. This is their answer, kept verbatim; it was not a figure or a list.">in their own words</span>
+            <% } %>
+        </p>
     <% }); %>
 
     <% /* The steps, with the reasoning flag marked: the flag IS the automation boundary,
