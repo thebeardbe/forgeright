@@ -100,6 +100,32 @@
     <% /* OMITTED when the caller passes includeSteps false: the roadmap renders the
         process's merged steps above, and showing them again under every answer would
         repeat the same sequence once per participant. */ %>
+    <%#
+        A DECLINED `steps` RENDERS A ROW, and it did not before. `steps` is deliberately NOT in the
+        FIELDS list above because it has this block instead - the sequence needs its own layout -
+        and the block's guard required an ARRAY, so `{ declined: ... }` fell through it entirely.
+        The field most likely to be visibly refused therefore silently vanished: an admin counting
+        tags found fourteen and could not tell whether `steps` was declined or the page was broken.
+
+        IT IS THE FOURTH TYPED MINIMUM, the one the prompt refuses to let a model decline lightly,
+        and the largest thing in the payload - so it is the worst field to lose quietly.
+
+        THE PROSE AND DECLINED STATES ARE RENDERED BY THE SAME TAGS AS EVERY OTHER FIELD, so the
+        register is consistent rather than a special case for this one.
+    %>
+    <% if (typeof includeSteps === 'undefined' || includeSteps) { %>
+        <% if (isProse(data.steps) || isDeclined(data.steps)) { %>
+            <p class="words">
+                <strong>Steps:</strong>
+                <%= show(data.steps) %>
+                <% if (isProse(data.steps)) { %>
+                    <span class="tag" title="The participant answered in words. This is their answer, kept verbatim; it was not a figure or a list.">in their own words</span>
+                <% } else { %>
+                    <span class="tag" title="The participant was asked and did not answer. It is recorded as unanswered rather than counted as a result.">not answered</span>
+                <% } %>
+            </p>
+        <% } %>
+    <% } %>
     <% if ((typeof includeSteps === 'undefined' || includeSteps) && Array.isArray(data.steps) && data.steps.length > 0) { %>
         <h3>Steps</h3>
         <% data.steps.forEach(function (step) { %>

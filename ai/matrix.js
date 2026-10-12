@@ -133,7 +133,7 @@ export function fieldsMissingFrom(process) {
  */
 export function reconcileMatrix({ processes, claimedHave = null, claimedMissing = null, closing = false }) {
     if (!Array.isArray(processes) || processes.length === 0) {
-        return { have: [], missing: [...ALL_PROCESS_FIELD_NAMES], supplied: [], declined: [] };
+        return { have: [], missing: [...ALL_PROCESS_FIELD_NAMES], supplied: [], evidenced: [], declined: [] };
     }
 
     // What the payload can prove, across every process.
@@ -186,7 +186,23 @@ export function reconcileMatrix({ processes, claimedHave = null, claimedMissing 
         if (!isDeclined && (provable.has(field) || isHad)) supplied.push(field);
     }
 
-    return { have, missing, supplied, declined: [...declinedEverywhere] };
+    // `evidenced` IS THE PAYLOAD-ONLY LIST, and it exists because `supplied` is NOT monotonic.
+    //
+    // THE DISTINCTION, which cost a live model thirty-one identical questions to find: while an
+    // interview is in progress, `have` and `supplied` both believe the model's CLAIM for any
+    // field the payload does not carry. A model that re-partitions its `have`/`missing` lists -
+    // claiming nine fields held this turn and two the next, with `have + missing` always fifteen
+    // - therefore moves `missing` and `supplied` together while NOTHING IS RECORDED. Anything
+    // that reads either as "the participant has made progress" is reading a claim, and the
+    // result is a model that stalls with the guard passing every repeat as legitimate.
+    //
+    // `evidenced` is the same test `provable` uses for completion at the end: a field counts
+    // only when THE PAYLOAD ITSELF carries a value of the right shape. It can only grow as the
+    // interview goes on, because a payload that has a field keeps it, so it is the one list a
+    // churning model cannot move. `provided` is the earlier name for exactly this idea - see
+    // normalizeProcessesPayload - and it is not reused here because that one is about a single
+    // payload's shape rather than the reconciliation.
+    return { have, missing, supplied, evidenced: [...provable], declined: [...declinedEverywhere] };
 }
 
 /**

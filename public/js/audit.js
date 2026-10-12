@@ -186,7 +186,12 @@
                 role: 'assistant',
                 content: data.content,
                 substituted: data.substituted === true,
-                missing: Array.isArray(data.missing) ? data.missing : []
+                missing: Array.isArray(data.missing) ? data.missing : [],
+                // THE EVIDENCE THE PAYLOAD ACTUALLY CARRIED, replayed so the server can tell
+                // real progress from a change in what the model CLAIMS to hold. A model that
+                // re-partitions its `have`/`missing` lists moves `missing` without recording
+                // anything; this list only grows when a field is truly written down.
+                evidenced: Array.isArray(data.evidenced) ? data.evidenced : []
             });
 
             // THE PAYLOAD ARRIVES AS `audit`, NORMALISED BY THE SERVER, whatever

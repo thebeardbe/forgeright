@@ -184,10 +184,15 @@ function assistantQuestionsWithOpenCounts(messages) {
         // the guard reads as no progress - the safe direction, since it prefers substituting a
         // fresh question over repeating a possibly-stalled one.
         const missing = Array.isArray(message.missing) ? message.missing.length : 0;
+        // THE EVIDENCE COUNT AT THE TIME, which is what the guard compares against. A reply the
+        // client replays carries the server's own `evidenced` list; an absent one is treated as
+        // unknown, which reads as no progress - the safe direction, since the guard prefers
+        // substituting a fresh question over repeating a possibly-stalled one.
+        const evidenced = Array.isArray(message.evidenced) ? message.evidenced.length : 0;
         // A SUBSTITUTED QUESTION IS RECORDED BUT NEVER MATCHED. The client replays it, so it
         // arrives like any other assistant turn; the mark is what stops the gate recognising its
         // own sentence and replacing it with another one. See SUBSTITUTED.
-        asked.push({ text, openCount: missing, substituted: message.substituted === true });
+        asked.push({ text, openCount: missing, evidencedCount: evidenced, substituted: message.substituted === true });
     }
 
     return asked;
@@ -568,8 +573,29 @@ const SUBSTITUTED = true;
  * @param {Set<string>} askedQuestions The texts already sent to the participant.
  * @returns {boolean}
  */
-function asksEveryField(askedQuestions) {
-    const phrasings = Object.values(FIELD_QUESTIONS);
+function asksEveryField(askedQuestions, openFields) {
+    // EVERY QUESTION THAT COULD STILL BE ASKED HAS BEEN ASKED. The set is
+    // `FIELD_QUESTIONS` LIMITED TO THE FIELDS CURRENTLY OPEN, and the limitation is the fix for
+    // a residual stall rather than a convenience.
+    //
+    // REQUIRING ALL FIFTEEN WAS TOO STRONG, and it produced the very loop the guard exists to
+    // prevent. A field the model CLAIMS to hold is never offered as a question - the substitute
+    // only picks from `missing` - so its phrasing never enters the conversation, and exhaustion
+    // could never fire. Measured with a churning model that claims task/trigger/steps held: 12 of
+    // 15 questions asked, the move-on line emitted on every turn thereafter, indefinitely.
+    //
+    // THE MONOTONIC PROPERTY SURVIVES, which is what matters. The open set can change, but this
+    // is evaluated only on a repeat with no evidence of progress, and it asks whether there is
+    // anything left worth saying ABOUT WHAT IS STILL OPEN. A field nobody will ever be asked
+    // about again cannot be a reason to keep the conversation going.
+    //
+    // AN EMPTY OPEN SET IS NOT THIS FUNCTION'S CALL: `missing` empty with `supplied` empty is
+    // `nothing_answered`, and `missing` empty with evidence is a completed round. Both are
+    // decided before this is reached.
+    const phrasings = openFields
+        .map((field) => FIELD_QUESTIONS[field])
+        .filter((phrasing) => phrasing !== undefined);
+    if (phrasings.length === 0) return false;
     return phrasings.every((phrasing) => askedQuestions.has(phrasing));
 }
 
@@ -627,9 +653,41 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
     // falls through to the substitution below, exactly as a model repeat does.
     if (!wasAsked) return { text: content, substituted: false };
 
-    // PROGRESS SINCE IT WAS ASKED. Fewer fields open than last time means the participant has
-    // answered something, so asking again is the legitimate second attempt rather than a stall.
-    if (computed.missing.length < wasAsked.openCount) return { text: content, substituted: gateOwned };
+    // PROGRESS SINCE IT WAS ASKED, MEASURED FROM EVIDENCE RATHER THAN FROM A CLAIM.
+    //
+    // This compared `computed.missing` - which, mid-interview, is built partly from the model's
+    // own `have` claim, believed without evidence. A model that re-partitions which fields it
+    // CLAIMS to hold therefore makes `missing` shrink while nothing is recorded, and every
+    // shrink was read here as the participant answering something. A live capture: `have +
+    // missing` was always fifteen, `missing` fell 8 -> 6 -> 1 with nothing stored, and the guard
+    // passed thirty-one identical questions in a row without either exhaustion branch firing.
+    //
+    // `evidenced` IS THE PAYLOAD'S OWN EVIDENCE, and it is the only list a churning model cannot
+    // move: it grows when a value of the right shape is actually written into the payload, and
+    // it never shrinks, because a payload that holds a field keeps holding it.
+    //
+    // NOTE THAT `supplied` WOULD NOT HAVE FIXED THIS, which is worth stating because it is the
+    // obvious change. While the interview is in progress `supplied` believes the claim too, so
+    // it churns with `missing` - measured, 4,5,6,7,8,9 against a payload that proved 3. The two
+    // lists differ only for DECLINED fields, which is what they were built for; neither is
+    // evidence while asking. See the note on `evidenced` in matrix.js.
+    // EVIDENCE WHEN IT IS AVAILABLE, AND THE CLAIM ONLY AS A FALLBACK.
+    //
+    // The caller sends `evidencedCount` on every question it records, so in the running system the
+    // first condition is the one that decides. The second exists for a caller that supplies only
+    // the older `openCount` - a test fixture, or a conversation recorded before this field
+    // existed - where treating "no evidenced data" as "no progress" would make every such repeat a
+    // substitution and turn a legitimate second attempt into a wall.
+    //
+    // THE ORDER MATTERS: evidence is authoritative, so a churning model that shrinks its claim
+    // while recording nothing gets no benefit from the fallback. The fallback only applies when
+    // there is no evidence data to judge from at all.
+    const hasEvidenceData = wasAsked.evidencedCount !== undefined;
+    const progressed = hasEvidenceData
+        ? computed.evidenced.length > wasAsked.evidencedCount
+        : computed.missing.length < wasAsked.openCount;
+
+    if (progressed) return { text: content, substituted: gateOwned };
 
     // ASKED, NO PROGRESS. Prefer an open field whose question has not appeared yet.
     const askedQuestions = new Set(askedBefore.map((entry) => entry.text));
@@ -661,7 +719,7 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
     // IT NEEDS A REPEAT TO TRIGGER, deliberately: a moving interview is left alone, and this
     // only ends the conversation when the model has stopped making progress AND has run out of
     // questions. That keeps the guard from cutting a healthy interview short.
-    if (fresh === undefined && asksEveryField(askedQuestions)) {
+    if (fresh === undefined && asksEveryField(askedQuestions, computed.missing)) {
         console.warn(
             '[audit] the model repeated a question with no progress, and every field question has ' +
             'already been asked; closing the interview on the ' +
@@ -712,20 +770,16 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
         // THE ROUND STILL FINALISES WITH WHATEVER WAS SUPPLIED, so the store records a finished
         // round and the roadmap gets the fields that were given. That is the honest outcome of
         // an interview that ran out of useful questions.
-        if (askedQuestions.has(moveOnLine(computed.missing))) {
-            console.warn(
-                '[audit] the model repeated a question with no progress, and every open field has ' +
-                `already been asked (${computed.missing.join(', ')}); closing the interview on the ` +
-                `${computed.supplied.length} field(s) that were supplied`
-            );
-            return {
-                text: 'Thank you - that gives me a good picture of this one. I will stop there '
-                    + 'rather than keep asking, and the analysis will work from what you have told me.',
-                substituted: SUBSTITUTED,
-                exhausted: true
-            };
-        }
-
+        // THIS USED TO CLOSE THE INTERVIEW ON A MOVING-VALUE COMPARISON, and that check is GONE
+        // rather than kept beside the new one. It tested `askedQuestions.has(moveOnLine(missing))`
+        // - a function of the open field set - which is the defect that let a churning model stall
+        // indefinitely, and leaving it here would have left two branches that both look
+        // load-bearing while only one is. Exhaustion is decided ONCE, above, by `asksEveryField`.
+        //
+        // WHAT REACHES THIS POINT: no field question is left to ask, but not every field has had
+        // its question - which happens for a field with no entry in FIELD_QUESTIONS, or one the
+        // model keeps claiming open without ever being asked about. The move-on line is the
+        // honest reply, and it is sent once; see the branch below.
         console.warn(
             '[audit] the model repeated a question with no progress and every open field has ' +
             `been asked already (${computed.missing.join(', ')}); asking the participant to move on`
@@ -1116,6 +1170,9 @@ export function parseModelResponse(raw, { askedBefore = [] } = {}) {
         // round: every field has been asked, the participant has answered, and what is still open
         // cannot be settled by asking again. The round finalises on what was supplied.
         exhausted: question.exhausted === true,
+        // THE PAYLOAD'S OWN EVIDENCE, sent so the next turn can tell real progress from a
+        // change in what the model CLAIMS. A reply without it reads as no progress.
+        evidenced: computed.evidenced,
         // TRUE WHEN THIS GATE WROTE THE QUESTION rather than the model. The client replays every
         // assistant turn, so without this flag the gate would match its own substitute on the
         // next turn and the loop would move from the model to the gate. Termination rests on it:
