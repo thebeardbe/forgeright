@@ -261,7 +261,7 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
     // yet, so it takes the current count - which is what "no progress since" must mean for it.
     const askedBefore = assistantQuestionsWithOpenCounts(messages);
 
-    return parseModelResponse(raw, { askedBefore });
+    return parseModelResponse(raw, { askedBefore, messages });
 }
 
 
@@ -558,6 +558,104 @@ function moveOnLine(open) {
 const SUBSTITUTED = true;
 
 /**
+ * What the participant sees when the round closes because nothing more is being recorded.
+ *
+ * HONEST AND MID-INTERVIEW AWARE. It can fire while they are part-way through an answer, so it
+ * does not say "thank you for your answers" as though the conversation had finished naturally -
+ * it says the tool has stopped gathering, that this is not their fault, and that what they gave
+ * is kept. That is the truth: the fields supplied ARE recorded and ARE scored, and the failure is
+ * the interviewer's rather than theirs.
+ *
+ * IT DOES NOT APOLOGISE FOR THE PRODUCT. An admin may read this page or ask about it, and
+ * "we are sorry" without a reason invites a support conversation nobody can act on. It names
+ * what happened, in terms a participant can agree with.
+ */
+const EVIDENCE_CAP_CONTENT =
+    'Thank you - let us stop here. I have not been able to record anything new from the last few '
+    + 'answers, so rather than keep asking I will work with what you have told me. Everything you '
+    + 'did give is saved, and it counts. Someone can follow up with you if there is more to '
+    + 'capture.';
+
+/**
+ * HOW MANY TURNS THE INTERVIEW MAY GO WITHOUT GAINING ANY EVIDENCE.
+ *
+ * THE NET UNDER THE WHOLE GUARD. Every mechanism found so far has the same shape - the interview
+ * is not gaining evidence - and they were reached one at a time:
+ *
+ *   oscillation        no evidence gained
+ *   claim churn        no evidence gained
+ *   the all-fifteen loop   no evidence gained
+ *   rewording          no evidence gained
+ *   echo/rotation      no evidence gained
+ *
+ * A cap on TURNS WITHOUT EVIDENCE catches all of them, and whatever the sixth mechanism is. That
+ * is why it is a property of the CONVERSATION rather than a sixth text-matching heuristic: three
+ * of those have already produced false positives that discarded legitimate questions.
+ *
+ * TWENTY, AND THE FIGURES IT SITS BETWEEN. Those are measured rather than guessed:
+ *
+ *   a COMPLETING run took 6-31 turns, and the mock provider - a real scripted interview that
+ *   finishes - went SIX TURNS with no new evidence and then gained fourteen fields at once;
+ *   the stalled runs ran 100-200 turns and never gained again;
+ *   and a simulated run gaining one payload field every EIGHT turns - slow, but plainly
+ *   working - reached a TWELVE TURN plateau, because `evidenced` counts the effort pair as two
+ *   fields and can hold still while a payload step lands between them.
+ *
+ * TWELVE WAS TOO TIGHT, and that measurement is why this is not twelve. A cap that ends a run
+ * which is still gaining a field every eight turns is the false positive this design has to
+ * avoid - it discards real answers and tells the participant the tool gave up on them. Twenty
+ * clears that plateau with room to spare while still ending a stuck run about five times sooner
+ * than the observed 100-turn signature.
+ *
+ * THE COST IS DELIBERATE AND NAMED: a genuinely stuck participant sees up to twenty questions
+ * before the round closes, which is worse than twelve. That is the trade this cap makes, and the
+ * reason is that cutting off a working interview is worse than a longer wait on a broken one:
+ * the first loses evidence the participant gave, the second only loses their patience.
+ */
+const TURNS_WITHOUT_EVIDENCE_CAP = 20;
+
+/**
+ * How many consecutive turns the conversation has gone without gaining evidence.
+ *
+ * DERIVED FROM THE CONVERSATION, NOT CARRIED AS STATE, and that is the same principle as the
+ * evidence-over-claims fix. Every assistant turn the client replays already carries `evidenced` -
+ * the payload's own proof at that moment - so walking the turns gives the count. A counter the
+ * client kept and the server trusted would be a CLAIM, and a claim is exactly what this guard
+ * exists to stop reading as progress.
+ *
+ * A TURN WITH NO `evidenced` IS SKIPPED RATHER THAN COUNTED, because a conversation recorded
+ * before the field existed cannot be judged, and treating absence as "no evidence" would end a
+ * healthy interview at the first replay.
+ *
+ * @param {Array<{role: string, evidenced?: string[]}>} messages The conversation so far.
+ * @returns {number} Turns since the evidence last grew.
+ */
+function turnsWithoutEvidence(messages) {
+    const counts = [];
+    for (const message of messages) {
+        if (!message || message.role !== 'assistant') continue;
+        if (!Array.isArray(message.evidenced)) continue;
+        counts.push(message.evidenced.length);
+    }
+
+    // NOTHING TO JUDGE YET. A conversation with no evidence-bearing turns - because it is new, or
+    // because the client does not replay the field - is left alone.
+    if (counts.length === 0) return 0;
+
+    let peak = 0;
+    let since = 0;
+    for (const count of counts) {
+        if (count > peak) {
+            peak = count;
+            since = 0;
+        } else {
+            since += 1;
+        }
+    }
+    return since;
+}
+
+/**
  * Whether every field's question has appeared in the conversation.
  *
  * THE MONOTONIC HALF OF EXHAUSTION, and the reason it is a count rather than a sentence: the
@@ -819,7 +917,7 @@ const FIELD_QUESTIONS = {
     frustration: 'What is the most frustrating part of this for you?'
 };
 
-export function parseModelResponse(raw, { askedBefore = [] } = {}) {
+export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}) {
     // PARSED OUT OF PROSE, not handed to JSON.parse.
     //
     // DeepSeek's JSON mode returns whitespace as a conversation grows, so that
@@ -995,6 +1093,37 @@ export function parseModelResponse(raw, { askedBefore = [] } = {}) {
         return {
             status: 'nothing_answered',
             content: NOTHING_ANSWERED_CONTENT,
+            have: computed.have,
+            missing: computed.missing,
+            stepsStillNeed,
+            processes
+        };
+    }
+
+    // THE EVIDENCE CAP, CHECKED BEFORE ANY QUESTION IS CONSIDERED.
+    //
+    // IT SITS ABOVE THE EXACT-TEXT GUARD ON PURPOSE, because that guard cannot see a REWORDED
+    // repeat: the model appending " (part 2)" to its question is never a match target, so the
+    // repeat guard never fires, the `evidenced` comparison is never reached, and the interview
+    // runs indefinitely - measured at 120 turns with a two-field payload. The cap does not care
+    // what the question SAYS, only that the conversation has stopped learning anything, which is
+    // the shape all five mechanisms share.
+    //
+    // IT CLOSES THE ROUND RATHER THAN SUBSTITUTING, because after twelve turns without evidence
+    // there is nothing left worth asking: whatever the model is doing, it is not recording the
+    // participant's answers, and another question cannot help.
+    if (playingTheMatrix && computed.supplied.length > 0
+        && turnsWithoutEvidence(messages) >= TURNS_WITHOUT_EVIDENCE_CAP) {
+        console.warn(
+            `[audit] no new evidence in ${TURNS_WITHOUT_EVIDENCE_CAP} turns ` +
+            `(${turnsWithoutEvidence(messages)} and counting), with ${computed.supplied.length} ` +
+            'field(s) supplied; closing the round on what was recorded rather than asking again'
+        );
+        return {
+            status: 'asking',
+            content: EVIDENCE_CAP_CONTENT,
+            exhausted: true,
+            evidenced: computed.evidenced,
             have: computed.have,
             missing: computed.missing,
             stepsStillNeed,
