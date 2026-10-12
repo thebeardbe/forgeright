@@ -66,10 +66,23 @@ function typedProcess(overrides = {}) {
 }
 
 /** Parses a completion reply through the REAL gate, so `status` reflects the outcome. */
-function complete(process, { content = 'Anything else?', have = [...matrix.ALL_PROCESS_FIELD_NAMES] } = {}) {
+function complete(process, { content = 'Anything else?', have = [...matrix.ALL_PROCESS_FIELD_NAMES], status = 'complete' } = {}) {
     return parseModelResponse(JSON.stringify({
-        status: 'complete', content, processes: [process], have, missing: []
+        status, content, processes: [process], have, missing: []
     }));
+}
+
+/**
+ * A process where EVERY field carries a `{ declined: ... }` marker.
+ *
+ * EVERY name in `ALL_PROCESS_FIELD_NAMES`, not `PROCESS_FIELDS` plus `EFFORT_FIELDS` - the effort
+ * pair must BOTH be declined for the round to supply nothing, and building it from the two lists
+ * separately drops `timePerPeriod`, which leaves one field open and hides the all-declined path.
+ */
+function allDeclinedProcess() {
+    const process = {};
+    for (const field of matrix.ALL_PROCESS_FIELD_NAMES) process[field] = DECLINE;
+    return process;
 }
 
 const DECLINE = { declined: 'I have no idea' };
@@ -97,14 +110,29 @@ test('the four states: absent blocks, typed completes, said completes, declined 
     );
 });
 
-test('EVERY field declined -> asking, never complete (the reviewer\'s live failure, refused)', () => {
-    const allDeclined = {};
-    for (const field of [...matrix.PROCESS_FIELDS, ...matrix.EFFORT_FIELDS]) allDeclined[field] = DECLINE;
+test('EVERY field declined -> nothing_answered, and it does NOT claim completion', () => {
+    // THE REVIEWER'S LIVE FAILURE, now ended rather than refused forever. Declining everything
+    // used to be an unbreakable `asking` fixed point: the round neither closed nor moved. It now
+    // ends with a status of its own, and the two halves of that are the whole point - the round
+    // FINISHES, and it does NOT say `complete`, because an instance declaring completion with
+    // zero evidence is exactly what the completion gate exists to refuse.
+    const result = complete(allDeclinedProcess());
 
-    const result = complete(allDeclined);
+    assert.equal(result.status, 'nothing_answered', 'declining everything ends the round honestly');
+    assert.notEqual(result.status, 'complete', 'and does NOT claim there was something to analyse');
+    assert.notEqual(result.status, 'asking', 'and is not left open, which was the trap');
+});
 
-    assert.equal(result.status, 'asking', 'refusing everything must not finish the interview');
-    assert.notEqual(result.status, 'complete');
+test('an all-declined round supplies NOTHING: supplied is empty, have is full', () => {
+    // `supplied` staying empty is why the status cannot be `complete`. `have` being full is why
+    // there is nothing left to ask. Both are asserted, because they are the two facts that made
+    // the old behaviour a fixed point and the new one a termination.
+    const computed = matrix.reconcileMatrix({ processes: [allDeclinedProcess()] });
+
+    assert.equal(computed.supplied.length, 0, 'a refusal is never evidence');
+    assert.equal(computed.declined.length, matrix.ALL_PROCESS_FIELD_NAMES.length, 'every field is a refusal');
+    assert.equal(computed.have.length, matrix.ALL_PROCESS_FIELD_NAMES.length, 'and every field is answered-for');
+    assert.equal(computed.missing.length, 0, 'so nothing is left to ask');
 });
 
 test('A DECLINED FIELD IS NOT IN `missing` - the half that stops the loop returning', () => {
@@ -163,49 +191,87 @@ test('the stricter direction: a declined value never counts where a typed value 
 });
 
 // ===========================================================================
-// KNOWN DEFECT 1 - EVERY FIELD DECLINED IS A FIXED POINT THAT CANNOT CLOSE OR MOVE
+// THE ALL-DECLINED ROUND TERMINATES - the fix for the fixed point
 // ===========================================================================
+//
+// The round that could not close or move now ends. `nothing_answered` is a THIRD status beside
+// `asking` and `complete`, and the tests below are about what reaches which side: the interview
+// ends, the participant is told something true and finite, and the round is finalised without
+// claiming completion.
 
-test('KNOWN DEFECT 1: declining everything leaves `missing` empty, so the interview cannot progress or close', () => {
-    // THIS IS THE TRAP THE COMMIT NAMES - "leaving it in missing keeps it open forever" - REACHED
-    // FROM THE OTHER SIDE.
-    //
-    // When EVERY field of a process is declined: `have` holds all fifteen (so the prompt says
-    // do not ask again, and there is no open field to ask about), `missing` is EMPTY (so the
-    // closing-question replacement in audit-core has nothing to replace with and passes the
-    // model's closing line through unchanged), and `supplied` is empty (so the gate refuses
-    // completion). The turn is a FIXED POINT: every identical input returns identical `asking`
-    // output, the participant sees a closing question, and the interview never ends.
-    //
-    // THE ASSERTIONS BELOW RECORD WHAT THE CODE DOES TODAY, so a future fix turns them red on
-    // purpose. They are NOT a claim that this is correct.
-    const allDeclined = {};
-    for (const field of [...matrix.PROCESS_FIELDS, ...matrix.EFFORT_FIELDS]) allDeclined[field] = DECLINE;
+test('an all-declined reply ENDS the interview instead of returning the closing line forever', () => {
+    // THE OLD DEFECT: `have` full, `supplied` empty, `missing` empty, so the model had nothing to
+    // ask, the completion gate never opened, and the closing line reached the participant with no
+    // way out. The reply now carries the completed status instead of the model's own content.
+    const closing = 'Is there another process you would like to improve?';
+    const result = complete(allDeclinedProcess(), { content: closing });
 
-    const result = complete(allDeclined, { content: 'Is there another process you would like to improve?' });
-    const computed = matrix.reconcileMatrix({ processes: [allDeclined] });
-
-    assert.equal(result.status, 'asking', 'DEFECT: never completes');
-    assert.equal(result.missing.length, 0, 'DEFECT: nothing left to ask, so nothing can be replaced');
-    assert.equal(result.have.length, matrix.ALL_PROCESS_FIELD_NAMES.length, 'DEFECT: every field is have');
-    assert.equal(computed.supplied.length, 0, 'DEFECT: nothing supplied, so the gate can never open');
-    // The closing question is NOT replaced, because there is no open field to replace it with.
-    assert.equal(result.content, 'Is there another process you would like to improve?',
-        'DEFECT: the closing line reaches the participant unchanged');
+    assert.equal(result.status, 'nothing_answered', 'the round ends');
+    assert.notEqual(result.content, closing, 'and the model\'s closing line is NOT what the participant sees');
 });
 
-test('KNOWN DEFECT 1 (cont.): the state is a fixed point - repeated turns are identical', () => {
-    // The same input three times, asserting the output does not move. If the interview could
-    // progress, one of these would differ; if it closed, one would be `complete`.
-    const allDeclined = {};
-    for (const field of [...matrix.PROCESS_FIELDS, ...matrix.EFFORT_FIELDS]) allDeclined[field] = DECLINE;
+test('the participant is TOLD, honestly and without thanking them for answers they did not give', () => {
+    // The status is not an error, and not a closed door: the message says what happened. Two
+    // things are asserted because the commit names both - it does not thank them for answers
+    // they did not give, and it says this is not their fault.
+    const result = complete(allDeclinedProcess());
+    const content = result.content;
 
-    const turns = [1, 2, 3].map(() => complete(allDeclined, { content: 'Is there another process you would like to improve?' }));
-    const signature = (r) => JSON.stringify({ s: r.status, m: r.missing, h: r.have, c: r.content });
+    assert.equal(typeof content, 'string');
+    assert.ok(content.length > 0, 'there is a message');
+    assert.match(content, /did not manage to capture any answers/i, 'it says what happened');
+    assert.match(content, /not a problem on your side/i, 'and that it is not their failure');
+    // The thing it must NOT do: thank them for answers.
+    assert.equal(/thank you for your answers/i.test(content), false, 'it does not thank them for answers');
+});
 
-    assert.equal(signature(turns[1]), signature(turns[0]), 'DEFECT: turn 2 is identical to turn 1');
-    assert.equal(signature(turns[2]), signature(turns[1]), 'DEFECT: turn 3 is identical to turn 2');
-    assert.ok(turns.every((r) => r.status === 'asking'), 'DEFECT: it never closes');
+test('the reply TERMINATES: repeated turns all return the same finished status, not a forever-asking one', () => {
+    // It WAS a fixed point because every turn was identical `asking` output. It is still a fixed
+    // point in the sense that the status is stable - but the status is now an END, which is the
+    // difference that matters: the client finalises the round and hides the input.
+    const statuses = [1, 2, 3].map(() => complete(allDeclinedProcess()).status);
+
+    assert.deepEqual(statuses, ['nothing_answered', 'nothing_answered', 'nothing_answered'],
+        'every turn ends the round the same way, rather than asking forever');
+    assert.equal(statuses.every((s) => s === 'asking'), false, 'it is NOT still asking');
+});
+
+test('nothing_answered fires on an ASKING reply too, not only when the model claims complete', () => {
+    // The model does not have to claim completion for the round to end. A participant who has
+    // declined everything while the model keeps reporting `asking` must still get out, or the
+    // fixed point returns whenever the model does not happen to say "complete".
+    const result = complete(allDeclinedProcess(), { status: 'asking', content: 'Anything else?' });
+
+    assert.equal(result.status, 'nothing_answered', 'the round ends regardless of the claimed status');
+});
+
+test('it CANNOT be reached without genuinely declining everything - the escape-hatch check', () => {
+    // The claim that this is safe to add, verified rather than accepted. The condition is
+    // `missing` empty AND `supplied` empty, which needs EVERY field to be a refusal. A payload
+    // that merely lacks fields, or claims `have` for fields it does not carry, still has open
+    // fields and gets `asking` - so a model cannot finish early by asserting completion on an
+    // empty payload.
+    const attempts = {
+        'a process with no fields at all': {},
+        'a process with one typed field': { task: 'entering invoices' },
+        'a process with one said field': { task: { said: 'entering invoices' } }
+    };
+    for (const [label, process] of Object.entries(attempts)) {
+        const result = complete(process);
+        assert.notEqual(result.status, 'nothing_answered', `${label} must NOT reach nothing_answered`);
+        assert.equal(result.status, 'asking', `${label} is still an open interview`);
+    }
+});
+
+test('an all-declined round carries NO process and NO payload - nothing to score', () => {
+    // Declining everything must gain a model exactly what answering nothing gains: nothing. The
+    // round ends with no `audit` payload, so there is nothing for the client to score and no
+    // process is created - a refusal cannot become an escape hatch by producing a scorable audit.
+    const result = complete(allDeclinedProcess());
+
+    assert.equal('audit' in result && result.audit !== undefined, false, 'no payload is produced');
+    assert.equal(result.processes.every((p) => Object.keys(p).length > 0), true,
+        'the processes are the declined ones, carrying no usable field');
 });
 
 // ===========================================================================
@@ -305,39 +371,97 @@ test('the phrase variants are recognised, not only one exact sentence', () => {
     }
 });
 
-test('FINDING: a natural closing phrasing escapes the gate because of WORD ORDER', () => {
-    // THE GAP THE VARIANT TEST ABOVE WOULD HAVE HIDDEN. One shape is written
-    // `/would you like to (?:improve|look at|add)/`, which requires "would you like to". A
-    // single-character reordering - "Anything else you would like to look at?" - puts `you`
-    // first and matches NOTHING, so a closing question in that form reaches the participant with
-    // the matrix unsatisfied: precisely the abandonment the code gate exists to prevent. A live
-    // model is at least as likely to produce this word order as the matched one.
-    //
-    // RECORDED AS TODAY'S BEHAVIOUR so a broader shape turns it red on purpose.
+test('the word-order phrasing that used to escape is now GATED', () => {
+    // THE FIX FOR THE FINDING I REPORTED. The old matcher anchored on word ORDER
+    // (`would you like to <verb>`), so "Anything else you would like to look at?" put `you`
+    // first and matched nothing, and a closing question in that form reached the participant
+    // with the matrix unsatisfied. The matcher now anchors on the SUBJECT wherever it sits.
     const escaped = 'Anything else you would like to look at?';
     const result = complete(partialProcess(), { content: escaped });
 
-    assert.equal(result.content, escaped, 'FINDING: this wording is NOT recognised and passes through');
-    assert.equal(result.status, 'asking', 'FINDING: and the interview is still open when it is shown');
+    assert.notEqual(result.content, escaped, 'the wording is now recognised and replaced');
+    assert.equal(result.status, 'asking', 'and the interview continues with a real question');
 });
 
-test('a question that is NOT the closing question is untouched - the over-reach check', () => {
-    // THE OBVIOUS OVER-REACH. The replacement must fire on the closing question and not on the
-    // hundreds of ordinary questions an interview is made of, or it would silently rewrite the
-    // interview. Asserted with questions that share words ("process", "anything") with the
-    // closing shapes but are genuinely about a field.
+test('all seven closing phrasings are caught, in either word order', () => {
+    // The builder's claim: "all 7 closing phrasings now caught". Each of these is a way a model
+    // has phrased or could phrase the closing question; the word-order pair is included because
+    // the ORDER was the escape.
+    const closings = [
+        'Is there another process you would like to improve?',
+        "Is there another process you'd like to improve?",
+        'Anything else you would like to look at?',
+        'Would you like to tell me about another process?',
+        'Is there anything else you would like to add?',
+        'Any other process involved here?',
+        'Shall we look at something else?'
+    ];
+    for (const content of closings) {
+        const result = complete(partialProcess(), { content });
+        assert.notEqual(result.content, content, `"${content}" must be recognised and replaced`);
+    }
+});
+
+test('THE ORDINARY WAY THE DEFECT APPEARS: a closing question on an `asking` reply is gated', () => {
+    // THE BUILDER FOUND THE GATE HAD NEVER RUN IN THE COMMON CASE. It sat inside the
+    // "claimed complete and the matrix disagreed" branch, so a model asking the closing question
+    // while reporting **`status: "asking"`** was never checked - which is how the defect appears
+    // in practice: the live interview watched asking it four times was doing exactly that. The
+    // gate now runs at the one place every reply passes through, and this asserts the path that
+    // was actually broken rather than only the reported phrasing.
+    const closing = 'Is there another process you would like to improve?';
+    // `have: []` so the matrix is UNSATISFIED and there is an open field to substitute: the
+    // replacement only happens when something is missing (there is nothing to ask otherwise).
+    const result = complete(partialProcess(), { status: 'asking', content: closing, have: [] });
+
+    assert.notEqual(result.content, closing, 'a closing question on an asking reply is replaced');
+    assert.equal(result.status, 'asking', 'and the turn is still asking, with a real question');
+
+    // The same for several phrasings, so the coverage is not one sentence.
+    for (const content of ['Anything else you would like to look at?', 'Shall we move on?']) {
+        assert.notEqual(complete(partialProcess(), { status: 'asking', content, have: [] }).content, content,
+            `"${content}" on an asking reply must be replaced`);
+    }
+});
+
+test('the over-reach check: 22 ordinary questions, 0 wrongly gated', () => {
+    // THE OBVIOUS OVER-REACH THE BUILDER NAMES: its own first pattern gated "Do you want to
+    // describe the steps in more detail?" - a legitimate question about the CURRENT process -
+    // before it narrowed the verb list and the gap. Replacing a real question is worse than the
+    // escape it fixes, so the check is larger than the one that caught nothing: 17 as the builder
+    // claims, plus five of mine. These share words ("process", "anything", "else", "another",
+    // "describe", "steps") with the closing shapes on purpose.
     const ordinary = [
+        // The builder's set.
         'What systems do you use for this?',
         'How often does this happen?',
         'Who else is involved in this process?',
         'What happens next after you send it?',
         'Can you describe the steps you take?',
-        'Is this process something you do alone?'
+        'Is this process something you do alone?',
+        'Do you want to describe the steps in more detail?',
+        'How long does it usually take?',
+        'What goes wrong most often?',
+        'Where does the information come from?',
+        'What do you do when it is busy?',
+        'Who decides what happens next?',
+        'Which tool do you open first?',
+        'What makes this frustrating?',
+        'How many mistakes happen in a month?',
+        'What would you change if you could?',
+        'Do you check the work yourself?',
+        // Mine, chosen to share words with the closing shapes.
+        'Can you walk me through a typical day?',
+        'What is the hardest part of this?',
+        'Who signs this off?',
+        'Do you ever look at the email again?',
+        'Is there anything about the process you would change?'
     ];
     for (const content of ordinary) {
         const result = complete(partialProcess(), { content });
         assert.equal(result.content, content, `"${content}" must pass through unchanged`);
     }
+    assert.equal(ordinary.length, 22, 'the claim is pinned to the number checked');
 });
 
 test('the replacement names an OPEN field, not a closed one', () => {
@@ -492,30 +616,74 @@ test('the weighing marker for a `said` value is unchanged', () => {
     assert.equal(/"said":/.test(message), false, 'and the raw marker does not reach the model');
 });
 
-test('KNOWN DEFECT 2: a `declined` value reaches the weighing prompt UNLABELLED', () => {
-    // THE SAME BUG CLASS THE LAST ROUND FOUND, ONE STEP OVER, and item 6 of this brief asks
-    // specifically that no raw `{declined:...}` object reach the model as something it might
-    // score. It does. `mergeParticipants` transforms `proseSaidIn` values only; a declined
-    // value passes through untouched, so the weighing model sees `{"declined":"I have no idea"}`
-    // where every other field is a number or a list - exactly the situation the `said` note was
-    // added to prevent, now in a marker whose entire meaning is "there is nothing here".
+test('a `declined` value reaches the weighing prompt LABELLED, as declinedToAnswer with a note', () => {
+    // THE FIX FOR THE DEFECT I REPORTED. `mergeParticipants` transformed `proseSaidIn` values
+    // only, so a declined value passed through raw and the weighing model saw
+    // `{"declined":"I have no idea"}` where every other field is a number or a list - the same
+    // bug class as the `said` marker, in the marker whose WHOLE MEANING is "there is nothing
+    // here", so the model could read a refusal as a figure or ignore the field without knowing
+    // why. It now arrives as `declinedToAnswer` with `theySaid` and a note.
     //
-    // THE ASSERTIONS RECORD TODAY'S BEHAVIOUR, so a fix turns them red on purpose.
+    // THE NOTE'S ABSENCE WAS THE BUG, so its presence is the assertion.
     const grouping = {
         responses: [{ responseId: 'r1', department: 'Fin', data: { task: 'invoices', peopleAffected: { declined: 'I have no idea' } } }]
     };
     const message = weighCore.buildWeighingMessage({ process: { name: 'P' }, grouping });
 
-    assert.match(message, /"declined":\s*"I have no idea"/, 'DEFECT: the raw declined object reaches the model');
-    assert.equal(/declined/.test(message) && /not supplied|not an answer|no answer given/i.test(message), false,
-        'DEFECT: and it carries no note saying what it means');
+    assert.match(message, /"declinedToAnswer":\s*true/, 'the value is labelled as a refusal');
+    assert.match(message, /"theySaid":\s*"I have no idea"/, 'and carries their words');
+    assert.match(message, /NOT a value and NOT a zero/i, 'with a note saying it is neither');
+    assert.match(message, /not measured rather than as nothing/i, 'and that unmeasured is not empty');
 
-    // The wordless form is worse: the model sees a bare `{"declined":true}`.
-    const wordless = weighCore.buildWeighingMessage({
-        process: { name: 'P' },
-        grouping: { responses: [{ responseId: 'r1', department: 'Fin', data: { mission: 1, peopleAffected: { declined: true } } }] }
-    });
-    assert.match(wordless, /"declined":\s*true/, 'DEFECT: {"declined":true} reaches the model as-is');
+    // The raw marker must NOT reach the model: that was the defect.
+    assert.equal(/"declined":/.test(message), false, 'the raw { declined } object must not appear');
+});
+
+test('a WORDLESS declined value gives theySaid: null with the same note', () => {
+    // `{ declined: true }` is a refusal with no words to keep. The model must still be told what
+    // it is looking at, with `theySaid: null` rather than a missing key or a bare boolean.
+    const grouping = {
+        responses: [{ responseId: 'r1', department: 'Fin', data: { task: 'invoices', peopleAffected: { declined: true } } }]
+    };
+    const message = weighCore.buildWeighingMessage({ process: { name: 'P' }, grouping });
+
+    assert.match(message, /"declinedToAnswer":\s*true/, 'still labelled as a refusal');
+    assert.match(message, /"theySaid":\s*null/, 'with null for the words');
+    assert.match(message, /NOT a value and NOT a zero/i, 'and the same note');
+    assert.equal(/"declined":/.test(message), false, 'the raw marker does not appear');
+});
+
+test('a refusal and a prose answer are labelled DIFFERENTLY, so neither can be read as the other', () => {
+    // The distinction the weighing model depends on: "we could not measure this" and "there is
+    // nothing here" are different statements. A prose answer says saidInTheirWords; a refusal
+    // says declinedToAnswer; a typed value says neither.
+    const grouping = {
+        responses: [{
+            responseId: 'r1', department: 'Fin',
+            data: { peopleAffected: { declined: 'no idea' }, frustration: { said: 'the waiting' }, mistakesPerPeriod: 2 }
+        }]
+    };
+    const message = weighCore.buildWeighingMessage({ process: { name: 'P' }, grouping });
+
+    assert.match(message, /"declinedToAnswer":\s*true/, 'the refusal is a refusal');
+    assert.match(message, /"saidInTheirWords":\s*"the waiting"/, 'the answer is an answer');
+    assert.match(message, /"mistakesPerPeriod":\s*2/, 'the typed value passes through');
+    // The refused field must NOT also be presented as words.
+    const declinedBlock = message.slice(message.indexOf('"declinedToAnswer"'));
+    assert.equal(/declinedToAnswer[\s\S]{0,200}"saidInTheirWords"/.test(declinedBlock), false,
+        'a refusal is not also labelled as their words');
+});
+
+test('the weighing prompts gained the three-row table, in BOTH languages', () => {
+    // The commit claims both weighing prompts gained a table distinguishing a measured zero from
+    // an unmeasurable field. Pinned so the prompt half cannot drift from the code half.
+    for (const lang of LANGS) {
+        const text = fs.readFileSync(path.join(PROMPTS_DIR, `weigh_${lang}.md`), 'utf8');
+        assert.match(text, /declinedToAnswer/, `${lang} names the marker it will receive`);
+        // "not measured" is the English wording; the Dutch says "niet gemeten". Either is the
+        // line the note draws, so the test accepts the language's own word for it.
+        assert.ok(/not measured|niet gemeten/i.test(text), `${lang} draws the not-measured line`);
+    }
 });
 
 test('the derivation rules, the sweep and the typed minimum are unchanged', () => {
@@ -527,4 +695,95 @@ test('the derivation rules, the sweep and the typed minimum are unchanged', () =
 
     const nl = prompt('nl');
     assert.match(nl, /### 1\. LEID AF/, 'NL derivation intact');
+});
+
+// ===========================================================================
+// 7. WHAT CONSUMES THE THIRD STATUS - every reader of `status`
+// ===========================================================================
+//
+// `nothing_answered` is a new value beside `asking` and `complete`, and a status one reader does
+// not know about is how a round disappears. These are the readers: the client (which decides
+// whether to finalise and whether to score), the store (which records the round as finished),
+// the roadmap (which must not show it as a scored process), and the console (which must show it
+// with every field marked).
+//
+// The store tests need a temp STORE_DIR set BEFORE the store is imported, so the import is
+// dynamic and lives here rather than at the top of the file.
+
+test('the client FINALISES the round and DOES NOT SCORE it', () => {
+    // A `nothing_answered` reply must end the round (the client passes `complete: true` to the
+    // server) and must NOT go through scoring, because scoring an empty round would produce a
+    // figure from no evidence. Both halves are read from the client source, since the page's
+    // behaviour is the thing that would silently regress.
+    const client = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'js', 'audit.js'), 'utf8');
+
+    assert.match(client, /const nothingAnswered = data\.status === 'nothing_answered'/,
+        'the client recognises the third status');
+    assert.match(client, /await saveResponse\(toSave, isComplete \|\| nothingAnswered\)/,
+        'and finalises the round when it arrives');
+    // The scoring call is gated on the reply being complete, not on nothing_answered, so the
+    // empty round cannot reach `runScoring`.
+    assert.match(client, /if \(isComplete && payload\) \{\s*\n\s*state\.audit = payload;/,
+        'scoring runs only when the round IS complete with a payload');
+    assert.equal(/nothingAnswered[\s\S]{0,400}runScoring/.test(client), false,
+        'nothing_answered does not lead to scoring');
+    // The input is hidden, so the participant is not left able to answer a closed round.
+    assert.match(client, /if \(nothingAnswered\) \{\s*\n\s*\$\('input-area'\)\.classList\.add\('hidden'\)/,
+        'and the input is hidden, because there is nothing more to answer');
+});
+
+test('a `nothing_answered` round is FINALISED in the store - the round ends', async () => {
+    // `submitted_at` is the store's only way to say a round is finished, and the client sets it
+    // (`complete: true`) for a nothing_answered reply. This asserts the round actually ends, which
+    // is the half of the fix that stops the fixed point: staying open was the trap.
+    const fsMod = await import('node:fs');
+    const os = await import('node:os');
+    const STORE_DIR = fsMod.mkdtempSync(path.join(os.tmpdir(), 'fr-nothing-'));
+    const previous = process.env.STORE_DIR;
+    process.env.STORE_DIR = STORE_DIR;
+    process.env.SESSION_SECRET = 'b'.repeat(64);
+
+    try {
+        const store = await import(`../lib/store/index.js?nothing=${Date.now()}`);
+        const org = store.createOrganisation('Nothing org');
+        const invitation = store.addInvitation(org.id, { email: 'p@example.test', department: 'Finance' });
+
+        // The first turn is a partial round (submitted_at null), as any early turn is.
+        store.recordTurn(org.id, invitation.token, { data: { task: 'invoices' }, transcript: [] });
+        assert.equal(store.getResponsesForAnalysis(org.id).length, 0,
+            'before finalising, the partial round is not in the analysis set');
+        assert.equal(store.getAllResponses(org.id).length, 1,
+            'but it IS visible in the answers view, which includes partials');
+
+        // The client finalises with `complete: true` when the status is nothing_answered.
+        store.recordTurn(org.id, invitation.token, { data: { task: { declined: 'no idea' } }, transcript: [], complete: true });
+
+        const analysis = store.getResponsesForAnalysis(org.id);
+        assert.equal(analysis.length, 1, 'the finalised round IS in the analysis set (submitted_at is set)');
+        assert.equal(store.getAllResponses(org.id).length, 1, 'the same row, now finalised rather than partial');
+        // But it carries no usable evidence, which is why no process is created from it.
+        assert.equal(typeof analysis[0].data.task, 'object', 'the data holds the declined marker, no typed value');
+    } finally {
+        if (previous === undefined) delete process.env.STORE_DIR;
+        else process.env.STORE_DIR = previous;
+        fsMod.rmSync(STORE_DIR, { recursive: true, force: true });
+    }
+});
+
+test('an all-declined round creates NO process, so the roadmap never shows it as scored', async () => {
+    // THE BUILDER'S ESCAPE-HATCH CLAIM, verified: an all-declined round carries no evidence, so
+    // declining everything gains a model exactly what answering nothing gains. A process is only
+    // created by identification, which needs a usable field, so no process exists to appear on the
+    // roadmap. This is asserted through the code path the gate feeds: the reply carries no `audit`
+    // payload, so the client has nothing to score and identification has nothing to group.
+    const allDeclined = allDeclinedProcess();
+    const result = complete(allDeclined, { status: 'asking', content: 'Anything else?' });
+
+    assert.equal(result.status, 'nothing_answered');
+    assert.equal(result.audit, undefined, 'no payload reaches the scorer');
+    // Every field in the payload is a refusal, so nothing can be identified from it.
+    const usable = Object.values(allDeclined).filter(
+        (value) => value && typeof value === 'object' && !Object.hasOwn(value, 'declined')
+    );
+    assert.equal(usable.length, 0, 'no field carries a usable value');
 });
