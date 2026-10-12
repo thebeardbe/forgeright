@@ -491,11 +491,38 @@ file if you should not know who said what" is load-bearing rather than a
 formality. Exporting or sharing an organisation's file now shares the
 conversations too.
 
+### The round model
+
+**A round is the work of one process.** It is the unit the interview is saved and
+scored in, and every turn belongs to exactly one.
+
+A turn **continues the open round**: the participant's answers, and the whole
+conversation, are written on every turn, so nothing is lost if they close the tab.
+When the model reports that the matrix is satisfied - `status: "complete"`, which the
+server computes rather than trusting - **the round is finalised**, in the same reply
+that carries the closing question *"is there another process?"*. So a finished process
+is on disk before that question can be answered. Saying yes **starts a new round** for
+the new process.
+
+`submitted_at` is the boundary: **null is a partial round, a timestamp is a finished
+one.** A partial round is readable in the answers view and is marked "still in
+progress" there, and it is **excluded from the roadmap's sorting and scoring** - it is
+work the participant did not finish, so no figure is computed from it. A participant
+who reopens their link resumes the round they left open, with their conversation
+replayed.
+
+`processes` in a reply holds **the process being worked on now**, not every process of
+the interview: when a process completes, it is recorded and the conversation starts
+again for the next one. This is a prompt instruction rather than something the server
+enforces, and it is what keeps a finished process from being identified twice.
+
 ### Editable until closed
 
 Participants can add and edit until the admin calls `finishOrganisation`. After
-that, writes throw and reads still work. Adding another process appends a new
-response; it never overwrites an earlier round.
+that, writes throw and reads still work.
+
+**Within that, a turn edits the open round rather than appending a row**; only a
+completed round is final and never overwritten. See the round model above.
 
 ### The two prefixes
 

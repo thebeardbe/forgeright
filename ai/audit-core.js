@@ -45,6 +45,53 @@ const SUPPORTED_LANGS = ['nl', 'en', 'fr'];
 const DERIVED_FIELDS = Object.freeze(['stepsStillNeed']);
 
 /**
+ * Removes every derived field from an object graph, at any depth.
+ *
+ * THE ENFORCEMENT HALF OF `DERIVED_FIELDS`. A field the model cannot legitimately
+ * supply must not survive anywhere in what it sent, because the payload is persisted
+ * verbatim: a value deleted only at the top level still reaches a caller inside
+ * `processes`, and from there the participant's saved answers.
+ *
+ * DEPTH-FIRST AND IN PLACE, so it removes the key from the same objects the rest of the
+ * function goes on to read. A copy would leave the originals untouched and the hole
+ * open, which is the mistake this replaces.
+ *
+ * ARRAYS ARE WALKED, because the leak that was found arrived inside one:
+ * `processes: [{ stepsStillNeed: [...] }]`. An object that came from JSON has no cycles,
+ * so the recursion terminates; the parser produces this from `JSON.parse`, not from
+ * anything a caller assembled.
+ *
+ * A WARNING PER DISTINCT PATH would be noisier than useful - a model repeating the field
+ * on every process would log on every turn - so one line names the fields and the fact,
+ * and the removal is what matters. The log exists to make a prompt regression visible,
+ * not to enumerate it.
+ *
+ * @param {*} value Any part of the parsed reply.
+ * @param {string[]} fields The field names to remove.
+ * @returns {number} How many properties were removed, for the caller's log.
+ */
+function stripDerivedFields(value, fields) {
+    if (value === null || typeof value !== 'object') return 0;
+
+    let removed = 0;
+    if (Array.isArray(value)) {
+        for (const entry of value) removed += stripDerivedFields(entry, fields);
+        return removed;
+    }
+
+    for (const field of fields) {
+        if (Object.hasOwn(value, field)) {
+            delete value[field];
+            removed += 1;
+        }
+    }
+    for (const key of Object.keys(value)) {
+        removed += stripDerivedFields(value[key], fields);
+    }
+    return removed;
+}
+
+/**
  * Refuses to serve a prompt that describes a derived field.
  *
  * WHY THIS IS A THROW RATHER THAN A WARNING, and why it lives at the load rather than
@@ -305,21 +352,39 @@ export function parseModelResponse(raw) {
     // statement about the payload, computed from `processes`. A model that could claim
     // it would be able to contradict the matrix that computed it - the same class of
     // defect as a model claiming `complete` with fields missing, which the completion
-    // gate exists to refuse. So the field is DELETED FROM `parsed` BEFORE it is read,
-    // and the only value that can reach a caller is the one derived below.
+    // gate exists to refuse.
     //
-    // The deletion is what makes this structural. The final return spreads `...parsed`,
-    // so a model-supplied key would otherwise survive into the output; and the prompt
-    // is not the enforcement point, because a prompt is a request and this is a rule.
-    // A model that invents the field anyway gets it removed, silently and completely.
-    if (typeof parsed === 'object' && parsed !== null) {
-        if (Object.hasOwn(parsed, 'stepsStillNeed')) {
-            console.warn(
-                '[audit] the model sent `stepsStillNeed`, which is derived from the payload and not ' +
-                'its to report; discarding it and using the computed value'
-            );
-            delete parsed.stepsStillNeed;
-        }
+    // THE STRIP IS RECURSIVE, AND THAT IS THE FIX FOR A REAL HOLE. It deleted the
+    // TOP-LEVEL key only, so a model that put the field inside a process walked straight
+    // past it:
+    //
+    //   processes: [{ ..., stepsStillNeed: ["HOSTILE"] }]
+    //     -> r.processes[0].stepsStillNeed      === ["HOSTILE"]
+    //     -> r.audit.workflows[0].stepsStillNeed === ["HOSTILE"]
+    //
+    // The computed value still won - both readers use the top-level one - so it was
+    // inert for the interview. But the CLIENT PERSISTS THIS PAYLOAD VERBATIM, so the
+    // model's string reached the participant's stored answers, and the comment claiming
+    // "the only value that can reach a caller is the one derived below" was not true.
+    // A claim that is nearly true is the kind this codebase keeps finding; the fix is to
+    // make it exactly true rather than to weaken the wording.
+    //
+    // RECURSIVE RATHER THAN ONE EXTRA LEVEL, because the depth is the model's choice and
+    // a guard that names a depth is a guard with a next hole. This removes the key from
+    // the object graph the model sent, at any depth, before anything reads it.
+    //
+    // ONLY FIELDS THE MODEL CANNOT LEGITIMATELY CLAIM BELONG HERE. `have` and `missing`
+    // are NOT stripped: they are the model's own report of the conversation, the matrix
+    // reconciles rather than trusts them, and they are read at the top level by design.
+    // `stepsStillNeed` is different in kind - it is derived and unclaimable - which is why
+    // it is the only entry in the list today.
+    const stripped = stripDerivedFields(parsed, DERIVED_FIELDS);
+    if (stripped > 0) {
+        console.warn(
+            `[audit] the model sent ${stripped} derived field value(s) ` +
+            `(${DERIVED_FIELDS.join(', ')}), which are computed from the payload and not the ` +
+            'model\'s to report; discarded at every depth and replaced with the computed value'
+        );
     }
 
     // THE UNION ACROSS INCOMPLETE STEPS. The consumer is ONE question for the whole

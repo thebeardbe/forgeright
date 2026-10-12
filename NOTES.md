@@ -59,9 +59,16 @@ Open items for this project. Remove entries as they are resolved.
 - **Schema migrations past version 1 do not exist.** A file written by a
   different schema version is refused rather than migrated. Fine now; needed
   before the shape changes.
-- **`completed_at` and `submitted_at` are written by nothing yet.** They are in
-  the schema and read by `listInvitations`, so the schema is slightly ahead of
-  the code. Step 3 or 4 gives them a writer.
+- **`completed_at` is written by nothing yet.** It is in the schema on the
+  INVITATION table, read by `listInvitations`, and always inserted as NULL, so the
+  schema is slightly ahead of the code here. It is per-invitation progress for the
+  admin, and it is a different thing from `response.submitted_at` below.
+- **`submitted_at` IS WRITTEN NOW, and this sentence used to say it was not.** A
+  round is finalised when the model reports `status: "complete"`, which
+  `recordTurn` stores as `submitted_at`, so the column is the round model's
+  boundary: null is a partial round, a timestamp is a finished process. Partials
+  are shown in the answers view and excluded from the roadmap's sorting and
+  scoring. See the round model in the README.
 
 ### Resolved during development
 
@@ -505,3 +512,24 @@ working" but **"would this push contain its half-finished work"**. A commit
 touching only files the agent is not editing is safe to push; a commit spanning
 the tree it is editing is not. Run the suite on the state the commit will produce,
 not on whatever the tree happens to be mid-edit.
+
+## Deferred deliberately: console CSS
+
+**Several styling items are known and are NOT to be started until everything
+else is fixed and deployed.** The owner's words: *"we also have some css to
+tackle later but that is something we do after all the rest has been fixed. I
+need to get this deployed and out. I can update for styling while it is live."*
+
+So styling is expected to be updated **on a running deployment**, which means it
+must not be treated as a blocker for going live.
+
+Recorded here so a later reader, or a future session, does not treat these as
+oversights:
+
+**Also deferred, same reason:** rate limiting. *"rate-limiting is for after deploy
+and css as that is something I will setup but we are on a time crunch for deploy
+now. squising bugs to get to a working PoC with demodata."*
+
+So the priority order is: **a working proof of concept with demo data, deployed.**
+Anything that is not a bug blocking that is deferred by decision, not by oversight.
+The open sign-up spending the provider key is a known, accepted cost for now.

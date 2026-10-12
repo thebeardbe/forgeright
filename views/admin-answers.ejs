@@ -48,6 +48,26 @@
                     </div>
                 </span>
                 <span class="summary-side">
+                    <%#
+                        STILL IN PROGRESS. A round with no `submitted_at` is one the
+                        participant has not finished: they answered some questions and
+                        may come back. It is shown because their words are worth reading,
+                        and it contributes nothing to the roadmap, so the tag is what tells
+                        an admin which is which.
+
+                        THE CALM REGISTER, matching `.review` rather than the warning
+                        yellow: this is a fact about the answer, not something wrong with
+                        it. An abandoned interview is ordinary - it is the reason
+                        progressive saving exists - so the label informs rather than
+                        alarms. The base `.tag` styling is the neutral idle colour.
+
+                        IT RENDERS BEFORE THE GROUPING TAG, because it is about the answer
+                        itself rather than about how it was read, and a partial has no
+                        grouping to describe.
+                    %>
+                    <% if (response.submitted_at === null) { %>
+                        <span class="tag" title="The participant has not finished this round. It is kept and readable, and it is left out of the roadmap's sorting and scoring until it is completed.">still in progress</span>
+                    <% } %>
                     <% if (response.grouping) { %>
                         <span class="tag<%= response.grouping.decidedBy === 'admin' ? ' departments' : '' %>">
                             <%
@@ -133,6 +153,20 @@
                     </details>
                 <% } %>
 
+                <%#
+                    NO REJUDGE FORM FOR A PARTIAL ROUND, and this is a fix rather than a
+                    preference. The form used to render for every row, including a round
+                    the participant has not finished - while the route behind it reads the
+                    response through `getResponsesForAnalysis`, which EXCLUDES partials.
+                    So submitting it answered "that response is not in this organisation",
+                    offering an action that could only fail.
+
+                    The rule and the button now agree: a partial is unfinished work, it is
+                    excluded from sorting and scoring, and identifying it is the same
+                    decision seen from the other side. A round that is not finished has no
+                    grouping to dispute yet.
+                %>
+                <% if (response.submitted_at !== null) { %>
                 <% /* A rejudge is a request with a reason, never a category to pick. */ %>
                 <form class="rejudge" method="post" action="<%= basePath %>/admin/answers/<%= response.id %>/rejudge">
                     <label for="reason-<%= response.id %>">This answer was read wrong</label>
@@ -140,6 +174,12 @@
                               placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, and is free to disagree."></textarea>
                     <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Rejudge this answer</button>
                 </form>
+                <% } else { %>
+                    <p class="meta">
+                        This round is still in progress, so it is not grouped or scored. Rejudging
+                        becomes possible once the participant finishes it.
+                    </p>
+                <% } %>
             </div>
         </details>
     <% }); %>
