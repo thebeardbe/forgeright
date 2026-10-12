@@ -321,6 +321,37 @@ const server = app.listen(PORT, HOST, () => {
     const config = loadAiConfig();
     console.log(`[server] listening on http://${HOST}:${PORT}${BASE_PATH}`);
     console.log(`[server] AI provider: ${config.name} (${config.type})`);
+
+    // A DEPLOYMENT THAT CANNOT INTERVIEW SHOULD NOT BE SILENT ABOUT IT.
+    //
+    // `mock` answers every turn with a scripted interview question and NEVER completes,
+    // so an instance left on it cannot run a real interview at all - and nothing about
+    // that is visible from outside. The owner's container sat on mock for hours while he
+    // read the resulting behaviour as a bug in the interview. This warning is the fix for
+    // the SILENCE, not for the setting.
+    //
+    // IT IS NOT AN ERROR, and must not become one: local development legitimately uses
+    // mock, and the whole test suite depends on it. Refusing to start would break both.
+    //
+    // THE CONDITION IS "THIS LOOKS LIKE A DEPLOYMENT", and the tell is that the app is
+    // not bound to loopback: a local run is 127.0.0.1, and anything reachable from
+    // elsewhere is somebody's served instance. That is deliberately narrow, so the
+    // warning does not fire for `npm start` or a test run and become noise an operator
+    // learns to skip - which is how a real warning stops being read.
+    //
+    // A KEY PRESENT IS NOT THE TEST, and that matters: the mock branch of ai/config.js
+    // skips the key check entirely, so `DEEPSEEK_API_KEY` being set proves nothing about
+    // which provider is in use. Folded into this one condition so there is only ever a
+    // single thing to check.
+    if (config.type === 'mock' && HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1') {
+        console.warn(
+            `[server] WARNING: AI_PROVIDER is "${config.name}" while this instance is bound to ` +
+            `${HOST}, which is reachable beyond this machine. The mock provider answers every turn ` +
+            'with a scripted question and NEVER completes, so no real interview can run and every ' +
+            'round is saved as a partial. Set AI_PROVIDER to a real provider (gemini or deepseek) ' +
+            'and set its key in .env. Use mock deliberately for development, or bind to 127.0.0.1.'
+        );
+    }
     console.log(`[server] mail sender: ${process.env.MAIL_SENDER || 'console'} (default console)`);
 
     // Say where the app is served, because a wrong prefix produces 404s that look

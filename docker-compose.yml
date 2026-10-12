@@ -189,6 +189,42 @@ services:
       # a local demo: it is in the repository, so anyone reading it can open the link.
       # Acceptable on your own machine, NOT for anything reachable from the internet.
       # Override it in .env to change it.
+      # --- WHICH PROVIDER AND WHICH MAIL TRANSPORT: PASSED EXPLICITLY ---
+      #
+      # AI_PROVIDER IS THE ONE THAT MATTERS, and this is the deployment the owner was
+      # testing when he found the gap. The app's own default is `mock` (see
+      # config/ai-config.json's defaultProvider), which answers every turn with a scripted
+      # interview question and NEVER completes: a deployment left on it cannot run an
+      # interview, and nothing about that is visible from outside the container.
+      #
+      # IT IS NOT AN ERROR, and must not become one: local development legitimately uses
+      # mock, and the test suite depends on it. What was wrong was the SILENCE, so the
+      # server now warns when it looks like a deployment and the provider is still mock.
+      # See the note on that warning in DEPLOY.md.
+      #
+      # A REAL KEY WITHOUT AI_PROVIDER IS IGNORED, silently, because the mock branch skips
+      # the key check - so `DEEPSEEK_API_KEY` being set proves nothing about which provider
+      # is in use. Set AI_PROVIDER as well.
+      AI_PROVIDER: "${AI_PROVIDER:-mock}"
+      # `console` prints the message to stdout and sends NOTHING. Correct for development;
+      # wrong for anyone expecting a participant to receive a link.
+      MAIL_SENDER: "${MAIL_SENDER:-console}"
+      # Which Proton profile to send from, when MAIL_SENDER=proton. The app's own default
+      # is a jobsearch account on the machine this was built on, which is wrong for every
+      # deployment.
+      MAIL_PROTON_PROFILE: "${MAIL_PROTON_PROFILE:-}"
+      # The provider keys, so they are visible on the settings surface rather than only in
+      # `.env`. Empty is correct for mock; an empty key with a real provider is a startup
+      # warning from ai/config.js.
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      # --- HOW LONG THINGS LAST, when an operator wants to change them ---
+      # A sign-in link lives 15 minutes and a session 12 hours by default; these exist to
+      # make the dials visible, not because a deployment must set them.
+      LOGIN_LINK_TTL_MINUTES: "${LOGIN_LINK_TTL_MINUTES:-}"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-}"
+      STORE_BUSY_TIMEOUT_MS: "${STORE_BUSY_TIMEOUT_MS:-}"
+
       DEMO_LOGIN: "1"
       DEMO_LOGIN_ORG: "example-ltd-demo"
       DEMO_LOGIN_TOKEN: "${DEMO_LOGIN_TOKEN:-local-demo-read-only-token-change-me}"
@@ -200,6 +236,21 @@ services:
       # it every restart would present an empty console, because a container writes to its
       # own layer and a new container starts from the image again.
       - forgeright-store:/data/store
+
+      # --- the Proton session: the SAME volume as the behind-a-terminator shape ---
+      #
+      # THIS WAS MISSING, and its absence meant mail could not work in the shape a fresh
+      # clone uses. Only `forgeright-app` mounted it, so `docker compose up` gave a
+      # container where `proton-cli` found no session however the operator signed in -
+      # the credential would have been written to the container's own layer and lost on
+      # the next recreate, which is the exact failure the volume exists to prevent.
+      #
+      # SHARING ONE VOLUME WITH THE OTHER SHAPE IS DELIBERATE: sign in once and both work,
+      # and there is one credential rather than two that drift.
+      #
+      # XDG_CONFIG_HOME is set in the image, so the binary keeps its sessions here. See the
+      # Dockerfile for why that variable rather than PROTON_CONFIG.
+      - proton-session:/home/node/.config
 
       # --- the committed demo: READ-ONLY, and deliberately not the store ---
       #
@@ -376,6 +427,25 @@ services:
       # refuses with a message naming the value, the rule and the fix - while a Compose
       # interpolation error would say only that a variable is missing. See
       # lib/auth/demo-token-policy.js.
+      # --- WHICH PROVIDER AND WHICH MAIL TRANSPORT ---
+      #
+      # THESE ARRIVE THROUGH `env_file` AS WELL, so naming them changes nothing at
+      # runtime. They are named because their absence from this file was read as their
+      # absence from the container while a container sat silently on `mock`, which cannot
+      # run an interview at all. See the long note on the app service for the reasoning.
+      #
+      # AI_PROVIDER IS THE ONE THAT MATTERS: the app defaults to `mock`, which answers
+      # every turn with a scripted question and never completes. Left unset in a
+      # deployment, that is invisible from outside.
+      AI_PROVIDER: "${AI_PROVIDER:-mock}"
+      MAIL_SENDER: "${MAIL_SENDER:-console}"
+      MAIL_PROTON_PROFILE: "${MAIL_PROTON_PROFILE:-}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      LOGIN_LINK_TTL_MINUTES: "${LOGIN_LINK_TTL_MINUTES:-}"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-}"
+      STORE_BUSY_TIMEOUT_MS: "${STORE_BUSY_TIMEOUT_MS:-}"
+
       DEMO_LOGIN: "1"
       DEMO_LOGIN_ORG: "example-ltd-demo"
       DEMO_LOGIN_TOKEN: "${DEMO_LOGIN_TOKEN:-local-demo-read-only-token-change-me}"
