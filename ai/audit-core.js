@@ -634,12 +634,32 @@ function turnsWithoutEvidence(messages) {
     const counts = [];
     for (const message of messages) {
         if (!message || message.role !== 'assistant') continue;
-        if (!Array.isArray(message.evidenced)) continue;
-        counts.push(message.evidenced.length);
+
+        if (Array.isArray(message.evidenced)) {
+            counts.push(message.evidenced.length);
+            continue;
+        }
+
+        // A TURN THE SERVER WROTE ALWAYS CARRIES SOMETHING WE CAN JUDGE FROM, so an absent
+        // `evidenced` on such a turn means the client did not send it - not that the turn is
+        // unjudgeable. That is read as [] rather than skipped, which is the difference between a
+        // working cap and none.
+        //
+        // WHY IT MATTERS: this is the LAST mechanism, so a client that omits the field would make
+        // every earlier guard unreachable again and the interview would run forever, silently.
+        // Measured before this change: `evidenced` replayed -> the cap fires; `evidenced` omitted
+        // -> the cap never fires. `missing` and `substituted` are the server's own fields, so
+        // seeing either proves the turn came from this server and had an `evidenced` to omit.
+        //
+        // A BARE USER TURN, AND A TURN WITH NO SERVER FIELDS AT ALL, ARE STILL SKIPPED. That is
+        // what keeps this from treating a conversation recorded before the field existed - or one
+        // the client built by hand for a test - as a stalled one.
+        const fromThisServer = Array.isArray(message.missing) || message.substituted !== undefined;
+        if (fromThisServer) counts.push(0);
     }
 
-    // NOTHING TO JUDGE YET. A conversation with no evidence-bearing turns - because it is new, or
-    // because the client does not replay the field - is left alone.
+    // NOTHING TO JUDGE YET. A conversation with no turns the server wrote is left alone, so a new
+    // interview and a hand-built fixture both start uncapped.
     if (counts.length === 0) return 0;
 
     let peak = 0;
@@ -1109,10 +1129,29 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
     // what the question SAYS, only that the conversation has stopped learning anything, which is
     // the shape all five mechanisms share.
     //
-    // IT CLOSES THE ROUND RATHER THAN SUBSTITUTING, because after twelve turns without evidence
+    // IT CLOSES THE ROUND RATHER THAN SUBSTITUTING, because after a long run without evidence
     // there is nothing left worth asking: whatever the model is doing, it is not recording the
     // participant's answers, and another question cannot help.
+    //
+    // AND IT DOES NOT FIRE ON AN INTERVIEW THAT IS ALREADY FINISHABLE. `missing.length > 0` is
+    // that guard, and it is here because the cap PRE-EMPTED COMPLETION in three separate live
+    // runs: `evidenced` plateaued while `missing` reached zero, so the condition below held, the
+    // cap ran first, and the participant was told "I have not been able to record anything new"
+    // - WHICH WAS FALSE. The tool had recorded everything; it was finished. That is the exact
+    // harm this cap's own comment names: not a discarded answer, but a participant told the tool
+    // gave up when it had not.
+    //
+    // WITH `missing` EMPTY THERE IS NOTHING TO STOP: the round is complete or about to be, and
+    // closing it is the completion path's job rather than a timeout's.
+    //
+    // THE COUNTER BELOW CANNOT BE TRUSTED ALONE, which is why this condition is not merely
+    // belt-and-braces. `evidenced` is NOT monotonic in practice - the design note in matrix.js
+    // claims a payload that has a field keeps it, and live runs falsify that: the model rewrites
+    // `processes` each turn and drops fields it had filled, so the count fluctuates and this
+    // counter can report a long plateau during a healthy interview. `missing` is the authoritative
+    // signal that there is still work to do.
     if (playingTheMatrix && computed.supplied.length > 0
+        && computed.missing.length > 0
         && turnsWithoutEvidence(messages) >= TURNS_WITHOUT_EVIDENCE_CAP) {
         console.warn(
             `[audit] no new evidence in ${TURNS_WITHOUT_EVIDENCE_CAP} turns ` +
