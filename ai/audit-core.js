@@ -243,6 +243,14 @@ function hasPayload(parsed) {
  * direct route able to serve a blank heading, and duplicating the checks in two
  * places is how they drift apart.
  *
+ * EVERY CHECK BELOW IS LIVE ON THE HTTP PATH, including the one for an entry that is not
+ * an object. It was reported as unreachable, and it is - FROM THE INTERVIEW PATH only, where
+ * a malformed entry leaves the matrix incomplete so the completion gate returns `asking`
+ * before this is ever consulted. `POST /api/score` calls this DIRECTLY with whatever the
+ * client sent, so `{"workflows":[null]}` returns "1 entry is not an object" here and is the
+ * only thing standing between a malformed body and the scorer. Do not remove it as dead, and
+ * do not relax it on the grounds that the interview path cannot produce it.
+ *
  * @param {*} workflows
  * @returns {{ok: true} | {ok: false, reason: string}}
  */

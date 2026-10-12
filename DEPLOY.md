@@ -27,15 +27,24 @@ cd forgeright
 cp .env.example .env
 ```
 
-Then edit `.env` and set **four things**. Everything else has a sane default.
+Then edit `.env` and set **five things**. Everything else has a sane default.
 
 ```bash
-SESSION_SECRET=962d31f01d2f9e528559cf4e8adfeb05fecc4dabc399cf982becb29037694d93
-DEMO_LOGIN_TOKEN=kNa-oK-z6UJ_Nfd70qF-CYwklbo92Ez0-1T5GYZDjM4
+# EVERY VALUE BELOW MARKED "generate" MUST COME FROM THE COMMAND, and the commands are
+# given in the next section. Nothing here is a real value and nothing here can be copied
+# as one: a secret that appears in a document is a secret every reader shares.
+SESSION_SECRET=<paste the output of: openssl rand -hex 32>
+DEMO_LOGIN_TOKEN=<paste the output of: openssl rand -base64 32>
 PUBLIC_BASE_URL=https://forgeright.example.com
 ALLOWED_HOST=forgeright.example.com
 TRUST_PROXY=uniquelocal
 ```
+
+**NEVER COPY A SECRET FROM A DOCUMENT, INCLUDING THIS ONE.** `SESSION_SECRET` signs the
+admin session cookie, so anyone who knows it can mint a valid admin cookie for any instance
+built with it - that is a full authentication bypass, not a weak password. `DEMO_LOGIN_TOKEN`
+opens the read-only demo link, which is a real link to a real instance. Both are generated on
+your machine, and the commands are two sections below.
 
 Then:
 
@@ -138,52 +147,47 @@ correct: TLS ends at nginx, and the app is told that it did by the header above.
 nothing to sign up for.** Each command below is a program you run; it prints a random
 string, and you copy that string into `.env` as the value.
 
-`SESSION_SECRET` signs the admin session cookie. Generate it with:
+**A SECRET WRITTEN DOWN IS NOT A SECRET.** Neither value below is shown filled in, here or
+anywhere else in this document, because a real-looking value in a file people copy is a value
+every reader of this repository shares. **`SESSION_SECRET` is the more serious of the two:**
+it signs the admin session cookie, so anyone who knows it can mint a valid admin cookie for
+any instance that used it - a full authentication bypass, not a weak password.
+
+### `SESSION_SECRET` - signs the admin session cookie
+
+Run this **on your own machine** and copy the line it prints:
 
 ```bash
 openssl rand -hex 32
 ```
 
-That prints one line, for example:
-
-```
-962d31f01d2f9e528559cf4e8adfeb05fecc4dabc399cf982becb29037694d93
-```
-
-Copy that entire line and paste it after the `=` in `.env`:
+Then paste it as the whole value, leaving nothing of the placeholder behind:
 
 ```bash
-SESSION_SECRET=962d31f01d2f9e528559cf4e8adfeb05fecc4dabc399cf982becb29037694d93
+SESSION_SECRET=<the line openssl printed>
 ```
 
-**The server refuses to start without this**, and says so plainly. It does not invent
-one: a secret generated per process would invalidate every session on each restart,
-which looks like a broken login rather than a missing setting.
+It prints a **different line every time**, so yours cannot match anybody else's - and it must
+not. **The server refuses to start without this**, and says so plainly. It does not invent one:
+a secret generated per process would invalidate every session on each restart, which looks like
+a broken login rather than a missing setting.
 
-`DEMO_LOGIN_TOKEN` is the credential in the read-only demo link. It must be at least
-24 characters, and it travels in a URL, so **use the base64url generator rather than
-the base64 one**:
+### `DEMO_LOGIN_TOKEN` - the credential in the read-only demo link
+
+At least 24 characters, and it travels in a URL, so **use the base64url generator**:
 
 ```bash
 node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"
 ```
 
-```
-kNa-oK-z6UJ_Nfd70qF-CYwklbo92Ez0-1T5GYZDjM4
-```
-
 ```bash
-DEMO_LOGIN_TOKEN=kNa-oK-z6UJ_Nfd70qF-CYwklbo92Ez0-1T5GYZDjM4
+DEMO_LOGIN_TOKEN=<the line node printed>
 ```
 
-**Why not `openssl rand -base64 32` here.** It produces `/`, `+` and `=`, which are not
-safe in a query string: the token ends up in the demo link and would have to be
-percent-encoded, and a link pasted from a terminal that has already been mangled is
-hard to tell from a wrong token. The `base64url` form above uses only letters, digits,
-`-` and `_`.
-
-**Both commands print a different value every time you run them, and that is the
-point.** If yours matches an example in this file, something has gone wrong.
+**Why not `openssl rand -base64 32` here.** It produces `/`, `+` and `=`, which are not safe in
+a query string: the token ends up in the demo link and would have to be percent-encoded, and a
+link pasted from a terminal that has already been mangled is hard to tell from a wrong token.
+The `base64url` form above uses only letters, digits, `-` and `_`.
 
 **Leave `DEMO_LOGIN` unset if you do not want the demo link at all.** The route is not
 registered without it, and `/admin/demo` answers like any unknown path.
@@ -427,6 +431,28 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://forgeright.example.com/healthz
 
 `200`. `/healthz` answers on a plain HTTP connection as well, which makes it the one
 endpoint you can use to tell an application problem from a proxy problem.
+
+### `docker compose config` prints your secrets. Do not paste its output anywhere.
+
+```bash
+docker compose -f docker-compose.deploy.yml config     # for checking, not for sharing
+```
+
+It is genuinely useful - it shows the configuration compose will actually run, with `.env`
+substituted, which is how you catch a value the file overrides. **But `env_file` means it
+renders every variable in plaintext, including `SESSION_SECRET`, `DEMO_LOGIN_TOKEN`,
+`GEMINI_API_KEY` and `DEEPSEEK_API_KEY`.** Its output belongs in your terminal and nowhere
+else: not a chat message, not a bug report, not a pasted log in an issue. If you need to show
+somebody the shape of the config, replace the values first:
+
+```bash
+docker compose -f docker-compose.deploy.yml config \
+  | sed -E 's/^([[:space:]]*[A-Z_]*(SECRET|TOKEN|KEY|PASSWORD)[A-Z_]*:).*/\1 <redacted>/'
+```
+
+**The regex matches the format compose actually prints, which is `KEY: value` with a colon** -
+not `KEY=value` as it appears in `.env`. Verifying that is worth doing: the first version of
+this line used `=`, redacted nothing at all, and looked like it had worked.
 
 ## If something is wrong
 
