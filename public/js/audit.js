@@ -45,6 +45,33 @@
         result: null
     };
 
+    /**
+     * The round this participant left open, if any.
+     *
+     * RESUMING, which the page has been handed data for all along and never used. The
+     * server sends every response for this invitation; before this, the page ignored
+     * them and a returning participant started from the greeting, having to answer
+     * everything again.
+     *
+     * ONLY AN OPEN ROUND IS RESUMED. `submitted_at === null` means unfinished; a
+     * timestamp means that process was concluded, and its work is done and recorded -
+     * replaying it would ask the participant to redo a process the system already has.
+     * So the newest unfinished round is the one to continue, and if there is none this
+     * is a fresh participant and nothing changes.
+     *
+     * THE TRANSCRIPT IS REPLAYED, NOT THE EXTRACTED FIELDS. The participant sees the
+     * conversation they actually had, which is what makes it recognisable as their own
+     * work rather than a form that happens to be pre-filled. The extracted data lives in
+     * the next payload the server upserts, so it needs no separate restoring here.
+     */
+    const existing = Array.isArray(cfg.existingResponses) ? cfg.existingResponses : [];
+    const openRound = existing
+        .filter((response) => response && response.submitted_at === null)
+        .pop() || null;
+    const resumedTranscript = openRound && Array.isArray(openRound.transcript)
+        ? openRound.transcript.filter((turn) => turn && typeof turn.content === 'string' && turn.content !== '')
+        : [];
+
     const $ = (id) => document.getElementById(id);
 
     function escapeHtml(text) {
@@ -183,12 +210,35 @@
                 })
                 || null;
 
-            if (data.status === 'complete' && payload) {
+            // EVERY TURN IS SAVED, PARTIAL OR NOT.
+            //
+            // This used to save ONLY on completion, so an interview the participant
+            // abandoned was never stored at all: no answers, no transcript, and an
+            // empty console. That is the common case rather than the edge one - a
+            // real participant stopped mid-interview and lost everything - and it is
+            // the failure progressive saving exists to close. A turn that is not
+            // saved is a turn that a closed tab destroys.
+            //
+            // `complete` IS SENT FROM THE SERVER'S OWN STATUS, not from anything
+            // decided here. `data.status === 'complete'` is computed by the matrix on
+            // the server, so "this process is finished" is never the page's opinion.
+            // The server uses it to finalise the round; see recordTurn.
+            //
+            // A PAYLOAD IS NOT REQUIRED TO SAVE. An early turn has no usable payload
+            // yet - the matrix is still filling - and skipping the save would lose
+            // exactly the first answers a participant gives. Only the transcript is
+            // essential, and the server stores whatever `data` it is given.
+            const isComplete = data.status === 'complete';
+            await saveResponse(isComplete ? (payload || state.audit) : payload, isComplete);
+
+            if (isComplete && payload) {
                 state.audit = payload;
-                $('input-area').classList.add('hidden');
-                // Persist against the invitation, so a returning participant (and
-                // a reset link) finds this work rather than an empty form.
-                await saveResponse(payload);
+                // THE INPUT STAYS OPEN, because the closing question is answerable.
+                // Hiding it here is what made the second process unreachable: the
+                // model asks "is there another process you would like to improve?"
+                // in the SAME reply that reports completion, and the participant had
+                // no way to answer it. Rounds 2 and beyond could therefore never
+                // begin, which is the whole point of the round model.
                 await runScoring();
             }
         } catch (err) {
@@ -202,15 +252,16 @@
     }
 
     /**
-     * Stores the completed answers against the invitation.
+     * Stores one turn of answers, WITH the conversation that produced them.
      *
-     * Only when the page was reached from an invitation link, since that is what
-     * identifies the participant. A failure is logged rather than shown: the
-     * participant has their analysis on screen, and an error box would suggest
-     * their answers were lost when they were not.
-     */
-    /**
-     * Stores the completed answers, WITH the conversation that produced them.
+     * EVERY TURN, NOT ONLY THE LAST. It is called after each reply, and it upserts the
+     * round the participant is currently in. A turn that is not saved is a turn a
+     * closed tab destroys, and the interview is long enough that abandoning it is
+     * ordinary rather than exceptional.
+     *
+     * `complete` FINALISES THE ROUND, and it comes from the server's own `status`: the
+     * page only passes that answer back. Null `submitted_at` means partial, a timestamp
+     * means the process is done.
      *
      * THE TRANSCRIPT GOES WITH THE PAYLOAD because the raw data has to exist. An
      * answer is only meaningful against its question: "eight minutes" means one
@@ -219,14 +270,16 @@
      * questions -- where the interview's quality lives -- are lost with the tab.
      *
      * The conversation is already here in `state.conversation`, so this passes
-     * what exists rather than building anything new.
+     * what exists rather than building anything new. It GROWS with every turn, and
+     * the server rewrites the stored copy from it on each save - so the row always
+     * holds the conversation as it stands, not as it stood at the first save.
      *
      * Only when the page was reached from an invitation link, since that is what
      * identifies the participant. A failure is logged rather than shown: the
      * participant has their analysis on screen, and an error box would suggest
      * their answers were lost when they were not.
      */
-    async function saveResponse(audit) {
+    async function saveResponse(audit, complete) {
         if (!hasToken) return;
         try {
             const res = await fetch(apiPath('/api/response'), {
@@ -234,6 +287,11 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     token: TOKEN,
+                    // WHAT COMPLETES A PROCESS IS THE SERVER'S CALL, and this flag is
+                    // how the page passes the server's own answer back to it: the
+                    // server computed `status`, and the server finalises the round.
+                    // The page never decides that an interview is done.
+                    complete: complete === true,
                     data: audit,
                     // Role and content for every turn, in order. The store keeps it
                     // as one JSON column rather than a row per message.

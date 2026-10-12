@@ -212,68 +212,6 @@ function hasShape(value, shape, field) {
     }
 }
 
-/**
- * Whether a value is the continuous-work shape the prompt asks for.
- *
- * TWO ACCEPTED FORMS, because the participant's own words are a valid answer as
- * well as the structured object:
- *
- *   { hours: 6, period: "week" }   the shape the prompt documents, convertible to
- *                                  weekly hours by the effort calculation
- *   "2 hours a day"                a description, which answers the field but
- *                                  cannot be converted without parsing prose
- *
- * The structured form is what M1's conversion reads. A description is accepted so
- * that an interview which got a real answer is not told the field is missing, and
- * because the matrix asks for the participant's words rather than a particular
- * encoding. Its hours are read as ZERO by the effort calculation, and that is
- * deliberate and visible: `timePerPeriodIsScorable` says which kind arrived, so a
- * caller can tell "this workflow consumes nothing" from "this description could
- * not be measured".
- *
- * A wrong-typed value that is neither, such as a number or an array, is refused.
- *
- * @param {*} value
- * @returns {boolean}
- */
-export function isPeriod(value) {
-    if (typeof value === 'string') return value.trim() !== '';
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-    if (typeof value.hours !== 'number' || !Number.isFinite(value.hours) || value.hours <= 0) return false;
-    return PERIODS_IN_WEEK[value.period] !== undefined;
-}
-
-/**
- * Whether a `timePerPeriod` can actually be turned into weekly hours.
- *
- * TRUE for the structured shape, FALSE for a description. The distinction exists
- * so a zero effort figure can be read correctly: a scorable period of zero would
- * mean the work consumes nothing, while an unscorable description means the
- * figure is unknown. Collapsing those two is how "we could not measure it" starts
- * reading as "there is nothing here".
- *
- * @param {*} value
- * @returns {boolean}
- */
-export function timePerPeriodIsScorable(value) {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-        && typeof value.hours === 'number' && Number.isFinite(value.hours) && value.hours > 0
-        && PERIODS_IN_WEEK[value.period] !== undefined;
-}
-
-/**
- * How many of each period fit in a week.
- *
- * The conversion M1 needed. One table, used by the effort calculation, so a period
- * this system cannot read is rejected at the matrix rather than scoring zero.
- */
-export const PERIODS_IN_WEEK = Object.freeze({
-    day: 5,      // A working week, matching how the prompt reads "daily".
-    week: 1,
-    month: 1 / 4.345,
-    quarter: 1 / 13,
-    year: 1 / 52
-});
 
 /**
  * The process fields a process object actually supplies.
@@ -330,13 +268,31 @@ export function stepNeedsReasoning(step) {
     return Boolean(step) && step.needsReasoning === true;
 }
 
+/**
+ * Whether one step field holds a usable value.
+ *
+ * ONE PLACE DECIDES THIS FOR BOTH stepIsComplete AND stepGapsFor. They answer
+ * different questions about the same step - "may the interview close?" and "what
+ * should be asked next?" - and a field-shape rule written twice is a rule that
+ * drifts, which is how `steps` came to be the only all-or-nothing field in the
+ * first place.
+ *
+ * `needsReasoning` is the model's own boolean, so it must BE a boolean: an absent
+ * or malformed flag is not a false one. Every other step field is prose.
+ *
+ * @param {object} step
+ * @param {string} field One of STEP_FIELDS.
+ * @returns {boolean}
+ */
+function stepFieldIsUsable(step, field) {
+    if (field === 'needsReasoning') return typeof step[field] === 'boolean';
+    return hasShape(step[field], 'prose');
+}
+
 export function stepIsComplete(step) {
     if (!step || typeof step !== 'object' || Array.isArray(step)) return false;
 
-    const required = STEP_FIELDS.every((field) => {
-        if (field === 'needsReasoning') return typeof step[field] === 'boolean';
-        return hasShape(step[field], 'prose');
-    });
+    const required = STEP_FIELDS.every((field) => stepFieldIsUsable(step, field));
     if (!required) return false;
 
     // A PRESENT OPTIONAL FIELD MUST STILL HAVE ITS SHAPE. An empty string or a
@@ -349,3 +305,75 @@ export function stepIsComplete(step) {
         return hasShape(step[field], 'prose');
     });
 }
+
+/**
+ * Which step fields are still missing, so the interviewer knows what to ask NEXT.
+ *
+ * WHY THIS EXISTS, AND WHY THE SINGLE BIT WAS NOT ENOUGH. `steps` is the only field
+ * whose completeness gate sits inside a container: every other field accepts the
+ * smallest real answer, while a step counts only when `name`, `whatHappens`,
+ * `decidedHow` and `needsReasoning` are ALL present. So a participant who answers the
+ * basis question before the step has a label or a description moves nothing: `steps`
+ * stays in `missing`, the model is told to ask about a field it has partly answered,
+ * and it asks the same question again in different words. That was observed on a real
+ * interview, three times in one conversation.
+ *
+ * THE COMPLETION GATE IS NOT TOUCHED. `stepIsComplete` still decides whether a step
+ * is done and still requires all four fields, so an interview cannot close on a
+ * partial step. THIS FUNCTION ANSWERS A DIFFERENT QUESTION - what is still needed -
+ * and the two are deliberately separate signals from one value.
+ *
+ * THE UNION ACROSS INCOMPLETE STEPS, NOT A PER-STEP REPORT, because the consumer is
+ * ONE question for the whole conversation. The interviewer asks about one thing per
+ * turn, so what it needs to know is the set of fields that would move some step
+ * forward. A per-step breakdown would name `name` for step 3 while step 1 also needs
+ * `needsReasoning`, and choosing between them is a decision this function has no way
+ * to make well; the union is what the next question can act on either way.
+ *
+ * A COMPLETE STEP CONTRIBUTES NOTHING. Once every step is complete this returns an
+ * empty array, which is the signal that `steps` is about to leave `missing`.
+ *
+ * @param {unknown} steps The process's `steps` value, in whatever shape it arrived.
+ * @returns {string[]} The absent fields, in STEP_FIELDS order, deduplicated.
+ */
+export function stepGapsFor(steps) {
+    if (!Array.isArray(steps) || steps.length === 0) return [...STEP_FIELDS];
+
+    const gaps = new Set();
+    for (const step of steps) {
+        if (stepIsComplete(step)) continue;
+        if (!step || typeof step !== 'object' || Array.isArray(step)) {
+            // A malformed entry has every field missing. Not the same as a step with
+            // some fields present, and saying so keeps the next question honest.
+            for (const field of STEP_FIELDS) gaps.add(field);
+            continue;
+        }
+        for (const field of STEP_FIELDS) {
+            if (!stepFieldIsUsable(step, field)) gaps.add(field);
+        }
+    }
+
+    // STEP_FIELDS order, so the output is stable across calls and a reader comparing
+    // two turns sees the same ordering. A Set's insertion order would depend on which
+    // step happened to be inspected first.
+    return STEP_FIELDS.filter((field) => gaps.has(field));
+}
+
+/**
+ * The period helpers now live in `./period.js` and are RE-EXPORTED here.
+ *
+ * MOVED RATHER THAN JUST DELETED, and re-exported, so `isPeriod`,
+ * `timePerPeriodIsScorable` and `PERIODS_IN_WEEK` still resolve from this module and
+ * nothing importing them has to move. They are a self-contained concern - one table
+ * and two predicates over it, with no dependency on `hasShape` - which is what made
+ * them the clean thing to lift when this file passed its size budget.
+ */
+// IMPORTED AS WELL AS RE-EXPORTED, which is not redundant: `hasShape` below CALLS
+// `isPeriod` for the 'period' shape, and a bare `export ... from` does not bring the
+// name into this module's scope. The first version of this split used the re-export
+// alone and every period test failed with "isPeriod is not defined" at the call site
+// inside hasShape - caught by the suite, and worth stating because the two lines look
+// like they do the same job.
+import { isPeriod } from './period.js';
+
+export { isPeriod, timePerPeriodIsScorable, PERIODS_IN_WEEK } from './period.js';

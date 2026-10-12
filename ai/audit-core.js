@@ -24,12 +24,58 @@ import { generateText } from './provider.js';
 import { sanitizeInput, checkPromptInjection } from './security.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
-import { ALL_PROCESS_FIELD_NAMES, reconcileMatrix } from './matrix.js';
+import { ALL_PROCESS_FIELD_NAMES, reconcileMatrix, stepGapsFor } from './matrix.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
 
 const SUPPORTED_LANGS = ['nl', 'en', 'fr'];
+
+/**
+ * The fields that are DERIVED from the payload and must never be asked of the model.
+ *
+ * `stepsStillNeed` is computed by parseModelResponse from `processes`, and the model's
+ * own value for it is deleted on sight. A prompt that DESCRIBED it would invite a model
+ * to report it, which is the thing the field exists to prevent: a model claiming what
+ * the matrix computed is how a report starts contradicting the data it describes.
+ *
+ * Kept as a list rather than a single name so the next derived field is added here
+ * rather than needing its own guard.
+ */
+const DERIVED_FIELDS = Object.freeze(['stepsStillNeed']);
+
+/**
+ * Refuses to serve a prompt that describes a derived field.
+ *
+ * WHY THIS IS A THROW RATHER THAN A WARNING, and why it lives at the load rather than
+ * in a test. The rule "the model must have no concept of this field" is enforced by
+ * `parseModelResponse` deleting whatever the model sends; but a prompt that mentioned it
+ * would put the field in front of the model every turn, and the deletion would then be
+ * quietly correcting a mistake the prompt invited. That is the shape of failure this
+ * codebase keeps finding: a rule enforced in one place while the guidance elsewhere
+ * says something else.
+ *
+ * So the mistake is made impossible to ship rather than merely detected. It throws
+ * because a prompt naming a derived field is a bug in the prompt, not a runtime
+ * condition to tolerate, and the interview cannot be served correctly while it stands.
+ * The message names the file, the field and the rule, so the fix needs no archaeology.
+ *
+ * @param {string} text The prompt file's contents.
+ * @param {string} file The path, for the error message.
+ * @throws {Error} When the prompt mentions a derived field.
+ */
+function assertPromptDoesNotDescribeDerivedFields(text, file) {
+    for (const field of DERIVED_FIELDS) {
+        if (text.includes(field)) {
+            throw new Error(
+                `The prompt ${file} mentions "${field}", which is DERIVED from the payload and ` +
+                'must never be described to the model. It is computed by parseModelResponse and ' +
+                'any value the model sends for it is discarded. Remove it from the prompt: ' +
+                'describing it invites the model to report something that is not its to report.'
+            );
+        }
+    }
+}
 
 /**
  * Loads a prompt, falling back to English then Dutch when a translation is
@@ -40,7 +86,9 @@ async function loadPrompt(toolId, lang) {
     for (const candidate of [lang, 'en', 'nl']) {
         const file = path.join(PROMPTS_DIR, toolId, `prompt_${candidate}.md`);
         try {
-            return await fs.readFile(file, 'utf8');
+            const text = await fs.readFile(file, 'utf8');
+            assertPromptDoesNotDescribeDerivedFields(text, file);
+            return text;
         } catch (err) {
             if (err.code !== 'ENOENT') throw err;
         }
@@ -241,6 +289,50 @@ export function parseModelResponse(raw) {
         claimedMissing,
         closing: parsed.status === 'complete'
     });
+
+    // `stepsStillNeed` IS DERIVED HERE, AND THE MODEL'S OWN VALUE IS DELETED.
+    //
+    // WHAT IT IS FOR. `steps` is the only field whose completeness gate lives inside a
+    // container: a step counts only when `name`, `whatHappens`, `decidedHow` and
+    // `needsReasoning` are ALL present. So a participant who answers the basis question
+    // before the step has a label moves nothing - `steps` stays in `missing`, and the
+    // interviewer, told to ask about anything in `missing`, asks the same question again
+    // in different words. Observed three times in one real interview. `stepsStillNeed`
+    // says WHICH step fields are still absent, so the next question can be a different
+    // one.
+    //
+    // WHY THE MODEL MUST NOT SUPPLY IT, ENFORCED RATHER THAN DOCUMENTED. It is a
+    // statement about the payload, computed from `processes`. A model that could claim
+    // it would be able to contradict the matrix that computed it - the same class of
+    // defect as a model claiming `complete` with fields missing, which the completion
+    // gate exists to refuse. So the field is DELETED FROM `parsed` BEFORE it is read,
+    // and the only value that can reach a caller is the one derived below.
+    //
+    // The deletion is what makes this structural. The final return spreads `...parsed`,
+    // so a model-supplied key would otherwise survive into the output; and the prompt
+    // is not the enforcement point, because a prompt is a request and this is a rule.
+    // A model that invents the field anyway gets it removed, silently and completely.
+    if (typeof parsed === 'object' && parsed !== null) {
+        if (Object.hasOwn(parsed, 'stepsStillNeed')) {
+            console.warn(
+                '[audit] the model sent `stepsStillNeed`, which is derived from the payload and not ' +
+                'its to report; discarding it and using the computed value'
+            );
+            delete parsed.stepsStillNeed;
+        }
+    }
+
+    // THE UNION ACROSS INCOMPLETE STEPS. The consumer is ONE question for the whole
+    // conversation, so what it needs is the set of fields that would move some step
+    // forward. A per-step breakdown would name `name` for one step while another needs
+    // `needsReasoning`, and choosing between them is a decision this layer cannot make
+    // well. Computed across every process, because a question is asked about the
+    // interview rather than about one process.
+    //
+    // EMPTY WHEN NO STEP IS INCOMPLETE, which coincides with `steps` leaving `missing`.
+    // The two are separate signals from one value: this one says what to ask next, and
+    // `stepIsComplete` still alone decides whether the interview may close.
+    const stepsStillNeed = [...new Set(processes.flatMap((process) => stepGapsFor(process && process.steps)))];
     // The matrix decides completion ONLY when the model is playing the matrix
     // game. A reply carrying `processes` is an interview turn and its field list
     // is authoritative; a reply with a valid `audit` and no `processes` is the
@@ -263,6 +355,7 @@ export function parseModelResponse(raw) {
             content: parsed.content,
             have: computed.have,
             missing: computed.missing,
+            stepsStillNeed,
             processes
         };
     }
@@ -334,6 +427,7 @@ export function parseModelResponse(raw) {
         audit: Array.isArray(best) ? normaliseProcessesPayload(parsed, best) : undefined,
         have: computed.have,
         missing: computed.missing,
+        stepsStillNeed,
         processes
     };
 }
