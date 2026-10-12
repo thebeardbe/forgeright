@@ -44,7 +44,7 @@
                     <strong><%= (response.data && response.data.task) || 'Untitled answer' %></strong>
                     <div class="meta">
                         <%= response.department %>
-                        &middot; answered <%= response.created_at %>
+                        &middot; answered <%= shortInstant(response.created_at) %>
                     </div>
                 </span>
                 <span class="summary-side">
@@ -90,13 +90,47 @@
                     <p class="empty">This answer has not been identified into a process yet.</p>
                 <% } %>
 
+                <%#
+                    THE RAW CONVERSATION, IN A COLLAPSED DETAIL RATHER THAN OPEN.
+
+                    IT EXISTS SO AN ANSWER CAN BE READ AGAINST ITS QUESTION: "eight minutes"
+                    means one thing asked about duration and another about the count, and the
+                    submitted fields alone cannot settle that.
+
+                    COLLAPSED BECAUSE IT IS THE LONGEST CONTENT IN THE SYSTEM. A full interview
+                    is a dozen or more turns, and rendering it open would push every other
+                    answer off the page and make the answers view read as a transcript dump
+                    rather than a summary. The `<summary>` names what is inside and gives the
+                    turn count, so a reader knows it is there without opening every answer to
+                    find out - which was the previous problem: the block existed and nothing
+                    hinted at it.
+
+                    A NESTED `<details>`, not a heading, because this sits INSIDE the answer's
+                    own collapsed detail: one click opens the answer, two open the raw words.
+
+                    ESCAPED WITH THE ORDINARY TAG. This is the largest block of participant
+                    text on any page, so it is also where an escaping mistake would matter
+                    most. The stored shape is `{ role, content }` per turn, validated at the
+                    boundary in lib/auth/participant-routes.js.
+
+                    THE FORMAT-COMMITMENT TURN CANNOT APPEAR HERE. It is added by
+                    `withFormatCommitment` at the PROVIDER call, server-side, after the
+                    browser's conversation has already been sent; the transcript stored is the
+                    browser's own `state.conversation`, so the synthetic turn was never in it.
+                %>
                 <% if (response.transcript && response.transcript.length > 0) { %>
-                    <h3>The conversation it came from</h3>
-                    <% /* Stored so an answer can be read against its question: "eight minutes"
-                        means one thing asked about duration and another about the count. */ %>
-                    <% response.transcript.forEach(function (turn) { %>
-                        <p class="words"><strong><%= turn.role === 'assistant' ? 'Analyst' : 'Participant' %>:</strong> <%= turn.content %></p>
-                    <% }); %>
+                    <details class="transcript">
+                        <summary>
+                            The conversation it came from
+                            <span class="meta"><%= response.transcript.length %> turns</span>
+                        </summary>
+                        <% response.transcript.forEach(function (turn) { %>
+                            <p class="words transcript-turn<%= turn.role === 'assistant' ? ' analyst' : '' %>">
+                                <strong><%= turn.role === 'assistant' ? 'Analyst' : 'Participant' %>:</strong>
+                                <%= turn.content %>
+                            </p>
+                        <% }); %>
+                    </details>
                 <% } %>
 
                 <% /* A rejudge is a request with a reason, never a category to pick. */ %>

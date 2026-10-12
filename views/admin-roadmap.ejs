@@ -179,7 +179,7 @@
                     <p class="meta">
                         <%= process.grouping.confidence %> confidence
                         &middot; <%= process.grouping.decidedBy %>
-                        &middot; <%= process.grouping.decided_at %>
+                        &middot; <%= shortInstant(process.grouping.decided_at) %>
                     </p>
                 <% } else { %>
                     <p class="empty">This process has no current grouping.</p>
@@ -224,7 +224,7 @@
                             <strong>weighing <%= score.revision_no %></strong>
                             of grouping <%= score.grouping_revision %>
                             <%= isCurrentScore ? '(current)' : '(earlier)' %>
-                            <span class="when"><%= score.created_at %></span>
+                            <span class="when"><%= shortInstant(score.created_at) %></span>
                             <p class="meta">scored <%= score.score %></p>
                             <p class="meta"><%= score.reasoning %></p>
                         </div>

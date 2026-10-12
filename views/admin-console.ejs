@@ -41,7 +41,7 @@
             </div>
             <button type="submit"<%= readOnly ? ' disabled' : '' %>>Save</button>
         </form>
-        <p class="meta">Created <%= organisation.created_at %>. The name starts as a placeholder until it is set here.</p>
+        <p class="meta">Created <%= shortInstant(organisation.created_at) %>. The name starts as a placeholder until it is set here.</p>
     </div>
 
     <div class="card">
@@ -64,10 +64,18 @@
         <% if (invitations.length === 0) { %>
             <p class="empty">No one has been invited yet.</p>
         <% } else { %>
-            <table>
-                <thead>
-                    <tr><th>Email</th><th>Department</th><th>Opened</th><th>Links</th><th></th></tr>
-                </thead>
+            <%# THE TABLE SCROLLS INSIDE THE CARD RATHER THAN OVERFLOWING IT.
+                Five columns of unbreakable content - an address, a department, two
+                timestamps and two buttons - cannot fit a 374px card, and letting the
+                table exceed it put the action buttons on the page background, where they
+                read as broken layout. A scroll container keeps the CARD as the visible
+                boundary and keeps every column reachable; the alternative was dropping
+                columns on narrow screens, which hides the controls the page exists for. %>
+            <div class="table-scroll">
+                <table>
+                    <thead>
+                        <tr><th>Email</th><th>Department</th><th>Opened</th><th>Links</th><th></th></tr>
+                    </thead>
                 <tbody>
                 <% invitations.forEach(function (inv) { %>
                     <tr>
@@ -76,7 +84,7 @@
                         <td>
                             <% if (inv.opened_at) { %>
                                 <span class="pill yes">opened</span>
-                                <div class="meta"><%= inv.opened_at %></div>
+                                <div class="meta"><%= shortInstant(inv.opened_at) %></div>
                             <% } else { %>
                                 <span class="pill no">not opened</span>
                             <% } %>
@@ -88,7 +96,7 @@
                                 <%= inv.live_tokens %> live
                             </span>
                             <% if (inv.token_issued_at) { %>
-                                <div class="meta">newest <%= inv.token_issued_at %></div>
+                                <div class="meta">newest <%= shortInstant(inv.token_issued_at) %></div>
                             <% } %>
                         </td>
                         <td>
@@ -105,6 +113,7 @@
                 <% }); %>
                 </tbody>
             </table>
+            </div>
             <p class="meta">
                 <strong>Send a link</strong> adds a working link and leaves the others working: for a
                 participant who missed the first email. <strong>Reset all access</strong> stops every

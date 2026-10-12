@@ -239,3 +239,49 @@
    button is indistinguishable from a live one until it is pressed, and the reader
    concludes the tool is broken rather than that they are looking at a demo. */
 button[disabled] { opacity: 0.5; cursor: not-allowed; }
+
+/* A SCROLLABLE TABLE, SO THE CARD STAYS THE VISIBLE BOUNDARY.
+   The invitations table is five columns of unbreakable content and cannot fit a 374px
+   card. Without this it simply overflowed: measured at 390px it was 609px wide inside a
+   374px card, so the Send a link and Reset all access buttons rendered on the page
+   background and read as broken layout.
+
+   `overflow-x: auto` keeps every column and every control while the CARD remains the
+   edge a reader sees. The alternative - hiding columns on narrow screens - would have
+   removed the two buttons the page exists for.
+
+   `min-width` on the table inside it stops the columns squeezing to unreadable widths
+   when the container is narrower than the content: without it the browser compresses
+   cells rather than scrolling, and an address wraps to one character per line. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll table { min-width: 460px; }
+
+/* THE RAW CONVERSATION, INSIDE AN ANSWER.
+   A nested <details>, so it does not compete with the answer's own summary until a reader
+   asks for it. Styled as a quiet inset rather than a second card: it is evidence behind
+   the summary above it, not a sibling of it. */
+.transcript { margin: 10px 0 0; border-left: 2px solid var(--line); padding-left: 10px; }
+.transcript > summary {
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--ink-bright);
+    padding: 4px 0;
+}
+.transcript > summary .meta { font-weight: 400; margin-left: 6px; }
+
+/* Each turn, INDENTED AND WRAPPED RATHER THAN SCROLLED.
+   A conversation is prose: it must break at word boundaries and never widen its
+   container. `overflow-wrap: anywhere` is what stops one long unbroken token - a
+   pasted URL, a machine field name - from stretching the card past the viewport, which
+   is the failure the invitations table had. */
+.transcript-turn {
+    margin: 0 0 8px;
+    padding: 6px 9px;
+    border-radius: 6px;
+    background: var(--raised);
+    font-size: 0.84rem;
+    overflow-wrap: anywhere;
+    word-break: normal;
+}
+.transcript-turn.analyst { background: var(--idle-bg); }

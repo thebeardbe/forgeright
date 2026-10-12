@@ -28,6 +28,7 @@ import { resolveTrustProxy, hostnameFromHeader } from './lib/trust-proxy.js';
 import { router as participantRouter } from './lib/auth/participant-routes.js';
 import { router as landingRouter } from './lib/landing.js';
 import { registerThemeRoute } from './lib/theme-route.js';
+import { shortInstant, shortDuration } from './lib/view-format.js';
 import { router as apiRouter } from './lib/routes-api.js';
 import { DEFAULT_TOOL_ID } from './config/tools.js';
 import { FOLLOW_SYSTEM, PALETTE_IDS, PALETTES } from './lib/palettes.js';
@@ -136,6 +137,12 @@ app.use((req, res, next) => {
     // writing credentials into pages, and the notice is the kind of state a reader can
     // re-trigger by acting again.
     res.locals.currentUrl = req.path;
+
+    // The formatting helpers, so a template writes `<%= shortInstant(x) %>` rather than
+    // reaching for a method on a raw value. See lib/view-format.js for why the output is
+    // unambiguous rather than locale-formatted.
+    res.locals.shortInstant = shortInstant;
+    res.locals.shortDuration = shortDuration;
     next();
 });
 
