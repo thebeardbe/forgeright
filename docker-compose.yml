@@ -1,0 +1,183 @@
+# forgeright, ready to look at.
+#
+#   cp .env.example .env      # then set SESSION_SECRET
+#   docker compose up
+#
+# Then open https://localhost:8443/admin and sign in as demo@example.test, or follow the
+# read-only demo link (see THE DEMO LINK below).
+#
+# WHAT THIS GIVES YOU: the console, the committed demo organisation, and the read-only
+# demo link, over TLS. No provider key is needed, because the demo's processes are already
+# grouped and scored - the database is committed for exactly that reason. A provider is
+# only needed to run a live interview or reweigh something.
+#
+# WHY TWO SERVICES. The app refuses plain HTTP by design: the admin cookie and the
+# participant link are bearer credentials and the request bodies describe how a business
+# runs. Rather than weaken that rule for a local container, Caddy terminates TLS in front,
+# which is what the real deployment does behind its proxy. See Caddyfile.
+#
+# ===========================================================================
+# THE ENVIRONMENT: WHAT COMES FROM .env AND WHAT THIS FILE FORCES
+# ===========================================================================
+#
+# `env_file` LOADS THE REPO'S `.env` AT RUNTIME, so the image carries no credentials. It is
+# also why the image is safe to publish: a secret is in a file on the host that compose
+# reads, not in a layer anybody can pull.
+#
+# `environment` OVERRIDES `env_file` for the same key. That matters here: the repo's `.env`
+# points PUBLIC_BASE_URL at the Tailscale hostname and TRUST_PROXY at that proxy, which are
+# correct for the deployed instance and WRONG for a local container. Without these overrides
+# the browser would be sent to a hostname it cannot reach and every asset URL would carry a
+# prefix this container does not serve.
+
+services:
+  forgeright:
+    # A PINNED ADDRESS TOO, so the two services cannot swap and leave TRUST_PROXY naming the
+    # application itself - which would let the app trust its own forwarded headers.
+    networks:
+      default:
+        ipv4_address: 172.28.0.2
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: forgeright:local
+    # `unless-stopped` rather than `always`: a deliberate `docker compose stop` should stay
+    # stopped. `unless-stopped` restarts after a crash or a host reboot and not after a
+    # person said stop, which is the behaviour someone running this locally expects.
+    restart: unless-stopped
+    # THE APP IS NOT PUBLISHED TO THE HOST. The only way in is through the proxy below,
+    # which is what makes the proxy's forwarded headers worth trusting: a client that could
+    # reach this port directly could claim X-Forwarded-Proto itself.
+    expose:
+      - "3000"
+    env_file:
+      # The repo's own file, read at run time. NOT copied into the image: see .dockerignore.
+      # Compose fails with a clear message if it is absent.
+      - .env
+    environment:
+      # --- forced for a local container, overriding .env ---
+      HOST: 0.0.0.0                      # otherwise the published port reaches nothing
+      PORT: "3000"
+      # OUTSIDE /app, AND THAT IS NOT ARBITRARY. The app reads its SQL schema from
+      # `PROJECT_ROOT/data/store/schema.sql`, where PROJECT_ROOT is the application
+      # directory rather than STORE_DIR. A volume mounted over /app/data/store therefore
+      # hides the schema and every connection fails with ENOENT - measured, that is exactly
+      # what the first working build did. Keeping the store under /data means the volume
+      # covers only data and the schema stays in the image where it belongs.
+      STORE_DIR: /data/store
+      # The app refuses a Host it does not know. These are the names a browser uses to
+      # reach the published port on this machine.
+      ALLOWED_HOST: "localhost,127.0.0.1"
+      # https, because the app refuses plain HTTP and redirects to this value. It is what
+      # sign-in links are built from, so it must be the URL the BROWSER uses.
+      PUBLIC_BASE_URL: "https://localhost:8443"
+      # THE PROXY'S ADDRESS, AND ONLY THE PROXY CAN CLAIM TO BE SECURE. The app resolves
+      # `req.secure` from the connection and honours X-Forwarded-Proto only from a peer
+      # named here, so a client that reached this port could not forge it.
+      #
+      # THE ADDRESS IS PINNED IN THE NETWORK BLOCK, NOT OBSERVED. Docker allocates
+      # addresses in the order containers start, and the first attempt assumed the proxy
+      # would be `.2` - it was `.3`, because the app started first and took `.2`. The app
+      # then trusted nobody and redirected every request to its own PUBLIC_BASE_URL in a
+      # 308 loop. `ipv4_address` on the proxy service is what makes this line true rather
+      # than lucky.
+      TRUST_PROXY: "172.28.0.3"
+      # Served at the origin root. A prefix needs a proxy that strips or passes it, and
+      # this one does neither.
+      BASE_PATH: ""
+      # No provider call is made to serve the demo, so the provider is left alone. A
+      # provider and a key are only needed for a live interview or a reweigh.
+
+      # --- the read-only demo link ---
+      # FOUR VARIABLES, and all four are needed. The route is NOT REGISTERED without
+      # DEMO_LOGIN=1, so an unconfigured instance answers /admin/demo as any unknown path.
+      # DEMO_LOGIN_ORG is the pinned id the seed writes, and DEMO_LOGIN_TOKEN must be at
+      # least 24 characters. See .env.example for the full description of each.
+      #
+      # SET HERE RATHER THAN IN .env SO THE DEMO WORKS OUT OF THE BOX, which is what "check
+      # out the repo and run compose up" has to mean. The token below is a PLACEHOLDER for
+      # a local demo: it is in the repository, so anyone reading it can open the link.
+      # Acceptable on your own machine, NOT for anything reachable from the internet.
+      # Override it in .env to change it.
+      DEMO_LOGIN: "1"
+      DEMO_LOGIN_ORG: "example-ltd-demo"
+      DEMO_LOGIN_TOKEN: "${DEMO_LOGIN_TOKEN:-local-demo-read-only-token-change-me}"
+      DEMO_LOGIN_DAYS: "60"
+    volumes:
+      # --- the store: PERSISTENT, and outside the image ---
+      #
+      # A NAMED VOLUME, so `docker compose down` and `up` keeps the organisations. Without
+      # it every restart would present an empty console, because a container writes to its
+      # own layer and a new container starts from the image again.
+      - forgeright-store:/data/store
+
+      # --- the committed demo: READ-ONLY, and deliberately not the store ---
+      #
+      # `:ro` IS THE ARTEFACT-INTEGRITY REQUIREMENT. `data/demo` is a committed file with a
+      # pinned organisation id; a container writing to it would dirty the working tree, and
+      # this artefact has already been lost once.
+      #
+      # IT IS THE SOURCE, NOT THE STORE. The app cannot open a read-only database - every
+      # connection applies the schema, which is a write - so the entrypoint copies this into
+      # the writable volume on first start and the app opens the copy. See
+      # docker-entrypoint.sh.
+      - ./data/demo:/app/data/demo:ro
+    healthcheck:
+      # THE PATTERN IS TAKEN FROM WHAT THE APP ALREADY PRINTS, not a signal invented here. A
+      # working startup logs `[server] listening on http://0.0.0.0:3000` followed by the
+      # provider, the mount point, the trust-proxy setting and the accepted hosts. A failure
+      # - a missing SESSION_SECRET, a bad PUBLIC_BASE_URL - throws BEFORE serving, so the
+      # process exits and this reports unhealthy rather than looking up while nothing listens.
+      #
+      # `/healthz` rather than `/`: the root serves the landing page and would keep answering
+      # 200 for a page whose assets are all 404. It is also the app's one path exempt from
+      # the HTTPS rule, which is what lets the check run over plain HTTP inside the network.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # The TLS terminator. See Caddyfile for why this exists rather than plain HTTP:
+  # the app refuses insecure connections by design, and that rule is load-bearing.
+  # ---------------------------------------------------------------------------
+  proxy:
+    image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
+    restart: unless-stopped
+    ports:
+      # 8443 RATHER THAN 443, so the container needs no privileged port and the URL says
+      # what it is: https://localhost:8443.
+      - "8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Caddy's internal CA and its certificates. A named volume so the CA survives a
+      # restart, which means a browser warning is accepted once rather than every time.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      forgeright:
+        # Waiting for healthy means the first request does not race the app's startup and
+        # get a 502, which reads as a broken proxy rather than a starting application.
+        condition: service_healthy
+    networks:
+      default:
+        # A PINNED ADDRESS, so the app's TRUST_PROXY above names something guaranteed
+        # rather than whatever Docker happened to allocate.
+        ipv4_address: 172.28.0.3
+
+networks:
+  default:
+    # A FIXED SUBNET, so TRUST_PROXY can name the proxy's address. Without it Docker picks
+    # an arbitrary one and the app would trust nobody - or, worse, trust an address that
+    # something else later occupies.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+volumes:
+  # Named, so it survives `down` and is only removed by `down -v`, which is the explicit way
+  # to say "destroy the data".
+  forgeright-store:
+  caddy-data:
+  caddy-config:

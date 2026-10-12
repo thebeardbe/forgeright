@@ -52,6 +52,53 @@ The default provider is `mock`, which needs no API key and no network. The whole
 flow works with it, which is what makes the UI and the scoring layer developable
 before any credential exists.
 
+### Or in a container, with the demo already in it
+
+```bash
+cp .env.example .env      # then set SESSION_SECRET
+docker compose up
+```
+
+Then open **https://localhost:8443/admin** and sign in as `demo@example.test`, or
+follow the read-only demo link:
+
+```
+https://localhost:8443/admin/demo?token=local-demo-read-only-token-change-me
+```
+
+**No provider key is needed.** The demo database is committed, so its processes are
+already grouped and scored; the console only reads them. A provider is needed only
+to run a live interview or to reweigh something.
+
+**It is https, and that is not decoration.** The app refuses plain HTTP, because the
+admin cookie and the participant link are bearer credentials and the request bodies
+describe how a business runs. Caddy terminates TLS in front with its own local CA, so
+a browser warns once that the certificate is not from a public authority. Accept it,
+or trust Caddy's CA:
+
+```bash
+docker cp forgeright-proxy-1:/data/caddy/pki/authorities/local/root.crt caddy-root.crt
+sudo cp caddy-root.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+```
+
+**The store is a named volume**, so `docker compose down` and `up` keeps anything you
+change. `docker compose down -v` is the explicit way to throw it away and start from
+the committed demo again.
+
+**`data/demo` is mounted read-only and is never written to.** It is a committed
+artefact with a pinned organisation id, and the container copies it into the volume
+rather than serving it in place. See `docker-entrypoint.sh` for why it has to be a
+copy: the app applies its schema on every connection, which is a write, so it cannot
+open a read-only database at all.
+
+**The demo token in `docker-compose.yml` is in the repository**, so anyone who reads
+it can open the link. That is fine on your own machine and not fine for anything
+reachable from the internet. Override `DEMO_LOGIN_TOKEN` in `.env` to change it.
+
+**If a container will not start**, `docker compose logs forgeright` names the reason
+the app refused. A missing `SESSION_SECRET` is the common one, and the container shows
+as `Restarting` rather than `Up` rather than serving a broken console.
+
 ## AI providers
 
 Selected with `AI_PROVIDER` in `.env`. Switching is a config change, not a code

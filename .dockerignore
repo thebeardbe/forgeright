@@ -1,0 +1,86 @@
+# What the build context excludes.
+#
+# THIS FILE IS THE SECURITY BOUNDARY OF THE BUILD. A file that is not excluded is sent to
+# the daemon and can be copied into a layer, where it stays readable to anyone who can pull
+# the image and is not removed by deleting the file in a later layer. So the rules below are
+# about what must never enter the image, not only about build speed.
+
+# --- Secrets, absolutely ---
+#
+# `.env` holds the provider API keys, the session secret and the demo token. THE APP READS
+# IT AT RUNTIME, from the working directory compose mounts, so the image never needs it and
+# must never contain it. Excluded here AND never copied by the Dockerfile: two independent
+# reasons it cannot arrive.
+.env
+.env.*
+!.env.example
+
+# Any stray key, certificate or credential file, so a new one does not have to be
+# remembered here.
+*.pem
+*.key
+*.crt
+*.p12
+credentials.json
+
+# --- Data that must not be baked in ---
+#
+# THE LIVE DATABASES ARE EXCLUDED; THE SQL SCHEMAS ARE NOT, AND THE DISTINCTION MATTERS.
+#
+# `data/store` holds two different things: the organisation database files, which are
+# somebody's real answers, and `schema.sql` / `admin-schema.sql`, which the app READS AT
+# RUNTIME to create and verify tables. An earlier version of this file excluded the whole
+# directory, and the container then failed on every connection with
+#
+#   ENOENT: no such file or directory, open '/app/data/store/schema.sql'
+#
+# which is what an over-broad exclusion looks like: it removed the data it meant to and the
+# code it did not.
+#
+# So: the files, not the directory. A database is excluded wherever it sits; the schemas
+# ship because the application cannot start without them.
+data/store/*.db
+data/store/*.db-wal
+data/store/*.db-shm
+
+# `data/demo` IS DELIBERATELY NOT EXCLUDED. It is the committed illustrative demo artefact,
+# it carries a marker in its name saying it is not a client, and serving it is the point of
+# this container. Compose mounts it READ-ONLY so a running container cannot dirty the copy
+# that is committed.
+
+# Local scratch and logs. `.scratch/` is gitignored working space; logs are noise.
+.scratch
+*.log
+logs/
+
+# --- Things the image does not need ---
+#
+# `node_modules` is rebuilt inside the image by `npm ci`, and copying the host's would ship
+# whatever platform and whatever dev dependencies this machine happens to have.
+node_modules
+
+# The tests, and the harness they use. NOT EXCLUDED BECAUSE TESTS ARE SECRET: because they
+# are not part of the running application, they pull in `puppeteer` in some paths, and an
+# image that can run its own test suite is an image that ships an attack surface nobody
+# asked it to serve. `npm test` runs on the host.
+test
+
+# The repository's own history and tooling. `.git` is large, and nothing in the image reads
+# it. The compose file and the Dockerfile itself are not needed inside the image: compose
+# reads them on the host.
+.git
+.gitignore
+.gitattributes
+.github
+
+# Documentation and specs. Present in the repo for people, not for the running app.
+*.md
+SPEC-three-workflows.md
+NOTES-client-coverage.md
+NOTES-deepseek-json-mode.md
+
+# Editor and OS noise.
+.vscode
+.idea
+.DS_Store
+*.swp

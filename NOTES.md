@@ -186,7 +186,13 @@ The reviewer's full report is the source for these. Ordered by what matters.
 - **Gemini key moved to a header.** It was in the query string, which leaks the
   key into proxy and access logs, and this service runs behind a reverse proxy.
 - **L6: `fallbackModels` in `ai-config.json` is dead config.** Nothing reads it.
-  `puppeteer` and `marked` are declared but unused until PDF export exists.
+- **`puppeteer` and `marked` were REMOVED from `package.json`.** Both were declared
+  for a planned roadmap PDF export and neither was ever imported: a scan of every
+  `.js` file in the project found zero imports of either, and the suite passes with
+  both absent. They are gone rather than commented out, because a dependency that
+  is installed and unused is an attack surface and an install cost for something
+  that does not exist yet. Re-adding them is a deliberate step, and the part worth
+  keeping is what the install needs, recorded under "V2, not now" below.
 - **L7: `ALLOWED_HOST` is raw string equality.** An IPv6 host header yields `[`
   and always gets 421.
 - **L8 (answered): `.scratch/builder-scoring.test.js` was NOT the seed for the
@@ -196,10 +202,7 @@ The reviewer's full report is the source for these. Ordered by what matters.
 
 ## Next up in V1
 
-- **Roadmap PDF export.** `marked` is already a dependency; puppeteer is
-  installed but its Chromium download was skipped by the npm script gate, so
-  PDF export will need `npx puppeteer browsers install chrome` or a system
-  chromium path via env.
+- **Guardrail demonstration.**
 - **Guardrail demonstration.** A documented injection attempt against the intake
   LLM, what it would have done, the guardrail that stops it, and how it was
   tested. This is the differentiator for the application, not a nice-to-have.
@@ -258,6 +261,18 @@ the symptom, and 2048 to 8192 already showed the rate is not a simple threshold.
   questionnaire round. Needs to be stated somewhere the client sees it.
 
 ## V2, not now
+
+- **Roadmap PDF export.** It needs `marked` (Markdown to HTML) and something to
+  render HTML to PDF. `puppeteer` was the intended choice and is NO LONGER INSTALLED:
+  it was declared, never imported, and removed with `marked` in the same cleanup.
+  To put it back, install both and be aware of one thing the install does not tell
+  you - puppeteer's Chromium download **was skipped by this project's npm script
+  gate**, so a fresh install is not enough on its own. Either run
+  `npx puppeteer browsers install chrome`, or point puppeteer at a system chromium
+  with an environment variable. The container has no chromium either, so this is a
+  build-time concern for whatever image serves the export. There is also a system
+  chromium at `/usr/bin/chromium` (v154) on the development machine, which is what
+  the browser harness notes refer to.
 
 Everything below is a rewrite, not an extension of this code.
 

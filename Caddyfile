@@ -1,0 +1,66 @@
+# Caddy in front of the app, terminating TLS.
+#
+# ===========================================================================
+# WHY A PROXY IS HERE AT ALL, RATHER THAN SERVING PLAIN HTTP
+# ===========================================================================
+#
+# THE APP REFUSES PLAIN HTTP BY DESIGN, and it is right to. The admin session cookie is a
+# bearer credential, the participant link token is one too, and the request bodies carry
+# employees describing how their business runs. The rule is ONE check mounted before every
+# route, with a single exemption for /healthz. A container that answered on plain HTTP
+# would either be refused at every route or would have to weaken a rule that exists for a
+# reason, so the honest shape is to terminate TLS in front - which is also what the real
+# deployment does, behind the Tailscale proxy.
+#
+# `tls internal` USES CADDY'S OWN LOCAL CA. For a demo on one machine that is the right
+# trade: no certificate to obtain, no domain to own, and the connection is genuinely
+# encrypted. A browser will warn once that the certificate is not from a public authority,
+# because it is not; accept it, or trust the CA with the command in README. Nothing here is
+# suitable for a public hostname, and this file is not the deployment's configuration.
+#
+# THE PROXY SETS X-Forwarded-Proto: https, WHICH THE APP HONOURS ONLY BECAUSE TRUST_PROXY
+# NAMES THIS CONTAINER. That is the other half of the trust boundary: the app resolves
+# `req.secure` from the connection, and honours a forwarded protocol header only from a
+# peer it was told to trust. Compose sets TRUST_PROXY to the Docker subnet this service
+# sits on, so a client cannot forge the header and be believed.
+
+{
+	# The admin UI is run by an operator, not by browsers at scale, and a quieter log makes
+	# a startup problem easier to see. Errors and warnings still go to stderr.
+	admin off
+	log {
+		output stderr
+		format console
+		level INFO
+	}
+}
+
+# THE SITE IS NAMED `localhost`, NOT LEFT AS A BARE `:443`.
+#
+# Caddy issues a certificate for the HOSTNAMES it serves, and a bare port with no name gives
+# it nothing to put in the certificate - measured, the handshake then failed with
+# "tlsv1 alert internal error" and not one log line said why, because there was no hostname
+# to complain about. Naming `localhost` is also what makes the certificate match the URL the
+# browser opens, which is what stops a mismatch warning on top of the untrusted-CA warning.
+#
+# `https://` IS THE PATH THE APP REQUIRES. See the top of this file.
+https://localhost {
+	tls internal
+
+	# PROXIED TO THE APP BY SERVICE NAME ON THE COMPOSE NETWORK. The app is not published to
+	# the host at all, so the only way in is through this proxy - which is what makes the
+	# forwarded header trustworthy rather than merely present.
+	reverse_proxy forgeright:3000 {
+		# The app reads the client address for its rate limiter and its loopback check, so
+		# the original address is passed through rather than replaced by the proxy's.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+	}
+
+	# A health check that reflects the app's own, so `docker compose ps` shows the whole
+	# chain as healthy rather than only the container behind the proxy.
+	handle /healthz {
+		reverse_proxy forgeright:3000
+	}
+}

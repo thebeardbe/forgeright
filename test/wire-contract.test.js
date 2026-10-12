@@ -365,9 +365,10 @@ test('a real completed turn survives being re-parsed from its own serialisation,
 // (`data.audit || Array.isArray(data.processes) && ...` -> a payload or nothing),
 // and there is NO test of it. Nothing in this repository loads that file:
 //
-//   - there is no browser harness here. `puppeteer` is a dependency and is
-//     imported by nothing; there is no jsdom, no playwright, no client-side setup
-//     of any kind. `node --test` is the whole suite.
+//   - there is no browser harness here, and no browser driver either. `puppeteer`
+//     WAS a dependency imported by nothing and has been removed; there is no
+//     jsdom, no playwright, no client-side setup of any kind. `node --test` is the
+//     whole suite.
 //   - `public/js/audit.js` is one IIFE with no exports and no seam, so no part of
 //     it can be imported and called directly.
 //
@@ -386,10 +387,12 @@ test('a real completed turn survives being re-parsed from its own serialisation,
 //   1. Extract the payload decision into a small pure module the client calls and
 //      `node --test` can import. No browser needed; the decision is pure data in,
 //      data out, which is exactly what makes it worth testing.
-//   2. Drive the real page in a browser harness (puppeteer is installed and the
-//      system Chromium works with the bundled one), with `fetch` intercepted and
-//      the POSTed payload observed. Real coverage of the real file, at the cost of
-//      a page fixture, a stub backend, and making puppeteer load-bearing.
+//   2. Drive the real page in a browser harness, with `fetch` intercepted and the
+//      POSTed payload observed. Real coverage of the real file, at the cost of a
+//      page fixture, a stub backend, and a browser driver - which is NOT currently
+//      installed: puppeteer was removed as an unused dependency, so this route
+//      needs an install first. A system Chromium exists at /usr/bin/chromium, so
+//      the missing piece is a driver rather than a browser.
 //
 // A THIRD THING THAT LOOKS LIKE A WAY AND IS NOT: copying the expression into a
 // test. It is what was here before; it is how the defect above got through. The

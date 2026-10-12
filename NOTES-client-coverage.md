@@ -22,10 +22,15 @@ broken form, so the suite was green while the shipped code was wrong.
 
 - **No browser harness exists.** No jsdom, no playwright, no vitest or mocha.
   `node --test` is the entire suite.
-- **`puppeteer` is a dependency imported by nothing.** It is in `package.json`; a
-  grep finds it only there, in `package-lock.json` and in this file.
-- **A browser is available** (`/usr/bin/chromium`, v154) and puppeteer can drive
-  it, so the missing piece is harness code rather than a browser.
+- **No browser driver is installed, and one used to be.** `puppeteer` was a declared
+  dependency imported by nothing; it was REMOVED along with `marked` for a v2 PDF
+  export that does not exist, because an installed dependency nobody imports is an
+  attack surface and an install cost. **Option 2 below therefore needs an install
+  first**, and puppeteer's Chromium download was skipped by this project's npm
+  script gate, so it needs `npx puppeteer browsers install chrome` or a system
+  chromium path as well.
+- **A browser IS available** (`/usr/bin/chromium`, v154), so the missing piece is a
+  driver and harness code rather than a browser.
 - **The file is one IIFE with no exports and no seam.** Nothing is callable
   without either a real page or extracting the logic.
 
