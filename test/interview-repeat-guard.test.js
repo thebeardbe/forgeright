@@ -336,22 +336,34 @@ test('the two terminal states are DISTINCT: exhausted has supplied fields, nothi
 });
 
 test('the move-on line and the exhausted close are DIFFERENT messages', () => {
-    // Two endings, two sentences. The move-on line asks the participant to move on; the close
-    // ends the round. Conflating them would either keep a finished interview open or close one
-    // that could still continue.
+    // REWRITTEN. It used to require BOTH sentences to appear in one run, which was true when the
+    // round ran out of fresh targets before it ran out of questions. The exhaustion fix now closes
+    // the round BEFORE the move-on branch, so the move-on line is not said in a simple run - the
+    // old assertion fails for the right reason, because the fix removed the path that reached it.
+    //
+    // THE TWO MESSAGES ARE STILL DIFFERENT, and that is the property, so it is asserted by
+    // comparing the two literals in the source rather than by requiring both to appear. Conflating
+    // them would either keep a finished interview open or close one that could still continue - the
+    // reason the distinction exists, unaffected by which path is now reached.
+    const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
+    const moveOnLine = source.match(/return `[^`]*move on rather than keep circling[^`]*`/);
+    const closeLine = source.match(/text: 'Thank you - that gives me a good picture[^']*'/);
+
+    assert.notEqual(moveOnLine, null, 'the move-on line still exists in the code');
+    assert.notEqual(closeLine, null, 'and the closing line does');
+    assert.notEqual(moveOnLine[0], closeLine[0], 'and they are different sentences');
+
+    // And a run DOES end, on the close, which is the behaviour the fix put first.
     const conversation = [];
-    const messages = new Set();
+    let final = null;
     for (let i = 1; i <= 40; i += 1) {
         const r = turn('How do you keep track of it?', conversation);
-        messages.add(r.content);
-        if (r.exhausted) break;
+        if (r.exhausted) { final = r; break; }
     }
-    const moveOn = [...messages].find((m) => /move on rather than keep circling/i.test(m));
-    const close = [...messages].find((m) => /stop there rather than keep asking/i.test(m));
-
-    assert.notEqual(moveOn, undefined, 'the move-on line is said at least once');
-    assert.notEqual(close, undefined, 'and the closing line is said');
-    assert.notEqual(moveOn, close, 'they are different sentences');
+    assert.notEqual(final, null, 'the run terminates');
+    assert.match(final.content, /stop there rather than keep asking/i, 'on the closing line');
+    assert.equal(/move on rather than keep circling/i.test(final.content), false,
+        'and NOT on the move-on line, which the exhaustion fix now runs ahead of');
 });
 
 // ===========================================================================
@@ -696,17 +708,54 @@ test('a WIDE rotation - the open set different every turn - still terminates wit
     assert.ok(endedAt <= 200, `and it is bounded (ended at ${endedAt})`);
 });
 
-test('the old check would fail this: exhaustion must not compare against the open SET', () => {
-    // A direct statement of the fix, in the code rather than the turn count: the condition is
-    // monotonic (asked field questions only accumulate), so it does not depend on `missing`. The
-    // structural check is that `asksEveryField` reads a Set of QUESTIONS and no field list, and
-    // that the decision uses it rather than `moveOnLine`.
+test('exhaustion asks whether every question about an OPEN field has been asked', () => {
+    // REWRITTEN. It pinned the SIGNATURE `asksEveryField(askedQuestions)`, and the signature now
+    // takes the open fields as well - because requiring all fifteen was too strong and produced
+    // its own loop (a field the model CLAIMS is never offered, so its phrasing never enters the
+    // conversation and exhaustion can never fire). The monotonic INTENT holds, so this asserts the
+    // DECISION rather than the parameter list:
+    //   - the set is `FIELD_QUESTIONS` LIMITED TO the currently-open fields, and
+    //   - it is satisfied when every one of those has been asked, and
+    //   - the decision uses it, on a repeat with no fresh target.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
-    assert.match(source, /function asksEveryField\(askedQuestions\)/, 'exhaustion is decided by a helper over asked questions');
-    assert.match(source, /phrasings\.every\(\(phrasing\) => askedQuestions\.has\(phrasing\)\)/,
-        'and it asks whether every FIELD QUESTION has been asked, not whether a set was seen');
-    assert.match(source, /if \(fresh === undefined && asksEveryField\(askedQuestions\)\)/,
-        'and the exhaustion branch is reached on a repeat with no fresh target');
+
+    // The helper exists and takes the open fields.
+    assert.match(source, /function asksEveryField\(askedQuestions, openFields\)/,
+        'the helper takes the asked questions AND the open fields');
+    // The set is the open fields' phrasings, not all fifteen.
+    assert.match(source, /const phrasings = openFields\s*\n?\s*\.map\(\(field\) => FIELD_QUESTIONS\[field\]\)/,
+        'it maps the OPEN fields to their phrasings');
+    assert.match(source, /if \(phrasings\.length === 0\) return false;/, 'and an empty open set is not its call');
+    assert.match(source, /return phrasings\.every\(\(phrasing\) => askedQuestions\.has\(phrasing\)\);/,
+        'satisfied when every open field\'s question has been asked');
+    // And the decision passes the open fields, on a repeat with no fresh target.
+    assert.match(source, /if \(fresh === undefined && asksEveryField\(askedQuestions, computed\.missing\)\)/,
+        'the exhaustion branch passes the currently-open fields');
+});
+
+test('the RESIDUAL STALL the relaxation fixed: all fifteen was too strong', () => {
+    // THE CASE THAT PRODUCED A SECOND LOOP: the model claims task/trigger/steps HELD, so those
+    // questions are never offered, their phrasings never enter the conversation, and a check
+    // requiring all fifteen could never fire - the move-on line emitted every turn, indefinitely.
+    // With the open-field relaxation the round ends.
+    //
+    // Driven by the real guard: a payload proving four fields, and a model repeating one question.
+    // The open set is the ten-or-eleven fields the payload does not carry, all of whose questions
+    // are offered by substitution, so `asksEveryField` is satisfied on the open set even though
+    // three of the fifteen questions were never asked at all.
+    const conversation = [];
+    let endedAt = null;
+    for (let i = 1; i <= 60; i += 1) {
+        const r = turn('How do you keep track of it?', conversation);
+        if (r.exhausted) { endedAt = i; break; }
+    }
+
+    assert.notEqual(endedAt, null, 'the round ends rather than emitting the move-on line forever');
+    // Count the questions actually used, to show it is FEWER than fifteen - which is the point:
+    // exhaustion fired without every field question having been asked.
+    const asked = new Set(conversation.map((entry) => entry.content));
+    assert.ok(asked.size < matrix.ALL_PROCESS_FIELD_NAMES.length,
+        `exhaustion fired with fewer than all fifteen questions asked (asked ${asked.size})`);
 });
 
 test('a HEALTHY interview is NOT cut short - exhaustion needs a repeat to trigger', () => {

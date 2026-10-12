@@ -161,37 +161,69 @@ test('GROUPED: an interview round renders its title and its fields', () => {
     });
 });
 
-test('EMPTY: a finished round with every field declined names itself and tags every rendered field', () => {
+test('EMPTY: a finished round with every field declined names itself and tags ALL fifteen fields', () => {
     return renderRow({ workflows: [allDeclined()] }, { empty: true }).then(({ title, tag, fields }) => {
         assert.match(title, /Untitled answer/, 'the empty round falls back to Untitled answer');
         assert.equal(tag, 'nothing answered', 'and is tagged as such');
-        // EVERY RENDERED FIELD is tagged "not answered". The count is asserted against the fields
-        // the partial actually renders, which is one FEWER than the matrix's names - see the
-        // FINDING below for why `steps` is not among them.
+        // EVERY FIELD is tagged now, including `steps`, which used to render nothing - so the
+        // count is the matrix's full field list rather than one fewer.
         const notAnswered = (fields.match(/not answered/g) ?? []).length;
-        assert.ok(notAnswered >= 14,
-            `every rendered field is tagged not answered (found ${notAnswered})`);
+        assert.equal(notAnswered, matrix.ALL_PROCESS_FIELD_NAMES.length,
+            `every field is tagged not answered (found ${notAnswered}, expected ${matrix.ALL_PROCESS_FIELD_NAMES.length})`);
     });
 });
 
-test('FINDING: a declined `steps` renders NO row and NO tag on the console', () => {
-    // A GAP IN THE "EVERY FIELD TAGGED" CLAIM, found by counting rather than by eye. The partial
-    // iterates its own `FIELDS` list, which does NOT include `steps`: steps get a separate block
-    // that fires only when `data.steps` is an ARRAY. A participant who DECLINED the steps question
-    // sends `{ declined: ... }` instead, so nothing renders at all - the field is invisible, and
-    // the round shows 14 tags where the matrix has 15 fields.
+test('a declined `steps` RENDERS a row and its "not answered" tag - the fix, not the finding', () => {
+    // REWRITTEN. It used to pin the defect: a declined `steps` rendered nothing, because the
+    // partial's steps block required an ARRAY and `{ declined: ... }` fell through it. That was a
+    // gap in the "every field tagged" claim found by counting - 14 tags for 15 fields - and the
+    // field most likely to be visibly refused was the one that vanished.
     //
-    // The consequence is small but real: an admin reading the empty round sees every field marked
-    // "not answered" except steps, which is simply absent, so the one field the participant most
-    // visibly refused is the one that does not say so. RECORDED AS TODAY'S BEHAVIOUR.
+    // THE FIX RENDERS IT, so the assertion is inverted: the row appears, it carries the tag, and
+    // the count is FIFTEEN. An admin counting tags now finds the whole round.
     return ejs.renderFile(
         path.join(PROJECT_ROOT, 'views', 'partials', 'response-fields.ejs'),
         { data: allDeclined() }
     ).then((fields) => {
-        assert.equal(/not answered/g.test(fields), true, 'the other fields ARE tagged');
-        assert.equal(/steps/i.test(fields), false, 'FINDING: `steps` does not appear at all');
+        assert.match(fields, /steps/i, 'the `steps` row appears');
+        // Fifteen tags now: the declined steps carries the same tag as every other field.
         const notAnswered = (fields.match(/not answered/g) ?? []).length;
-        assert.equal(notAnswered, 14, 'FINDING: 14 tags for 15 fields, because steps renders nothing');
+        assert.equal(notAnswered, matrix.ALL_PROCESS_FIELD_NAMES.length,
+            `every field is tagged, so an admin counting finds fifteen (found ${notAnswered})`);
+    });
+});
+
+test('a declined `steps` renders in all THREE states - words, wordless, and prose', () => {
+    // The fix must cover every way steps arrives, with the SAME tags as every other field: a
+    // declined-with-words row shows their words and "not answered", a wordless one shows
+    // "they did not say" and "not answered", and prose shows "in their own words".
+    const partial = {
+        task: 't', trigger: 'tr', peopleAffected: 3, handoffTo: ['x'], waitsFor: ['x'], dependsOn: ['x'],
+        systems: ['x'], touchedDepartments: ['x'], mistakesPerPeriod: 1, mistakeConsequence: 'c',
+        currentState: 's', frustration: 'f', frequencyPerWeek: 2
+    };
+
+    return Promise.all([
+        ejs.renderFile(path.join(PROJECT_ROOT, 'views', 'partials', 'response-fields.ejs'),
+            { data: { ...partial, steps: { declined: 'I cannot list them' } } }),
+        ejs.renderFile(path.join(PROJECT_ROOT, 'views', 'partials', 'response-fields.ejs'),
+            { data: { ...partial, steps: { declined: true } } }),
+        ejs.renderFile(path.join(PROJECT_ROOT, 'views', 'partials', 'response-fields.ejs'),
+            { data: { ...partial, steps: { said: 'it goes round and round' } } })
+    ]).then(([withWords, wordless, prose]) => {
+        // Declined with words.
+        assert.match(withWords, /I cannot list them/, 'a declined steps keeps their words');
+        assert.match(withWords, /not answered/, 'and is tagged not answered');
+        // Wordless refusal.
+        assert.match(wordless, /they did not say/, 'a wordless declined steps says so');
+        assert.match(wordless, /not answered/, 'and is tagged');
+        // Prose.
+        assert.match(prose, /it goes round and round/, 'a prose steps shows their words');
+        assert.match(prose, /in their own words/, 'and the prose tag');
+        // None of them renders an object.
+        for (const [label, out] of [['with words', withWords], ['wordless', wordless], ['prose', prose]]) {
+            assert.equal(/\[object Object\]/.test(out), false, `${label}: no object is stringified`);
+        }
     });
 });
 
