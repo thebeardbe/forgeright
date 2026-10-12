@@ -435,16 +435,62 @@ export function parseModelResponse(raw) {
     // a 400, and shows a generic network error for what is actually a model
     // contract violation.
     //
-    // BOTH SHAPES ARE VALIDATED, not just the older one. The interview shape
-    // carries `processes` (the prompt asks for exactly that); the single-shot
-    // shape carries `audit.workflows`. Checking only `audit` was the defect this
-    // fix closes: a genuinely complete interview errored instead of completing,
-    // and the mock hid it by emitting both keys.
+    // EACH SHAPE IS VALIDATED AGAINST ITS OWN REQUIREMENTS, and getting that wrong
+    // killed real interviews. The comment here used to say "both shapes are validated"
+    // while the code validated only `status === 'complete'`, against the FINAL payload's
+    // requirements - and `workflowsFrom` prefers `processes`, which is the INTERVIEW
+    // shape. So a genuinely finished interview was checked for `id` and `title`, neither
+    // of which the interview's field matrix mentions: `id` appears in the prompt only
+    // inside the completion example, and the `asking` example shows a process without
+    // one. The model therefore did exactly what it was taught, and the server answered
+    // "1 entry has no id" and ended the interview. Measured on a real deepseek run, and
+    // the mock never hit it because its fixture carries both fields.
+    //
+    // THE RULE IS THEREFORE ABOUT WHICH SHAPE ARRIVED, not about which statuses are
+    // interesting. `processes` is the interview shape: it is checked for what the MATRIX
+    // requires, which is `hasShape`'s job and already runs. `audit.workflows` is the
+    // payload the scorer consumes, so it keeps the stricter check - `validateWorkflows`,
+    // which requires the `id` and `title` that `/api/score` and the roadmap read.
+    //
+    // An interview reply that carries BOTH is validated as the payload, because that is
+    // the one that will be scored; `workflowsFrom` resolves the same way, so the two
+    // cannot disagree about which array is authoritative.
     if (parsed.status === 'complete') {
-        const check = validateWorkflows(workflowsFrom(parsed));
-        if (!check.ok) {
-            console.error(`[audit] model returned an unusable payload: ${check.reason}`);
-            return { status: 'error', content: 'The analysis could not read the questionnaire answers. Please try again.' };
+        // WHICH SHAPE IS AUTHORITATIVE, decided the same way `workflowsFrom` decides it,
+        // so the validation and the payload cannot disagree about which array counts.
+        //
+        // AN EMPTY `audit.workflows` IS A SPECIAL CASE, and it is pinned from two
+        // directions. On its own it is unusable - an empty audit is not a completed audit,
+        // and the client would score nothing. But BESIDE a good `processes` array it is
+        // merely stale, and `processes` must win, because that is what the interview
+        // writes while `audit` is the older shape it also emits. So emptiness is judged
+        // only when there is nothing better to fall back to.
+        const processesPresent = Array.isArray(parsed.processes) && parsed.processes.length > 0;
+        const auditIsArray = Array.isArray(parsed.audit?.workflows);
+        const auditUsable = auditIsArray && parsed.audit.workflows.length > 0;
+        const auditPresent = auditIsArray && !(processesPresent && !auditUsable);
+
+        if (auditPresent) {
+            const check = validateWorkflows(parsed.audit.workflows);
+            if (!check.ok) {
+                console.error(`[audit] model returned an unusable payload: ${check.reason}`);
+                return { status: 'error', content: 'The analysis could not read the questionnaire answers. Please try again.' };
+            }
+        } else if (Array.isArray(parsed.processes) && parsed.processes.length > 0) {
+            // The interview shape, already judged by the matrix. A process here with
+            // fields missing is not an ERROR - it is an interview that has not finished,
+            // and the completion gate above has already downgraded it to `asking` and
+            // named what is absent. So nothing is refused for incompleteness here; only
+            // a shape that cannot be read at all is a fault.
+            const unreadable = parsed.processes.filter(
+                (process) => !process || typeof process !== 'object' || Array.isArray(process)
+            );
+            if (unreadable.length > 0) {
+                console.error(
+                    `[audit] model returned ${unreadable.length} process entr(ies) that are not objects`
+                );
+                return { status: 'error', content: 'The analysis could not read the questionnaire answers. Please try again.' };
+            }
         }
     }
 

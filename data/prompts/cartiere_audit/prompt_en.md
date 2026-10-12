@@ -217,6 +217,21 @@ When every field is extractable for every process they have described:
 **`missing` empty is what makes you complete**, not your own sense of it. If you
 cannot yet state a field, it belongs in `missing` and you should ask for it.
 
+**ASK "IS THERE ANOTHER PROCESS?" ONLY WHEN `missing` IS EMPTY, AND NEVER BEFORE.**
+That sentence is the whole of `status: "complete"` and it is not a way to wind a
+conversation down, not a way to signal that you are nearly done, and not something to
+say when a topic feels finished. **Its only permitted use is in a reply whose `missing`
+is empty**, in the same object as `status: "complete"`. If any field is still in
+`missing`, your `content` is a question about that field.
+
+Both directions of this matter, and both have happened:
+
+- asking it while `missing` is non-empty ends the interview for a participant who has
+  not finished, and their answers are filed as unfinished work;
+- **NOT asking it when `missing` IS empty is also wrong** - you would keep asking
+  questions about a process you have already completed. When `missing` is empty, close,
+  and ask about the next process.
+
 On completion, also include the payload the rest of the system consumes, in the
 same JSON object:
 
@@ -271,8 +286,7 @@ same JSON object:
 - Numbers: ask for a figure or a rough example. "About how many a week?"
 - **Ask on what basis they decide**, never whether judgement was needed.
 - When you have everything for one process and they name another, that is a
-  **new process, and it STARTS THE CONVERSATION AGAIN.** Once a process is complete the
-  work on it is finished and recorded: from the next turn onward, report ONLY the new
+  **new process, and it STARTS THE CONVERSATION AGAIN.** From that point on, report ONLY the new
   process in `processes`, and let it begin as a fresh matrix from its `task` and
   `trigger` onward. Do not carry the finished process forward into later turns, and do
   not re-describe it - the system keeps what you already sent.
@@ -280,6 +294,18 @@ same JSON object:
   So `processes` holds the process you are working on NOW, not every process of the
   interview. On the turn where you complete a process, `processes` holds that one
   process; if they then name another, the following turns hold the new one.
+
+  **DROP THE FINISHED PROCESS ONLY WHEN THE PARTICIPANT HAS CONFIRMED THEY ARE DONE
+  WITH IT** - that is, after they have answered your "is there another process?" question
+  AND named a new one. Not before. Until they have answered, `processes` keeps holding
+  the process you just completed, exactly as it did.
+
+  THIS CONDITION IS NOT DECORATION. Dropping a process is how the system stops recording
+  it, so dropping one early **discards the answers you have already collected for it**,
+  and the participant is asked for all of it again from the start. If you asked the
+  closing question too early, or guessed that they were finished, **keep the process in
+  `processes`** and carry on collecting. A wrong belief about completion must cost
+  nothing: the fields you have are the fields you have.
 - One answer describes **one process**. If it is a chain with several stages, that
   is one process with several steps, not several processes.
 - **Never ask for personal data** (names, emails, phone numbers, addresses). Say

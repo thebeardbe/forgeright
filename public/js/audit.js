@@ -42,7 +42,13 @@
         conversation: [],
         waiting: false,
         audit: null,
-        result: null
+        result: null,
+        // The processes this round holds, by `id`, as last saved. `roundProcesses` is
+        // what a completion claim is checked against before it is stored: see
+        // mergeForwardDroppedProcesses. It is deliberately the SAVED set rather than the
+        // last reply's, so a reply that drops a process cannot also overwrite the record
+        // of what the round had.
+        roundProcesses: new Map()
     };
 
     /**
@@ -229,7 +235,47 @@
             // exactly the first answers a participant gives. Only the transcript is
             // essential, and the server stores whatever `data` it is given.
             const isComplete = data.status === 'complete';
-            await saveResponse(isComplete ? (payload || state.audit) : payload, isComplete);
+
+            // A COMPLETION CLAIM MUST NOT NARROW THE PAYLOAD.
+            //
+            // The matrix gate already refuses to FINISH a process with fields missing.
+            // This is the same rule one step over: a reply claiming completion must not
+            // carry FEWER processes than the round already holds, because dropping one
+            // is how its answers stop being recorded and the participant is asked for all
+            // of it again.
+            //
+            // It happens for a mundane reason - the model asked "is there another
+            // process?" before the matrix was satisfied, believed a process had ended,
+            // and started a fresh matrix for what it took to be the next one. On a real
+            // deepseek run the payload went from 15 fields to 3 that way. The prompt now
+            // tells it not to (see "drop the finished process only when the participant
+            // has confirmed"), BUT THIS IS THE HALF THAT DOES NOT DEPEND ON THE MODEL
+            // OBEYING: a wrong belief about completion costs the participant nothing,
+            // whatever the model does.
+            //
+            // COMPARED BY PROCESS `id`, which is the only stable name a reply carries. A
+            // process the round already had and the new payload no longer mentions is
+            // carried forward from the saved round, so what was collected stays.
+            const narrowed = mergeForwardDroppedProcesses(payload, state.roundProcesses);
+            if (narrowed.dropped.length > 0) {
+                console.warn(
+                    'a completion claim dropped ' + narrowed.dropped.length + ' process(es) the round ' +
+                    'already had; carrying them forward so the answers are not lost: ' + narrowed.dropped.join(', ')
+                );
+            }
+            const toSave = isComplete ? narrowed.payload : payload;
+            await saveResponse(toSave, isComplete);
+
+            // THE RECORD OF WHAT THE ROUND HOLDS IS UPDATED FROM WHAT WAS SAVED, not
+            // from what the reply said. Updating it from the reply would let a reply that
+            // dropped a process also erase the memory of it, and the next completion
+            // claim would then have nothing to carry forward.
+            if (toSave && Array.isArray(toSave.workflows)) {
+                for (const workflow of toSave.workflows) {
+                    const id = workflow && typeof workflow.id === 'string' ? workflow.id : '';
+                    if (id !== '') state.roundProcesses.set(id, workflow);
+                }
+            }
 
             if (isComplete && payload) {
                 state.audit = payload;
@@ -279,6 +325,55 @@
      * participant has their analysis on screen, and an error box would suggest
      * their answers were lost when they were not.
      */
+    /**
+     * Carries forward any process a completion reply left out.
+     *
+     * WHY A PROCESS `id` AND NOT AN INDEX. The payload is a list, and the model may
+     * reorder it as its understanding changes; an index would match the wrong process
+     * and substitute one process's fields for another's, which is worse than losing
+     * them. `id` is the name the prompt gives each process, and it is what the reply
+     * itself uses to say which process it means.
+     *
+     * WHY NOTHING IS EVICTED. A process that is genuinely finished and superseded stays
+     * in the round, because a round IS the work of one process: discarding a finished
+     * process's fields is the failure this function exists to prevent. The next round
+     * starts empty, which is where a finished process legitimately stops being recorded.
+     *
+     * THE WORKFLOWS ARRAY IS WHAT IS MERGED, because that is what the server stores and
+     * what scoring reads. A reply with no usable payload comes back unchanged - there is
+     * nothing to merge and nothing to guard against.
+     *
+     * @param {object|null} payload The payload from this reply, if any.
+     * @param {Map<string, object>} held The processes the round already has, by id.
+     * @returns {{ payload: object|null, dropped: string[] }}
+     */
+    function mergeForwardDroppedProcesses(payload, held) {
+        if (!payload || !Array.isArray(payload.workflows) || payload.workflows.length === 0) {
+            return { payload, dropped: [] };
+        }
+
+        const incoming = new Map();
+        for (const workflow of payload.workflows) {
+            const id = workflow && typeof workflow.id === 'string' ? workflow.id : '';
+            if (id !== '') incoming.set(id, workflow);
+        }
+
+        const dropped = [];
+        const carried = [];
+        for (const [id, workflow] of held) {
+            if (!incoming.has(id)) {
+                dropped.push(id);
+                carried.push(workflow);
+            }
+        }
+        if (dropped.length === 0) return { payload, dropped };
+
+        return {
+            payload: { ...payload, workflows: [...carried, ...payload.workflows] },
+            dropped
+        };
+    }
+
     async function saveResponse(audit, complete) {
         if (!hasToken) return;
         try {
