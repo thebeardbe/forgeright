@@ -4,11 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Admin - forgeright</title>
-    <%- include('partials/theme-head') %>
+    <%# `console` for the SAME REASON the other two views load it: this page now carries
+        the sticky view switcher and the demo band, and both are styled in that sheet. It
+        was the only console page without it, so the nav here rendered unstyled while the
+        roadmap's did not - drift in a third place, found by measuring the computed style
+        in a browser rather than by reading the markup. %>
+    <%- include('partials/theme-head', { pageStyles: ['console'] }) %>
 </head>
 <body>
 <div class="wrap">
+    <%# ORDER: the banner band, then the tabs, then the header. The tabs are the only way
+        to change page, so they sit above everything that can push them off a phone
+        screen, and the banner stays above them because it must not scroll away. %>
     <%- include('partials/demo-banner') %>
+    <%- include('partials/console-nav', { activeView: 'console' }) %>
     <header>
         <div>
             <p class="eyebrow">forgeright</p>

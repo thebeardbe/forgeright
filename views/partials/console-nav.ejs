@@ -1,0 +1,33 @@
+<%#
+    The console's view switcher, at the TOP of every console page and STICKY.
+
+    WHY IT IS A PARTIAL RATHER THAN THREE COPIES. Three views need this block, and two
+    of them already carried a hand-written copy that had DRIFTED: the answers view emitted
+    `class=""` where the roadmap omitted the attribute. That is the small kind of
+    difference that survives a review. A partial cannot drift, and the ORDER below is the
+    point, so it is written once.
+
+    WHY IT MOVED TO THE TOP. It used to sit after the heading and the switchers, so on a
+    390px-wide phone the reader had to scroll past a two-line `<h1>` and any banner before
+    reaching the only way to change page. The tabs were present and effectively invisible,
+    which reads as a missing feature rather than a layout choice. Measured in a browser
+    before and after: the tab row is now the first element below the banner band.
+
+    WHY STICKY. The roadmap is a long page. A reader halfway down it has no way to reach
+    the answers view without scrolling back, which is the same problem one screen lower.
+    `position: sticky` keeps it against the top of the viewport while the content moves,
+    so the tabs are reachable wherever the reader is.
+
+    STICKY NEEDS AN OPAQUE BACKGROUND. Scrolling content passes underneath, so a
+    transparent bar would show the text through it.
+
+    THE ACTIVE PAGE IS MARKED WITH `aria-current`, not only with a class: a screen reader
+    announces "current page" from it, and colour alone does not say which page you are on.
+%>
+<% if (typeof activeView !== 'undefined' && activeView) { %>
+    <nav class="views" aria-label="Console views">
+        <a href="<%= basePath %>/admin"<%= activeView === 'console' ? ' class="active" aria-current="page"' : '' %>>Console</a>
+        <a href="<%= basePath %>/admin/answers"<%= activeView === 'answers' ? ' class="active" aria-current="page"' : '' %>>Every answer</a>
+        <a href="<%= basePath %>/admin/roadmap"<%= activeView === 'roadmap' ? ' class="active" aria-current="page"' : '' %>>Roadmap</a>
+    </nav>
+<% } %>

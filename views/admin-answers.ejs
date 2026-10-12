@@ -22,11 +22,7 @@
         </div>
     </header>
 
-    <div class="views">
-        <a href="<%= basePath %>/admin" class="">Console</a>
-        <a href="<%= basePath %>/admin/answers" class="active">Every answer</a>
-        <a href="<%= basePath %>/admin/roadmap" class="">Roadmap</a>
-    </div>
+    <%- include('partials/console-nav', { activeView: 'answers' }) %>
 
     <%- include('partials/console-notice', { subject: 'The answer' }) %>
 

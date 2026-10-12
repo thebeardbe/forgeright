@@ -27,6 +27,7 @@ import { BASE_PATH, PUBLIC_PATH, describeMount, describePublicPath } from './lib
 import { resolveTrustProxy, hostnameFromHeader } from './lib/trust-proxy.js';
 import { router as participantRouter } from './lib/auth/participant-routes.js';
 import { router as landingRouter } from './lib/landing.js';
+import { registerThemeRoute } from './lib/theme-route.js';
 import { router as apiRouter } from './lib/routes-api.js';
 import { DEFAULT_TOOL_ID } from './config/tools.js';
 import { FOLLOW_SYSTEM, PALETTE_IDS, PALETTES } from './lib/palettes.js';
@@ -112,6 +113,29 @@ app.use((req, res, next) => {
     // The picker's list, derived from the palette data so a new palette appears
     // without touching a template. Ordered as lib/palettes.js orders them.
     res.locals.themeOptions = PALETTE_IDS.map((id) => ({ id, name: PALETTES[id].name }));
+
+    // THE PATH THE BROWSER IS ON, for the theme picker's way back.
+    //
+    // TAKEN FROM THE REQUEST RATHER THAN BUILT FROM PUBLIC_BASE_URL, because the whole
+    // point is that the browser's URL may differ from the configured one: behind a proxy
+    // that terminates a different hostname, a link built from the configuration would
+    // send the user to a host they are not using. `req.path` is what the browser asked
+    // for, so returning to it is a no-op the user cannot detect.
+    //
+    // **THE QUERY STRING IS DELIBERATELY DROPPED, AND THAT IS A SECURITY DECISION.**
+    // This value is written into a hidden form field on every page, so carrying the query
+    // string would echo whatever the URL held into the body: the demo link's TOKEN, on
+    // the very refusal page that exists to say nothing about it. A credential reflected
+    // into HTML lands in browser history, a proxy log, and any error reporter that
+    // captures the DOM. It was measured: a bad-token request returned a page containing
+    // the submitted token, and the demo tests caught it because two requests that must be
+    // indistinguishable had different bodies.
+    //
+    // The cost is that changing the theme on a page showing a rejudge NOTICE returns to
+    // the page without its notice. That is a small loss of convenience against not
+    // writing credentials into pages, and the notice is the kind of state a reader can
+    // re-trigger by acting again.
+    res.locals.currentUrl = req.path;
     next();
 });
 
@@ -227,43 +251,11 @@ appInternal.get('/healthz', (req, res) => {
     res.json({ ok: true });
 });
 
-/**
- * Stores the theme choice, then returns the person to where they were.
- *
- * A GET, deliberately: it sets one preference and redirects, and a GET keeps the
- * picker a plain form with no body and no CSRF surface. The value is validated
- * against the palette list, so a hand-edited URL cannot store anything else, and
- * an unrecognised value is refused rather than quietly defaulted: a cookie that
- * says a theme that does not exist would show up as a blank-looking page later.
- *
- * The cookie is NOT HttpOnly, because the client reads it to keep the picker in
- * step, and it is the only cookie here that the page reads. SameSite=Lax, so it is
- * not sent on a cross-site request.
- */
-appInternal.get('/settings/theme', (req, res) => {
-    const raw = String(req.query.choice || '');
-    const choice = parseThemeChoice(raw) === FOLLOW_SYSTEM ? FOLLOW_SYSTEM : (PALETTES[raw] ? raw : null);
-
-    if (choice === null) {
-        console.warn(`[theme] refusing an unknown theme choice ${JSON.stringify(raw)}`);
-        return res.redirect(`${PUBLIC_PATH}/`);
-    }
-
-    res.cookie(THEME_COOKIE, choice, {
-        path: '/',
-        sameSite: 'lax',
-        httpOnly: false, // the page reads it to reflect the choice in the picker
-        maxAge: THEME_COOKIE_MAX_AGE * 1000,
-        secure: isSecureRequest(req)
-    });
-
-    // Back where they came from, when that is this site, so changing the theme on
-    // the console does not throw them out to the landing page.
-    const referer = req.headers.referer;
-    if (typeof referer === 'string' && referer.startsWith(`${publicBaseUrl()}/`)) {
-        return res.redirect(referer);
-    }
-    return res.redirect(`${PUBLIC_PATH}/`);
+// The theme route, in its own module: see lib/theme-route.js for why the return
+// target comes from the query rather than the Referer header.
+registerThemeRoute(appInternal, {
+    PUBLIC_PATH, FOLLOW_SYSTEM, PALETTES, parseThemeChoice,
+    THEME_COOKIE, THEME_COOKIE_MAX_AGE, isSecureRequest, publicBaseUrl
 });
 
 
@@ -312,7 +304,8 @@ app.use((req, res) => {
 
 const server = app.listen(PORT, HOST, () => {
     const config = loadAiConfig();
-    console.log(`[server] listening on http://${HOST}:${PORT}${BASE_PATH}`);    console.log(`[server] AI provider: ${config.name} (${config.type})`);
+    console.log(`[server] listening on http://${HOST}:${PORT}${BASE_PATH}`);
+    console.log(`[server] AI provider: ${config.name} (${config.type})`);
     console.log(`[server] mail sender: ${process.env.MAIL_SENDER || 'console'} (default console)`);
 
     // Say where the app is served, because a wrong prefix produces 404s that look

@@ -154,7 +154,34 @@
 .history .when { color: var(--muted); font-size: 0.78rem; }
 
 /* The view switcher, which is two links rather than tabs with script. */
-.views { display: flex; gap: 8px; margin: 4px 0 18px; flex-wrap: wrap; }
+/* THE VIEW SWITCHER: AT THE TOP, STICKY, AND OPAQUE.
+
+   IT USED TO SIT BELOW THE HEADING, so on a 390px phone a two-line <h1> plus a banner
+   pushed the only way to change page off the first screen. The tabs existed and were
+   unreachable, which reads as a missing feature.
+
+   `position: sticky` WITH `top: 0` keeps the row against the top of the viewport while
+   the roadmap scrolls under it. THE BACKGROUND IS OPAQUE AND THE ROW SPANS THE WIDTH,
+   because content passes underneath: a transparent bar would show text through it, and
+   the negative margins let the band reach the panel edges rather than stopping at the
+   text column. `z-index` puts it above the content it covers.
+
+   The bottom border is what separates it from the page once it is stuck; without it the
+   tabs would float over the content with no edge. */
+.views {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    /* Full-bleed for the same reason as the band above, so the stuck row covers the
+       content it passes over rather than leaving the page visible at the edges. */
+    margin: 0 -16px 18px;
+    padding: 10px 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+}
 .views a {
     padding: 7px 13px;
     border: 1px solid var(--line);
@@ -170,18 +197,42 @@
 .depts { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
 .depts li { font-size: 0.8rem; padding: 3px 9px; background: var(--raised); border-radius: 99px; }
 
-/* The read-only demo banner.
-   NOT THE WARNING REGISTER: a demo is not a problem, and a reader who has just been
-   sent a link should not be greeted by something that looks like an error. It shares
-   the notice blue used for `.notice`, which reads as information. */
+/* The read-only demo band. A BAND, NOT A NOTICE BOX.
+
+   IT USED TO BE a rounded, pale-blue box with the same text colour as the body, which
+   read as a paragraph someone had highlighted rather than as the application telling you
+   something about itself. Measured in the browser: a box, not a band.
+
+   WHAT MAKES IT A BAND: full width, squared, no side margin, and a heavier edge than a
+   box would carry. The accent appears as a THICK TOP RULE rather than as the fill.
+
+   WHY NOT A FILLED ACCENT BAND, WHICH WAS THE FIRST ATTEMPT. Measured across six
+   palettes in a browser, filling with `--accent` and setting text in `--accent-ink`
+   dropped to a contrast ratio of 3.45 on `catppuccin-latte` and 4.16 on `white` - below
+   the 4.5 that body text needs. The fill also read as a warning on the lighter palettes,
+   which are exactly the ones whose accent is a saturated blue. The accent rule keeps the
+   band in the palette's own colour while the text sits on `--raised` against `--ink`,
+   the pairing every palette is built around.
+
+   IT IS STILL CHROME RATHER THAN CONTENT: full-bleed, heavier than any card, and set in
+   the same upper-case eyebrow register the rest of the console's labels use.
+
+   IT SCROLLS AWAY RATHER THAN STICKING, deliberately: the tabs below it are the control
+   a reader needs at every scroll position, and a permanent band would cost the vertical
+   space a phone does not have. */
 .demo-banner {
-    margin: 0 0 18px;
-    padding: 10px 14px;
-    border: 1px solid var(--notice-line);
-    border-radius: 8px;
-    background: var(--notice-bg);
-    color: var(--notice-ink);
-    font-size: 0.9rem;
+    /* Reaches the viewport edges rather than stopping at the 620px text column: the
+       negative inline margin cancels `.wrap`'s padding, and the same value is added
+       back as padding so the text still lines up with the content below it. */
+    margin: 0 -16px;
+    padding: 9px 16px;
+    background: var(--raised);
+    color: var(--ink-bright);
+    border-top: 4px solid var(--accent);
+    border-bottom: 1px solid var(--line-strong);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
 }
 
 /* A DISABLED CONTROL MUST LOOK DISABLED, not merely be inert. Without this a greyed

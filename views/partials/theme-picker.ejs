@@ -11,7 +11,16 @@
     Submitted with GET, so no body and no CSRF surface: the value is a palette id
     from a fixed list, validated again server-side.
 %>
+<%#
+    `next` CARRIES THE WAY BACK, and it is a PATH rather than an absolute URL. The route
+    validates it against the public prefix and refuses anything else, so a hand-edited
+    value cannot turn this into an open redirect. `currentUrl` is the request path as the
+    browser sees it, which is what makes the round trip work behind a proxy whose
+    hostname differs from the configured public base URL: the Referer header was the
+    previous mechanism and it fails exactly there, silently.
+%>
 <form class="theme-picker" method="get" action="<%= basePath %>/settings/theme">
+    <input type="hidden" name="next" value="<%= currentUrl %>">
     <label for="theme-select">Theme</label>
     <select id="theme-select" name="choice" onchange="this.form.submit()">
         <option value="system" <%= theme.selected === 'system' ? 'selected' : '' %>>Follow system</option>
