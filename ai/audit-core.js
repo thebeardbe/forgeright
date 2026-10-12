@@ -295,6 +295,21 @@ export function validateWorkflows(workflows) {
  * than a dropped field).
  */
 /**
+ * What the participant sees when the round ends with nothing answered.
+ *
+ * HONEST RATHER THAN A CLOSED DOOR. It does not thank them for answers they did not give, and
+ * it does not pretend the interview went well - it says what happened, that this is not their
+ * failure, and that somebody can follow up. A participant who declined every question has still
+ * told the reader something true: the work is not something they can put into words, which is
+ * worth knowing.
+ */
+const NOTHING_ANSWERED_CONTENT =
+    'Thank you for your time. We did not manage to capture any answers for this one, so there '
+    + 'is nothing to analyse yet. That is not a problem on your side: some work is hard to put '
+    + 'into words, and saying so is useful in itself. You can close this page, and someone can '
+    + 'follow up with you directly if it is worth a conversation.';
+
+/**
  * The closing question's fingerprint, so a version of it can be recognised.
  *
  * MATCHED AS A PHRASE RATHER THAN BY EXACT TEXT, because a model that asks the closing question
@@ -309,11 +324,28 @@ export function validateWorkflows(workflows) {
  * is the risk worth taking.
  */
 const CLOSING_QUESTION_SHAPES = [
-    /is there (?:another|any other|anything else)/i,
-    /any (?:other|more) process/i,
-    /would you like to (?:improve|look at|add)/i,
-    /anything else you(?:'|’)?d? like/i,
-    /is there anything else/i
+    // THE SUBJECT, wherever it sits in the sentence: another process, anything else, any
+    // other process. Anchored on the WORDS rather than on their order, which is the fix for
+    // a real escape - the old pattern required `would you like to <verb>` in that sequence,
+    // so "Would you like to tell me about another process?" matched nothing, and a live
+    // model is at least as likely to produce that order as the matched one.
+    /\b(?:another|any other|more)\s+(?:process|work|task|piece of work|one)\b/i,
+    /\banything else\b/i,
+    /\bsomething else\b/i,
+    /\bother processes\b/i,
+    // OFFERING TO CONTINUE, in any order. The verb list is deliberately NARROW and the gap
+    // between the offer and the verb is at most two words, and both of those are corrections
+    // rather than caution: a first attempt allowed up to three intervening words and included
+    // `describe`, which gated "Do you want to describe the steps in more detail?" - a perfectly
+    // ordinary question about the CURRENT process, caught because it happened to contain an
+    // offer. Replacing a legitimate question is worse than the escape it fixes, so the pattern
+    // is allowed to miss a rare closing phrasing rather than to hit a common real question.
+    //
+    // "ANOTHER PROCESS" IS STILL CAUGHT BY THE SUBJECT PATTERN ABOVE, whatever verb is used
+    // with it, so narrowing this one loses nothing that matters.
+    /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:\w+\s+){0,2}(?:improve|add|cover|explore|hear|move on|continue|see)\b/i,
+    // "shall I / should I / may I" style offers.
+    /\b(?:shall|should|may)\s+(?:we|i)\b/i
 ];
 
 /**
@@ -520,6 +552,53 @@ export function parseModelResponse(raw) {
         && computed.missing.length === 0
         && processes.length > 0;
 
+    // NOTHING WAS ANSWERED, SO THE INTERVIEW ENDS AS "NOTHING ANSWERED".
+    //
+    // AN ALL-DECLINED ROUND IS A FIXED POINT WITHOUT THIS, and that is a measured defect
+    // rather than a hypothetical: every field declined leaves `have` full and `supplied`
+    // empty, so the model has nothing left to ask, the completion gate never opens, and
+    // `withoutClosingQuestion` finds no open field to substitute - so every turn returns
+    // BYTE-IDENTICAL `asking` output forever, with the participant shown the closing question
+    // and no way out. The gate that suppresses a premature close cannot see it, because there
+    // is no premature close to suppress.
+    //
+    // WHY `submitted_at` IS SET AND THE STATUS IS NOT `complete`. The round has to END -
+    // staying open is the trap - and `submitted_at` is the store's only way to say a round is
+    // finished. But `complete` would be a lie the roadmap has to render, and an instance that
+    // declared "complete" with zero evidence is exactly what the gate exists to refuse. So the
+    // round is FINALISED while the reply carries a status of its own: `nothing_answered`.
+    //
+    // WHAT THAT MEANS TO EVERY READER:
+    //   - the client finalises the round (it may end) and does not score it, because there is
+    //     nothing to score;
+    //   - the console shows a finalised round with every field marked "not answered", which is
+    //     a FINDING - asked, and nobody knew - rather than a gap;
+    //   - nothing reaches the roadmap, because a process is only created by identification and
+    //     there is no usable field to identify.
+    //
+    // THE SCHEMA NEEDS NO CHANGE: `submitted_at` records that the round ended, and the status
+    // lives in the reply the client reads. "Nothing was answered" is a property of the
+    // conversation, not of the row.
+    //
+    // IT IS NOT AN ESCAPE HATCH. A model that declined everything to finish early gains
+    // nothing: declined fields carry no evidence, so `supplied` stays empty, the round scores
+    // and weighs nothing, and it never becomes a process. Finishing early by refusing has the
+    // same outcome as answering nothing, which is the honest result of answering nothing.
+    if (playingTheMatrix && computed.missing.length === 0 && computed.supplied.length === 0) {
+        console.warn(
+            '[audit] every field was declined and none supplied; ending the round as ' +
+            '"nothing_answered" rather than leaving it open with nothing to ask'
+        );
+        return {
+            status: 'nothing_answered',
+            content: NOTHING_ANSWERED_CONTENT,
+            have: computed.have,
+            missing: computed.missing,
+            stepsStillNeed,
+            processes
+        };
+    }
+
     if (parsed.status === 'complete' && playingTheMatrix && !matrixComplete) {
         // The model thinks it is done and the matrix disagrees. Continue rather
         // than closing: one more question is cheap, a missing field is not.
@@ -649,6 +728,17 @@ export function parseModelResponse(raw) {
         // class of defect this file has been fixed for twice. On an `asking` turn
         // there is no payload and no `audit` key at all.
         audit: Array.isArray(best) ? normaliseProcessesPayload(parsed, best) : undefined,
+        // THE CLOSING QUESTION IS SUPPRESSED HERE, WHICH IS THE ONE PLACE EVERY REPLY PASSES
+        // THROUGH, and the fix for a real escape. It used to be applied only inside the
+        // "claimed complete and the matrix disagreed" branch - so a model that asked the
+        // closing question while reporting `status: "asking"` was never checked at all, and
+        // that is the ordinary way the defect appears: the live interview watched asking it
+        // four times in a row was doing exactly this, not claiming completion. A gate on one
+        // branch of one status is a gate that most of the traffic goes around.
+        //
+        // It is a no-op when the question is genuine and the matrix is satisfied, which is the
+        // case the prompt asks for, and when the content is an ordinary question.
+        content: withoutClosingQuestion(parsed.content, computed),
         have: computed.have,
         missing: computed.missing,
         stepsStillNeed,

@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
 import { sanitizeInput, checkPromptInjection } from './security.js';
-import { proseSaidIn } from './field-shapes.js';
+import { proseSaidIn, declinedIn } from './field-shapes.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
 import { mergeProcessSteps } from './merge-steps.js';
@@ -144,6 +144,38 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
  * @param {string} said The participant's words, already validated as non-empty.
  * @returns {{saidInTheirWords: string, note: string}}
  */
+/**
+ * A field the participant was asked about and did not answer, labelled for the weighing model.
+ *
+ * THE WORST CASE FOR AN UNLABELLED VALUE, and that is why this exists. A refusal is the one
+ * value whose ENTIRE MEANING is that there is nothing here, so a model reading a raw
+ * `{"declined":"I have no idea"}` beside numbers and lists has two ways to be wrong and no way
+ * to be right: it can read the refusal as a figure, or ignore the field without knowing why it
+ * was empty. Neither is what should happen, and both are silent.
+ *
+ * "NOT MEASURED" IS NOT "NOTHING HERE", and the note says so in those words. That distinction
+ * is the same one the weighing prompt draws for a scorable period of zero: a term that could not
+ * be measured is unknown, while a term that is genuinely zero is a fact. Scoring an unanswerable
+ * field as zero would report "there is nothing to gain here" when the truth is "we do not know".
+ *
+ * NO NUMBER IS OFFERED AND NONE SHOULD BE INVENTED FROM THE WORDS. The refusal may be quoted,
+ * but the model is told plainly that the participant declined, so a phrase like "I would rather
+ * not say" cannot be read as a measurement.
+ *
+ * @param {string|null} words What the participant said when declining, if anything.
+ * @returns {{declinedToAnswer: true, theySaid: string|null, note: string}}
+ */
+function declinedForWeighing(words) {
+    return {
+        declinedToAnswer: true,
+        theySaid: words,
+        note: 'The participant was asked about this field and did not answer it. This is NOT a '
+            + 'value and NOT a zero: there is no measurement here. Score this term from what else '
+            + 'you have, and treat it as not measured rather than as nothing. Do not infer a '
+            + 'figure from any words quoted.'
+    };
+}
+
 function proseForWeighing(said) {
     return {
         saidInTheirWords: said,
@@ -177,7 +209,13 @@ function mergeParticipants(responses) {
             // NOT FILTERED OUT. Excluding prose here would decide on the model's behalf that
             // it is unusable, and the weighing is exactly the place that can judge whether
             // "just me" is a participant count.
-            .map((value) => (proseSaidIn(value) === null ? value : proseForWeighing(proseSaidIn(value))))
+            .map((value) => {
+                const said = proseSaidIn(value);
+                if (said !== null) return proseForWeighing(said);
+                const declined = declinedIn(value);
+                if (declined !== null) return declinedForWeighing(declined.words);
+                return value;
+            })
             .filter((value) => value !== undefined && value !== null);
 
         if (values.length === 0) continue;

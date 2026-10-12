@@ -77,6 +77,28 @@ the words the way you would read a number:
 filter these values out and does not convert them; it passes them with a note. Whether they
 can be scored is your judgement, not a rule applied before you saw them.
 
+### A field may also arrive as `{"declinedToAnswer": true, ...}`
+
+**That means the participant was asked and did not answer.** *"I have no idea"*, *"I would
+rather not say"*, *"use your judgement"*. This is the third thing a field can be, and it is not
+either of the other two:
+
+| what arrived | what it means | what to do |
+| :--- | :--- | :--- |
+| a number or a list | measured | score it |
+| `saidInTheirWords` | answered, in words | try to read it; score it if it tells you something |
+| `declinedToAnswer` | **asked, no answer** | **no measurement here - score from what else you have** |
+
+**A REFUSAL IS NOT A ZERO.** Do not score the term zero because the participant declined: zero
+is a claim that there is nothing there, and a refusal is the absence of information. **"We could
+not measure this" and "there is nothing here" are different statements**, the same distinction
+this prompt draws for a period that cannot be converted - and the report reads differently
+depending on which you meant.
+
+**Do not infer a figure from `theySaid`.** Those are the words of the refusal, sometimes a
+quoted answer, and they are there so a reader can see what was said rather than a summary of it.
+Treat the field as unmeasured and say so in your reasoning if it matters to the score.
+
 ### Why departments and complexity are costs
 
 More departments means more steps, more integration and more people to agree. A

@@ -236,6 +236,24 @@
             // essential, and the server stores whatever `data` it is given.
             const isComplete = data.status === 'complete';
 
+            // NOTHING WAS ANSWERED: THE ROUND ENDS, AND THE INTERVIEW ENDS WITH IT.
+            //
+            // The server sends this when every field was declined, which is the one state where
+            // the matrix has nothing left to ask AND nothing to score. Without the client
+            // honouring it the participant is trapped: the reply is `asking`, so the page keeps
+            // the input open and the model has no new question to send, which produced
+            // byte-identical output forever on a real defect.
+            //
+            // SO IT IS TREATED AS AN ENDING, NOT AS A TURN. The round is finalised (so the store
+            // knows it is closed and the participant may leave), the input is hidden, and the
+            // honest closing line is shown. Nothing is scored because there is nothing to score.
+            //
+            // IT DOES NOT GO THROUGH runScoring: scoring an empty round would produce a figure
+            // from no evidence, which is the failure the completion gate exists to prevent. The
+            // server has already declined to treat this as a completed interview, and the page
+            // must not contradict it.
+            const nothingAnswered = data.status === 'nothing_answered';
+
             // A COMPLETION CLAIM MUST NOT NARROW THE PAYLOAD.
             //
             // The matrix gate already refuses to FINISH a process with fields missing.
@@ -264,7 +282,16 @@
                 );
             }
             const toSave = isComplete ? narrowed.payload : payload;
-            await saveResponse(toSave, isComplete);
+            // `complete: true` FORCES THE ROUND CLOSED even though the status is not
+            // `complete`: `submitted_at` is the store's only way to say a round is finished,
+            // and leaving it open is the trap. The STATUS is what says it ended with nothing
+            // in it, and that lives in the reply the console already reads.
+            await saveResponse(toSave, isComplete || nothingAnswered);
+
+            if (nothingAnswered) {
+                $('input-area').classList.add('hidden');
+                return;
+            }
 
             // THE RECORD OF WHAT THE ROUND HOLDS IS UPDATED FROM WHAT WAS SAVED, not
             // from what the reply said. Updating it from the reply would let a reply that

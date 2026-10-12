@@ -78,6 +78,28 @@ je een getal zou lezen:
 waarden niet weg en zet ze niet om; hij geeft ze door met een noot. Of ze te scoren zijn is
 jouw oordeel, geen regel die is toegepast voordat jij ze zag.
 
+### Een veld kan ook aankomen als `{"declinedToAnswer": true, ...}`
+
+**Dat betekent dat de deelnemer gevraagd is en niet antwoordde.** *"ik heb geen idee"*, *"dat zeg
+ik liever niet"*, *"gebruik je oordeel"*. Dit is het derde ding dat een veld kan zijn, en het is
+geen van de andere twee:
+
+| wat aankwam | wat het betekent | wat je doet |
+| :--- | :--- | :--- |
+| een getal of een lijst | gemeten | scoor het |
+| `saidInTheirWords` | geantwoord, in woorden | probeer het te lezen; scoor het als het je iets zegt |
+| `declinedToAnswer` | **gevraagd, geen antwoord** | **geen meting hier - scoor uit wat je verder hebt** |
+
+**EEN WEIGERING IS GEEN NUL.** Scoor de term niet nul omdat de deelnemer afhaakte: nul is de
+bewering dat er niets is, en een weigering is het ontbreken van informatie. **"Dit konden we niet
+meten" en "hier is niets" zijn verschillende uitspraken**, dezelfde distinctie die dit prompt
+maakt voor een periode die niet om te zetten is - en het rapport leest anders afhankelijk van
+welke je bedoelde.
+
+**Leid geen getal af uit `theySaid`.** Dat zijn de woorden van de weigering, soms een geciteerd
+antwoord, en ze staan er zodat een lezer kan zien wat er gezegd is in plaats van een samenvatting.
+Behandel het veld als niet gemeten en zeg dat in je redenering als het de score raakt.
+
 ### Waarom afdelingen en complexiteit kosten zijn
 
 Meer afdelingen betekent meer stappen, meer integratie en meer mensen die het eens
