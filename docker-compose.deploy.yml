@@ -1,0 +1,149 @@
+# forgeright, for a server behind nginx that already exists.
+#
+#   docker compose -f docker-compose.deploy.yml up -d --build
+#
+# THIS MIRRORS THE OWNER'S OWN COMPOSE FILE for his CV site, because that is how he
+# deploys: one service, an external `proxy-network` he already runs, `env_file`, no
+# published ports, no TLS handled here, no profiles. nginx terminates TLS in front.
+#
+# WHY THIS FILE AND NOT docker-compose.yml. That one is SELF-CONTAINED: it brings its own
+# Caddy, its own network, its own certificate, so a fresh clone works with nothing else
+# installed. That is right for a look at the product and wrong for a server, where nginx
+# already exists and a second terminator is a second thing to keep working. Two shapes,
+# two files, and this is the one that runs on the VPS.
+#
+# SEE DEPLOY.md for the setup around it, including the nginx block it needs.
+
+services:
+  forgeright:
+    build: .
+    # A FIXED NAME, because nginx refers to the container by name on the shared network.
+    # The default `<project>-<service>-<n>` name would depend on the checkout's directory
+    # and would break the proxy_pass in DEPLOY.md on a differently-named clone.
+    container_name: forgeright
+    restart: unless-stopped
+    env_file:
+      # THE REPO'S OWN FILE, read at run time, so neither this file nor the image carries a
+      # credential. It supplies AI_PROVIDER and the provider key, MAIL_SENDER and the mail
+      # settings, SESSION_SECRET, PUBLIC_BASE_URL and ALLOWED_HOST.
+      #
+      # HOST AND TRUST_PROXY ARE DELIBERATELY OVERRIDDEN BELOW: `.env` holds the values for
+      # the app running directly on the host, and both are wrong in a container.
+      - .env
+    environment:
+      # --- FORCED FOR A CONTAINER, OVERRIDING `.env` ---
+      #
+      # `env_file` LOADS `.env` AFTER THE IMAGE'S OWN DEFAULTS, so a value in `.env` beats
+      # ENV in the Dockerfile. The repo's `.env` is written for the app running DIRECTLY
+      # ON THE HOST behind a terminator on the same machine - HOST=127.0.0.1 so the app is
+      # loopback-only, TRUST_PROXY=127.0.0.1 because the terminator dials from the host -
+      # and BOTH ARE WRONG IN A CONTAINER. MEASURED, because the first version of this file
+      # did not force them and the app came up bound to 127.0.0.1 on a network nginx could
+      # reach: nothing could connect to it at all.
+      #
+      # HOST MUST BE 0.0.0.0. Inside a container 127.0.0.1 is the CONTAINER's own loopback,
+      # not the host's, so binding there means nginx on `proxy-network` finds nothing
+      # listening. The Dockerfile sets 0.0.0.0 for exactly this reason; `.env` overrides it
+      # back, so it is forced here.
+      HOST: "0.0.0.0"
+      # 3000 is the app's own default and is restated only so the port nginx must target is
+      # visible in this file rather than four files away.
+      PORT: "3000"
+      # --- WHY TRUST_PROXY IS SET HERE AND IS NOT OPTIONAL ---
+      #
+      # nginx speaks PLAIN HTTP to this container, and the app refuses an insecure request:
+      # `isSecureRequest` is `Boolean(req.secure)`, and `req.secure` is true only for an
+      # HTTPS connection or when Express is TOLD to believe a forwarded header. With
+      # TRUST_PROXY unset, Express is told nothing, `req.secure` is false for a request
+      # nginx forwarded, `requireSecureConnection` answers 308, and the sign-in cookie is
+      # never set. The browser follows the redirect to the same place and loops.
+      #
+      # SO WITHOUT THIS THE SITE DOES NOT WORK AT ALL, which is why it is here rather than
+      # left to `.env` where it looks optional. The owner asked whether it was needed; it
+      # is the difference between a working console and an infinite redirect.
+      #
+      # `uniquelocal` TRUSTS ANY PEER IN A PRIVATE RANGE (RFC 1918: 10.x, 172.16-31.x,
+      # 192.168.x). That is the right form here because nginx is a NEIGHBOUR on
+      # `proxy-network` and its address is Docker's to assign: it can change when the
+      # container is recreated, and an exact IP would then silently stop being trusted and
+      # the loop would come back. The wider value survives that. It is still far narrower
+      # than trusting everybody, and `lib/trust-proxy.js` refuses a bare boolean or a
+      # hostname rather than accepting something unsafe.
+      # `FORGERIGHT_TRUST_PROXY` IS A DIFFERENT NAME FROM `TRUST_PROXY` ON PURPOSE.
+      # Writing `${TRUST_PROXY:-uniquelocal}` reads the SAME variable it is setting, so the
+      # value in `.env` would always win and the default would never apply - MEASURED: the
+      # container came up trusting 127.0.0.1, which is exactly the host-run value that does
+      # not work here. A distinct name makes the override an override.
+      TRUST_PROXY: "${FORGERIGHT_TRUST_PROXY:-uniquelocal}"
+      # The app refuses a plain-HTTP request, so it redirects to this. It is the address the
+      # BROWSER uses, and it is https because that is the scheme the browser sees - TLS ends
+      # at nginx, not here.
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://forgeright:3000}"
+      # ALLOWED_HOST IS LEFT TO `.env`, and deliberately not defaulted here. The app refuses
+      # a Host header it was not told about, so this must name the hostname the BROWSER
+      # types - which only the operator knows. A default of "" would accept any host, which
+      # is safe on this network (nginx is the only thing that can reach it) but would hide a
+      # missing setting that matters the moment the container is reachable from anywhere
+      # else.
+      #
+      # INCLUDE THE PUBLIC HOSTNAME. `docker compose config` shows the effective list, and a
+      # request arriving with a name that is not on it is answered 421 rather than served -
+      # MEASURED, and it looks like a broken deploy rather than a missing entry.
+    volumes:
+      # --- THE TWO VOLUMES ARE SEPARATE ON PURPOSE ---
+      #
+      # THE STORE IS DATA. Organisations, answers, processes and scores. Losing it loses the
+      # work, and it is the thing to back up.
+      - forgeright-store:/data/store
+      #
+      # THE PROTON SESSION IS A CREDENTIAL. Losing it means one sign-in, nothing more. It is
+      # kept apart because its lifetime differs: the store is copied and retained, the
+      # session is disposable and should be re-created rather than migrated.
+      #
+      # THIS PATH IS WHERE THE BINARY LOOKS, not a convention of ours: XDG_CONFIG_HOME is
+      # set to /home/node/.config in the image, and proton-cli reads `proton-cli/` inside
+      # it. Sign in once, inside the running container, and it persists here:
+      #
+      #   docker compose -f docker-compose.deploy.yml exec forgeright \
+      #     proton-cli account login
+      #
+      # NO --profile, and no MAIL_PROTON_PROFILE in `.env`: signing in without the flag
+      # creates the profile named `default`, which is what proton-cli uses when no profile
+      # is configured. Set MAIL_PROTON_PROFILE only if you deliberately sign in as a NAMED
+      # profile instead.
+      #
+      # A NAMED VOLUME, not a bind mount: a bind mount would put the credential in a
+      # directory on the host, which is the thing being avoided.
+      - forgeright-proton:/home/node/.config/proton-cli
+    # --- PUBLISHED ONLY IF YOU ASK FOR IT ---
+    #
+    # NOTHING IS PUBLISHED BY DEFAULT, and that is deliberate: the container is reachable by
+    # name on `proxy-network`, which is how nginx reaches it, and publishing would also
+    # expose it on the host where anything else could connect. The security property of this
+    # file is that the ONLY route in is the proxy.
+    #
+    # SO THIS LINE IS COMMENTED OUT, and uncomment it only for a terminator that runs ON
+    # THE HOST rather than in a container and therefore cannot use the network by name -
+    # `tailscale serve`, for instance, which forwards to `http://127.0.0.1:3000`. Without
+    # the publish there is nothing listening on the host's 3000, which is a silent failure:
+    # the tunnel is up and every request fails.
+    #
+    # 127.0.0.1 RATHER THAN 3000, so the publish is loopback-only: a host-resident
+    # terminator reaches it, and nothing on the LAN or the tailnet can. The app serves plain
+    # HTTP here and refuses it from anywhere else, so the bind address is the only thing
+    # keeping that promise.
+    # ports:
+    #   - "127.0.0.1:3000:3000"
+    networks:
+      # HIS EXISTING NETWORK, created outside compose and shared with nginx. `external: true`
+      # means compose will not create it and will fail clearly if it is missing, rather than
+      # quietly making a second network that nginx is not on.
+      - proxy-network
+
+volumes:
+  forgeright-store:
+  forgeright-proton:
+
+networks:
+  proxy-network:
+    external: true

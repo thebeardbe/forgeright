@@ -40,14 +40,97 @@ TRUST_PROXY=uniquelocal
 Then:
 
 ```bash
-docker compose --profile proxy up -d
+docker compose -f docker-compose.deploy.yml up -d --build
 ```
 
-The application is now published on `127.0.0.1:3000` of the host. Point your
-terminator at it. It is the reader's job to connect the two, and one sentence is
-enough: **if your terminator runs on the host, loopback is all you need; if it runs in
-another container, the two need to share a network and you will publish on `0.0.0.0`
-instead** (see "The one case that changes the publish" below).
+**This uses `docker-compose.deploy.yml`, not the default file.** That one is the
+self-contained local console with its own Caddy; this one is for a server, and it expects
+the things a server already has.
+
+## What the deploy file expects
+
+**One thing, and it must exist before you start:** an external Docker network that your
+terminator is also on.
+
+```bash
+docker network create proxy-network       # if you do not already have one
+```
+
+The file refers to it as `proxy-network` and marks it `external: true`, so compose will
+not create it and will fail with a clear message if it is missing, rather than quietly
+making a second network your nginx is not on. **If you already run other services behind
+nginx, use the same network you use for those** and change the name in the file.
+
+**The container is named `forgeright`** and is on that network with **no published ports**.
+That is the security property, and it is simpler than publishing: nothing on the host can
+reach it, nothing on your LAN can reach it, and the only thing that can is whatever is on
+`proxy-network` - which is your nginx.
+
+**It binds `0.0.0.0:3000` inside the container** so nginx can reach it by name. Those
+defaults come from the image; the deploy file restates them because `.env` would
+otherwise override them with the values for running the app directly on the host (see
+below).
+
+**HOW TO CHECK IT IS REACHABLE, in one line:**
+
+```bash
+docker compose -f docker-compose.deploy.yml ps
+```
+
+**That should show exactly ONE line for the application**, named `forgeright`. If you see
+two, you are probably running `docker compose ps` with a profile filter, which selects what
+*starts* and not what is *running* - both filters show the same containers. **This file has
+one service and no profiles, so there is nothing to filter.**
+
+**THEN CHECK THE PORT, which is the second thing that goes wrong silently:**
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright \
+  node -e "fetch('http://127.0.0.1:3000/healthz').then(r => console.log(r.status))"
+```
+
+`200` means the app is listening inside the container. If nginx still cannot reach it, the
+container is not on the same network as nginx - `docker compose ps` shows no ports, which
+is correct, because nothing is published. **It is reachable BY NAME on `proxy-network`, not
+on a host port.**
+
+### If your terminator runs on the host instead
+
+`tailscale serve`, or any nginx outside Docker, forwards to `http://127.0.0.1:3000` and
+**needs a host port, which this file deliberately does not publish.** Uncomment the two
+lines under `# --- PUBLISHED ONLY IF YOU ASK FOR IT ---`:
+
+```yaml
+    ports:
+      - "127.0.0.1:3000:3000"
+```
+
+`127.0.0.1` rather than `3000` so the publish is loopback-only: your terminator reaches it
+and nothing on the LAN or the tailnet can. Without this line there is nothing listening on
+the host's 3000, the tunnel is up, and every request fails.
+
+## The nginx block
+
+```nginx
+location / {
+    proxy_pass http://forgeright:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+}
+```
+
+**`X-Forwarded-Proto` IS REQUIRED, and its absence is the failure you will hit.** Without
+it nginx forwards a plain-HTTP request, the app concludes the connection is insecure,
+`requireSecureConnection` answers **308**, and the browser follows the redirect to the same
+place: an infinite loop with a console that never loads. Measured, so it is not a
+theoretical risk.
+
+`Host` is needed because the app refuses a Host it was not told about - a name missing from
+`ALLOWED_HOST` is answered **421**, which also looks like a broken deploy.
+
+**`proxy_http_version` and `X-Forwarded-For` are NOT needed.** The app reads no client IP
+anywhere, so the extra header would be forwarded and ignored. `http://` in `proxy_pass` is
+correct: TLS ends at nginx, and the app is told that it did by the header above.
 
 ## Generating the two secrets
 
@@ -319,8 +402,8 @@ that, make sure the host's own firewall does not let anything else reach port 30
 ## Verifying it worked
 
 ```bash
-docker compose --profile proxy ps
-docker compose --profile proxy logs -f forgeright-app
+docker compose -f docker-compose.deploy.yml ps
+docker compose -f docker-compose.deploy.yml logs -f forgeright
 ```
 
 The log should end with something like:
