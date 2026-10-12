@@ -553,6 +553,27 @@ function moveOnLine(open) {
 const SUBSTITUTED = true;
 
 /**
+ * Whether every field's question has appeared in the conversation.
+ *
+ * THE MONOTONIC HALF OF EXHAUSTION, and the reason it is a count rather than a sentence: the
+ * number of DISTINCT FIELD QUESTIONS ASKED only ever grows, so once this is true it stays true.
+ * A comparison against the open field set - which the model can vary every turn - is not
+ * monotonic and can be defeated indefinitely.
+ *
+ * A FIELD WITH NO PHRASING IS NOT COUNTED, and that is deliberate: `FIELD_QUESTIONS` covers the
+ * matrix, so a field added to the schema without a question here would make this never true and
+ * trap the interview. The set is compared against the questions that EXIST rather than against a
+ * fixed fifteen, so the guard cannot outlive its own table.
+ *
+ * @param {Set<string>} askedQuestions The texts already sent to the participant.
+ * @returns {boolean}
+ */
+function asksEveryField(askedQuestions) {
+    const phrasings = Object.values(FIELD_QUESTIONS);
+    return phrasings.every((phrasing) => askedQuestions.has(phrasing));
+}
+
+/**
  * Replaces a question the conversation has already asked, when nothing has moved since.
  *
  * THE STALL THIS EXISTS FOR, measured on a live interview: the model asked ONE field's
@@ -590,12 +611,25 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
     // own sentence with another one, turn after turn, and the loop would move from the model to
     // the gate rather than ending. That is not a hypothetical - it was measured at turn 18 of a
     // simulation, and it is why the substitute is registered as the gate's.
-    const previous = askedBefore.find((entry) => entry.text === text && entry.substituted !== true);
-    if (!previous) return { text: content, substituted: false };
+    // A QUESTION THE GATE WROTE IS STILL THE GATE'S, EVEN WHEN IT REACHES US AS A PASS-THROUGH.
+    // The model repeats whatever is in the conversation, so a substitute it echoes arrives here
+    // as an ordinary assistant turn - and returning `substituted: false` for it loses the mark,
+    // which is how the same gate sentence reached a participant twice (measured: every duplicate
+    // in a live run was a consecutive pair). The text is the gate's sentence either way, so the
+    // mark is carried by the TEXT, not by which branch we came through.
+    const gateOwned = askedBefore.some((entry) => entry.text === text && entry.substituted === true);
+    const wasAsked = askedBefore.find((entry) => entry.text === text);
+
+    // A GATE SENTENCE THE MODEL ECHOED IS REPLACED, NOT RE-ISSUED. It has no `substituted`
+    // exemption from being MATCHED - that exemption exists so the gate does not argue with
+    // itself on its own next turn, and the echo is a different case: the participant is about to
+    // read the same sentence twice, which is the defect. So a gate-owned repeat with no progress
+    // falls through to the substitution below, exactly as a model repeat does.
+    if (!wasAsked) return { text: content, substituted: false };
 
     // PROGRESS SINCE IT WAS ASKED. Fewer fields open than last time means the participant has
     // answered something, so asking again is the legitimate second attempt rather than a stall.
-    if (computed.missing.length < previous.openCount) return { text: content, substituted: false };
+    if (computed.missing.length < wasAsked.openCount) return { text: content, substituted: gateOwned };
 
     // ASKED, NO PROGRESS. Prefer an open field whose question has not appeared yet.
     const askedQuestions = new Set(askedBefore.map((entry) => entry.text));
@@ -603,6 +637,43 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
         const phrasing = FIELD_QUESTIONS[field];
         return phrasing !== undefined && !askedQuestions.has(phrasing);
     });
+
+    // EXHAUSTION IS DECIDED BY WHAT HAS BEEN ASKED, NOT BY WHAT IS OPEN.
+    //
+    // THIS IS THE FIX FOR A TERMINATION DEFEAT, and the shape of the bug is worth stating.
+    // The check below used to be `askedQuestions.has(moveOnLine(computed.missing))`, and
+    // `moveOnLine` is a function of the OPEN FIELD SET. So exhaustion was only recognised once
+    // that exact SET had been seen before - and when the model varies its payload so `missing`
+    // rotates, a new set appears every turn, the comparison never matches, and the passing turns
+    // are unbounded. Measured against a rotating set: 25 turns where 15 were already enough, and
+    // a faster rotation runs indefinitely. The reviewer's live capture shows it at 40 turns.
+    //
+    // THE CONDITION IS MONOTONIC: every field's question has appeared in the conversation. That
+    // cannot un-happen, so no amount of payload churn can defeat it, and it does not care what
+    // `missing` currently claims.
+    //
+    // IT RUNS BEFORE THE SUBSTITUTION, which is the other half. The old check lived in the
+    // `no fresh target` branch, so a rotating `missing` kept offering fresh targets and the
+    // branch was never reached. Asking a question is what this interview is for, so a fresh
+    // target still wins on the first pass - but once NOTHING is left to ask, nothing is left to
+    // ask, whatever the model says is open.
+    //
+    // IT NEEDS A REPEAT TO TRIGGER, deliberately: a moving interview is left alone, and this
+    // only ends the conversation when the model has stopped making progress AND has run out of
+    // questions. That keeps the guard from cutting a healthy interview short.
+    if (fresh === undefined && asksEveryField(askedQuestions)) {
+        console.warn(
+            '[audit] the model repeated a question with no progress, and every field question has ' +
+            'already been asked; closing the interview on the ' +
+            `${computed.supplied.length} field(s) that were supplied`
+        );
+        return {
+            text: 'Thank you - that gives me a good picture of this one. I will stop there '
+                + 'rather than keep asking, and the analysis will work from what you have told me.',
+            substituted: SUBSTITUTED,
+            exhausted: true
+        };
+    }
 
     if (fresh === undefined) {
         // EVERY OPEN FIELD HAS BEEN ASKED. Nothing is left to substitute, and repeating a

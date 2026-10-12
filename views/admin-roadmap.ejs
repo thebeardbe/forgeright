@@ -200,7 +200,9 @@
                         <%= response.department %>
                         &middot; contributed: <%= (response.contributed || []).join(', ') || 'not recorded' %>
                     </p>
-                    <%- include('partials/response-fields', { data: response.data, includeSteps: false }) %>
+                    <%# The same resolver as the answers view, so a field appears everywhere it
+                        is shown or nowhere - which is what the partial's own comment promises. %>
+                    <%- include('partials/response-fields', { data: responseWorkflow(response.data), includeSteps: false }) %>
                 <% }); %>
 
                 <h3>Earlier versions</h3>

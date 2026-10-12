@@ -28,7 +28,7 @@ import { resolveTrustProxy, hostnameFromHeader } from './lib/trust-proxy.js';
 import { router as participantRouter } from './lib/auth/participant-routes.js';
 import { router as landingRouter } from './lib/landing.js';
 import { registerThemeRoute } from './lib/theme-route.js';
-import { shortInstant, shortDuration } from './lib/view-format.js';
+import { shortInstant, shortDuration, responseTitle, responseWorkflow } from './lib/view-format.js';
 import { router as apiRouter } from './lib/routes-api.js';
 import { DEFAULT_TOOL_ID } from './config/tools.js';
 import { FOLLOW_SYSTEM, PALETTE_IDS, PALETTES } from './lib/palettes.js';
@@ -151,6 +151,13 @@ app.use((req, res, next) => {
     // unambiguous rather than locale-formatted.
     res.locals.shortInstant = shortInstant;
     res.locals.shortDuration = shortDuration;
+    // THE RESPONSE-SHAPE RESOLVERS, exposed the same way, so a template reads
+    // `responseTitle(response.data)` rather than reaching into a payload shape it has to know.
+    // There are two shapes - an interview round saves `{ workflows: [...] }` and an imported one
+    // saves the workflow directly - and a template that assumed one of them rendered every live
+    // interview as "Untitled answer" with no fields. See lib/view-format.js.
+    res.locals.responseTitle = responseTitle;
+    res.locals.responseWorkflow = responseWorkflow;
     next();
 });
 

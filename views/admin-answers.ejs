@@ -41,7 +41,14 @@
         <details class="item">
             <summary>
                 <span class="summary-main">
-                    <strong><%= (response.data && response.data.task) || 'Untitled answer' %></strong>
+                    <%#
+                        THE SHAPE IS RESOLVED, NOT ASSUMED. This read `response.data.task`
+                        directly, which is undefined for every INTERVIEW round - those save
+                        `{ workflows: [...] }`, while only an imported round has `task` at the
+                        top level. So every live interview was titled "Untitled answer".
+                        `responseTitle` reads whichever shape arrived; see lib/view-format.js.
+                    %>
+                    <strong><%= responseTitle(response.data) %></strong>
                     <div class="meta">
                         <%= response.department %>
                         &middot; answered <%= shortInstant(response.created_at) %>
@@ -104,7 +111,10 @@
             <div class="detail">
                 <h3>What the participant said</h3>
                 <% /* The participant's own words, which the paragraph is checked against. */ %>
-                <%- include('partials/response-fields', { data: response.data }) %>
+                <%# The RESOLVED workflow, so the partial reads fields from the object that
+                    actually holds them. It already handles a null by saying the answer has no
+                    stored fields, which is the honest thing for a row with neither shape. %>
+                <%- include('partials/response-fields', { data: responseWorkflow(response.data) }) %>
 
                 <% if (response.grouping) { %>
                     <h3>Read as this process</h3>
