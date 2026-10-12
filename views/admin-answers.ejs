@@ -67,6 +67,20 @@
                     %>
                     <% if (response.submitted_at === null) { %>
                         <span class="tag" title="The participant has not finished this round. It is kept and readable, and it is left out of the roadmap's sorting and scoring until it is completed.">still in progress</span>
+                    <% } else if (response.empty) { %>
+                        <%#
+                            A FINISHED ROUND WITH NOTHING IN IT, which is a state the console
+                            could not previously see: `submitted_at` IS set, so the "still in
+                            progress" tag does not apply, and the row rendered exactly like a
+                            completed interview - `Untitled answer`, no fields, and a Rejudge
+                            button promising a result the data cannot give.
+
+                            IT IS DERIVED, not stored: no field carries evidence, which means
+                            every one was declined. The message says what happened rather than
+                            presenting it as a failure, because a participant who could not put
+                            the work into words has told the reader something true.
+                        %>
+                        <span class="tag" title="Every question was asked and none was answered, so this round holds no evidence. Nothing was scored from it, and there is nothing to rejudge.">nothing answered</span>
                     <% } %>
                     <% if (response.grouping) { %>
                         <span class="tag<%= response.grouping.decidedBy === 'admin' ? ' departments' : '' %>">
@@ -166,7 +180,7 @@
                     decision seen from the other side. A round that is not finished has no
                     grouping to dispute yet.
                 %>
-                <% if (response.submitted_at !== null) { %>
+                <% if (response.submitted_at !== null && !response.empty) { %>
                 <% /* A rejudge is a request with a reason, never a category to pick. */ %>
                 <form class="rejudge" method="post" action="<%= basePath %>/admin/answers/<%= response.id %>/rejudge">
                     <label for="reason-<%= response.id %>">This answer was read wrong</label>
@@ -174,6 +188,12 @@
                               placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, and is free to disagree."></textarea>
                     <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Rejudge this answer</button>
                 </form>
+                <% } else if (response.empty) { %>
+                    <p class="meta">
+                        Every question was asked and none was answered, so there is nothing here to
+                        group, score or rejudge. The round is kept because "we asked and nobody
+                        could say" is itself worth knowing.
+                    </p>
                 <% } else { %>
                     <p class="meta">
                         This round is still in progress, so it is not grouped or scored. Rejudging

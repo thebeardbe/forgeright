@@ -177,7 +177,17 @@
             }
 
             appendMessage('ai', S.aiLabel, data.content);
-            state.conversation.push({ role: 'assistant', content: data.content });
+            // `substituted` AND `missing` TRAVEL WITH THE TURN, because the server needs them
+            // on the way back. A question this gate wrote must not be mistaken for the model's
+            // own on a later turn - that is what stops the gate replacing its own sentence in a
+            // loop - and the open-field count is what tells a legitimate second attempt from a
+            // stall. Both are replayed verbatim, like every other assistant turn.
+            state.conversation.push({
+                role: 'assistant',
+                content: data.content,
+                substituted: data.substituted === true,
+                missing: Array.isArray(data.missing) ? data.missing : []
+            });
 
             // THE PAYLOAD ARRIVES AS `audit`, NORMALISED BY THE SERVER, whatever
             // shape the model used: an interview reply carries `processes` and the
@@ -254,6 +264,15 @@
             // must not contradict it.
             const nothingAnswered = data.status === 'nothing_answered';
 
+            // THE GATE HAS RUN OUT OF QUESTIONS. Every field has had its question and the
+            // participant has answered; what is still open cannot be settled by asking again, so
+            // the round ends here on what WAS supplied. Without this the page keeps the input
+            // open and the model repeats itself, which is the stall the guard exists to end.
+            //
+            // IT IS NOT `nothing_answered`: this round has answers in it. It finalises like a
+            // completion and is scored like one, because the fields that were given are real.
+            const exhausted = data.exhausted === true;
+
             // A COMPLETION CLAIM MUST NOT NARROW THE PAYLOAD.
             //
             // The matrix gate already refuses to FINISH a process with fields missing.
@@ -286,10 +305,20 @@
             // `complete`: `submitted_at` is the store's only way to say a round is finished,
             // and leaving it open is the trap. The STATUS is what says it ended with nothing
             // in it, and that lives in the reply the console already reads.
-            await saveResponse(toSave, isComplete || nothingAnswered);
+            await saveResponse(toSave, isComplete || nothingAnswered || exhausted);
 
             if (nothingAnswered) {
                 $('input-area').classList.add('hidden');
+                return;
+            }
+            if (exhausted) {
+                // The round ends, and it is scored on what was supplied - unlike the
+                // nothing-answered case, where there would be nothing to score.
+                $('input-area').classList.add('hidden');
+                if (payload) {
+                    state.audit = payload;
+                    await runScoring();
+                }
                 return;
             }
 

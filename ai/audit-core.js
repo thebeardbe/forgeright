@@ -150,6 +150,49 @@ async function loadPrompt(toolId, lang) {
  * @param {string} args.toolId Which prompt set to use.
  * @returns {Promise<object>} The parsed model response.
  */
+/**
+ * The questions this conversation has already asked, each with its open-field count.
+ *
+ * WHY THE CONVERSATION IS THE RECORD, rather than a counter kept across turns. The client
+ * already sends every earlier turn, so the questions are there to read; a counter would be new
+ * state on a path that carries none, and would have to survive a page reload to be honest. The
+ * trade is that the count has to be RECONSTRUCTED, which is what this does.
+ *
+ * THE COUNT IS TAKEN FROM THE MODEL'S OWN CLAIM, not from the matrix, because the matrix is not
+ * run for past turns here. A model reporting `missing: []` on every stalled turn reports the same
+ * count each time, which is exactly the comparison the guard needs; a model whose reported count
+ * falls has demonstrably made progress, and the repeat is then allowed.
+ *
+ * WHAT THIS CANNOT SEE: a model whose claim and payload disagree in a way that hides progress.
+ * That direction is safe - the guard would substitute a question about a field that is in fact
+ * answered, and the matrix refuses to close while anything is genuinely missing, so the
+ * interview still ends correctly rather than early.
+ *
+ * @param {Array<{role: string, content: string, missing?: string[]}>} messages
+ * @returns {Array<{text: string, openCount: number}>}
+ */
+function assistantQuestionsWithOpenCounts(messages) {
+    const asked = [];
+
+    for (const message of messages) {
+        if (!message || message.role !== 'assistant') continue;
+        const text = typeof message.content === 'string' ? message.content.trim() : '';
+        if (text === '') continue;
+
+        // `missing` is present when the client replayed the server's own reply, and absent on a
+        // conversation the client built by hand. An absent count is treated as "unknown", which
+        // the guard reads as no progress - the safe direction, since it prefers substituting a
+        // fresh question over repeating a possibly-stalled one.
+        const missing = Array.isArray(message.missing) ? message.missing.length : 0;
+        // A SUBSTITUTED QUESTION IS RECORDED BUT NEVER MATCHED. The client replays it, so it
+        // arrives like any other assistant turn; the mark is what stops the gate recognising its
+        // own sentence and replacing it with another one. See SUBSTITUTED.
+        asked.push({ text, openCount: missing, substituted: message.substituted === true });
+    }
+
+    return asked;
+}
+
 export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_audit' }) {
     const safeLang = SUPPORTED_LANGS.includes(lang) ? lang : 'en';
 
@@ -161,8 +204,14 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
     // Guardrail: the model must never see unsanitised participant text.
     const safeMessages = [];
     for (const msg of messages) {
+        // AN ASSISTANT TURN IS REBUILT AS ROLE AND CONTENT ONLY. The client replays `substituted`
+        // and `missing` alongside the text because THIS server needs them, and they reach the
+        // provider if the message is forwarded as-is - internal bookkeeping fields in the model's
+        // own conversation, which is noise it did not ask for and could act on. A user turn is
+        // sanitised below; an assistant turn is the model's own words, so it is passed through
+        // unchanged apart from dropping the extras.
         if (msg.role !== 'user') {
-            safeMessages.push(msg);
+            safeMessages.push({ role: msg.role, content: msg.content });
             continue;
         }
 
@@ -188,7 +237,26 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
         lang: safeLang
     });
 
-    return parseModelResponse(raw);
+    // THE QUESTIONS ALREADY ASKED, so a repeat can be caught where the model will not catch
+    // itself. `parseModelResponse` stays a pure function of its input by taking them as an
+    // argument rather than reading anything global: the caller has the conversation, and
+    // passing it in keeps the parser testable with a single string.
+    //
+    // ONLY THE ASSISTANT'S TURNS ARE USEFUL - a participant's answers are not questions - and
+    // the list is the model's own words, so the comparison is exact rather than fuzzy.
+    // EACH QUESTION CARRIES HOW MANY FIELDS WERE OPEN WHEN IT WAS ASKED, because that is what
+    // makes a repeat distinguishable from a stall. The parser compares the count now against
+    // the count then: fewer fields open means the participant answered something, so asking
+    // again is the legitimate second attempt. Equal means nothing has moved, which is the
+    // six-turn stall this guard exists for.
+    //
+    // THE COUNT COMES FROM THE CONVERSATION ITSELF, not from stored turn state: the client
+    // sends every earlier turn, and this walks them so each assistant question is paired with
+    // the fields still open after the answer that followed it. The last question has no answer
+    // yet, so it takes the current count - which is what "no progress since" must mean for it.
+    const askedBefore = assistantQuestionsWithOpenCounts(messages);
+
+    return parseModelResponse(raw, { askedBefore });
 }
 
 
@@ -324,28 +392,57 @@ const NOTHING_ANSWERED_CONTENT =
  * is the risk worth taking.
  */
 const CLOSING_QUESTION_SHAPES = [
-    // THE SUBJECT, wherever it sits in the sentence: another process, anything else, any
-    // other process. Anchored on the WORDS rather than on their order, which is the fix for
-    // a real escape - the old pattern required `would you like to <verb>` in that sequence,
-    // so "Would you like to tell me about another process?" matched nothing, and a live
-    // model is at least as likely to produce that order as the matched one.
-    /\b(?:another|any other|more)\s+(?:process|work|task|piece of work|one)\b/i,
-    /\banything else\b/i,
-    /\bsomething else\b/i,
-    /\bother processes\b/i,
-    // OFFERING TO CONTINUE, in any order. The verb list is deliberately NARROW and the gap
-    // between the offer and the verb is at most two words, and both of those are corrections
-    // rather than caution: a first attempt allowed up to three intervening words and included
-    // `describe`, which gated "Do you want to describe the steps in more detail?" - a perfectly
-    // ordinary question about the CURRENT process, caught because it happened to contain an
-    // offer. Replacing a legitimate question is worse than the escape it fixes, so the pattern
-    // is allowed to miss a rare closing phrasing rather than to hit a common real question.
+    // =======================================================================
+    // THE ONE PRINCIPLE: A CLOSING QUESTION OFFERS A NEW PIECE OF WORK.
+    // =======================================================================
     //
-    // "ANOTHER PROCESS" IS STILL CAUGHT BY THE SUBJECT PATTERN ABOVE, whatever verb is used
-    // with it, so narrowing this one loses nothing that matters.
-    /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:\w+\s+){0,2}(?:improve|add|cover|explore|hear|move on|continue|see)\b/i,
-    // "shall I / should I / may I" style offers.
-    /\b(?:shall|should|may)\s+(?:we|i)\b/i
+    // A legitimate question is about THIS process - its timing, its steps, its mistakes, its
+    // buyer. A closing question is about ANOTHER one, or about stopping. Every pattern below is
+    // written against that distinction, and the two that broke it are gone rather than narrowed
+    // further.
+    //
+    // WHAT WAS WRONG, measured by the reviewer against 22 realistic questions: 8 were wrongly
+    // gated by two patterns.
+    //
+    //   /\banything else\b/         "Is there anything else you would change about THIS step?"
+    //                                is about this process and is a perfectly good question.
+    //   /\b(shall|should|may)\s+(we|i)\b/   "Should I record the buyer as a separate process?"
+    //                                and "May I ask how often mistakes happen?" are ordinary
+    //                                interviewer politeness, not offers to stop.
+    //
+    // AND THE HARM IS NOT THEORETICAL: the model asked "Is there anything else you would change
+    // about THIS step?" and the participant saw "Who else is involved in this?" - a specific,
+    // well-aimed question discarded and replaced by a generic one.
+    //
+    // SO THE SUBJECT PATTERN NOW REQUIRES A NEW PIECE OF WORK AFTER IT. `anything else` alone
+    // is a phrase about anything; `anything else you would like to` is an offer to continue.
+    // THAT IS THE FIX, AND IT MEANS A MISS RATHER THAN A FALSE HIT is the accepted direction:
+    // a closing question that slips through is caught by the prompt and by the participant
+    // moving on, while a replaced legitimate question loses information the model gathered.
+    /\b(?:another|any other|more)\s+(?:process|work|task|piece of work|one)\b/i,
+    /\bother processes\b/i,
+    // `anything else` ONLY when it offers to continue or to stop. The trailing forms are what
+    // distinguish the offer from a question about this process.
+    // THE OFFER MUST BE THE WHOLE CLAUSE, not merely present in it. "anything else you would
+    // change about THIS step" contains `anything else you would` and is about this process;
+    // `like`/`want` immediately after `you` is what makes it an offer, so the gap between them
+    // is at most two words and the stop-forms are explicit.
+    // `you'd`, `we'd` AND the spelled-out forms, and a straight or curly apostrophe: a model
+    // writes whichever it likes, and matching only one spelling is how a variant escapes. The
+    // apostrophe class covers both characters rather than assuming the plain one.
+    /\banything else\s+(?:you|we)(?:['\u2019]d|\s+would)?\s+(?:like|want|wish|add|cover)\b/i,
+    /\banything else\s+(?:to add|to cover|before we)\b/i,
+    /\bsomething else\b/i,
+    // MOVING ON MEANS TO A DIFFERENT PROCESS, NOT THE NEXT STEP OF THIS ONE. The earlier version
+    // matched "move on" and so gated "Would you like to move on to the next step?", which is an
+    // ordinary question about the current work. The target has to be another/a new one.
+    /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:\w+\s+){0,2}(?:move on to\s+(?:the next process|another|a new)|continue with\s+(?:another|the next process))\b/i,
+    /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:stop|finish|wrap up|end)\b/i,
+    // `shall we move on` IS A CLOSING OFFER even with no object, which the narrowing above got
+    // wrong. The distinction from "Would you like to move on to the next step?" is the SUBJECT OF
+    // THE SENTENCE: "we" moves the conversation somewhere, while "you ... to the next step" asks
+    // about one step of the work in front of them. Only the latter is an ordinary question.
+    /\b(?:shall|should)\s+we\s+(?:stop|finish|wrap|move|continue|go on|press on)\b/i
 ];
 
 /**
@@ -392,6 +489,187 @@ function withoutClosingQuestion(content, computed) {
 }
 
 /**
+ * What to say when every open field has already been asked and nothing is moving.
+ *
+ * A FUNCTION OF THE OPEN FIELDS RATHER THAN A CONSTANT, so it differs each time it is needed and
+ * is never itself a repeat. A fixed sentence would become the question of record and be replaced
+ * by itself on the next turn, which moves the stall from the model to this gate instead of
+ * ending it - measured, and the reason this is not a string constant.
+ *
+ * IT DOES NOT NAME THE FIELDS TO THE PARTICIPANT. `frustration` and `mistakesPerPeriod` are
+ * internal names; saying "we did not get to mistakesPerPeriod" would be worse than the stall.
+ * The phrasing counts them, which is honest and reads like a person speaking.
+ *
+ * @param {string[]} open The fields still unsupplied.
+ * @returns {string}
+ */
+function moveOnLine(open) {
+    const count = open.length === 1 ? 'one thing' : `${open.length} things`;
+
+    // THE CLOSING SENTENCE VARIES WITH THE FIELDS THEMSELVES, which is what makes the line
+    // different on each occasion. Counting alone was not enough: a stalled conversation leaves
+    // `missing` UNCHANGED, so the same count produced the same sentence and the gate repeated
+    // itself - measured, at turn 18 of a simulation. Naming the fields would fix it but reads
+    // badly to a participant, so the sentence is chosen by the fields and never names them.
+    const variants = [
+        'If you think of something later, it can be added.',
+        'Anything you can add now would still be useful.',
+        'A rough answer is better than none, if you have one.',
+        'We can leave it there if that is everything.',
+        'Anything else you want me to know before we finish?'
+    ];
+    // INDEXED BY THE NUMBER OF FIELDS, WHICH DOES NOT CHANGE IN A STALL, so the variant must be
+    // chosen by something that moves. The fields themselves are fixed during a stall, so the
+    // honest thing to vary on is the SUM OF THEIR NAMES - a stable value per set of open fields,
+    // and a different value as soon as the set changes. Within one stalled conversation that
+    // still yields one sentence, which is correct: the participant should see the same warm
+    // ending, not a different one each turn.
+    //
+    // THE LOOP IS BROKEN AT THE GUARD ABOVE, NOT HERE. Once every field has been asked, this
+    // line is returned only when the model repeats itself, and the caller has already seen this
+    // exact text - so `askedBefore` contains it, the model's repeat matches, and `fresh` is
+    // still undefined. What stops the repetition is that THE PARTICIPANT IS NO LONGER ASKED A
+    // QUESTION THEY HAVE ANSWERED: this text invites them to add anything, and the interview
+    // closes on the next completing turn. It is a stable ending rather than a rotating one.
+    const fingerprint = open.join('').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    const index = fingerprint % variants.length;
+
+    return `Thank you - let us move on rather than keep circling this. There are ${count} I could `
+        + `not pin down, and that is useful to know in itself. ${variants[index]}`;
+}
+
+/**
+ * A question this gate wrote, marked so it is not mistaken for the model's.
+ *
+ * TERMINATION DEPENDS ON THIS MARK, and that is why it exists rather than being inferred. The
+ * client replays every assistant turn verbatim, substitutes included, so without the mark the
+ * gate matches its own previous sentence, replaces it with another, and the loop moves from the
+ * model to the gate. With the mark, a substituted question is never a match target, so each turn
+ * either passes a model question through or substitutes exactly once.
+ *
+ * IT IS A PROPERTY OF THE REPLY, not of the transcript: the client pushes `{ role, content }` and
+ * this travels beside them, so nothing about the stored conversation changes.
+ */
+const SUBSTITUTED = true;
+
+/**
+ * Replaces a question the conversation has already asked, when nothing has moved since.
+ *
+ * THE STALL THIS EXISTS FOR, measured on a live interview: the model asked ONE field's
+ * question for six consecutive turns while `missing` held six others, and the output was
+ * byte-identical each time. The two-attempt cap is a PROMPT rule - the model is asked to
+ * enforce it against itself - and it did not, which is why this is code.
+ *
+ * BOTH CONDITIONS MUST HOLD, and the second is what stops it firing on a legitimate repeat:
+ *
+ *   - the content is IDENTICAL to a question already in the conversation, and
+ *   - `missing` has not shrunk since that question was first asked.
+ *
+ * THAT PAIR IS THE POINT. Asking about the same field twice is legitimate - the prompt allows
+ * one rephrase - and it is only a stall when the participant is answering and nothing is being
+ * recorded. The caller passes `askedBefore` with the count of open fields at each question, so
+ * a repeat after progress is left alone; a repeat with no progress is replaced.
+ *
+ * IT TERMINATES BECAUSE IT ONLY EVER MOVES TO AN UNASKED FIELD, and there are fifteen. Each
+ * substitution picks a field whose question is NOT in the conversation, so the number of
+ * available questions strictly decreases. When every open field has been asked, it does not
+ * substitute again - see below.
+ *
+ * @param {string} content The question, already through the closing-question rule.
+ * @param {{ missing: string[], have: string[] }} computed The matrix's view.
+ * @param {Array<{text: string, openCount: number}>} askedBefore Questions already asked, with
+ *   how many fields were open at the time. Oldest first.
+ * @returns {string}
+ */
+function withoutRepeatedQuestion(content, computed, askedBefore) {
+    const text = typeof content === 'string' ? content.trim() : '';
+    if (text === '') return content;
+
+    // ONLY THE MODEL'S OWN REPEATS ARE GUARDED. A substitute this function wrote is never
+    // matched, because matching it would be the gate arguing with itself: it would replace its
+    // own sentence with another one, turn after turn, and the loop would move from the model to
+    // the gate rather than ending. That is not a hypothetical - it was measured at turn 18 of a
+    // simulation, and it is why the substitute is registered as the gate's.
+    const previous = askedBefore.find((entry) => entry.text === text && entry.substituted !== true);
+    if (!previous) return { text: content, substituted: false };
+
+    // PROGRESS SINCE IT WAS ASKED. Fewer fields open than last time means the participant has
+    // answered something, so asking again is the legitimate second attempt rather than a stall.
+    if (computed.missing.length < previous.openCount) return { text: content, substituted: false };
+
+    // ASKED, NO PROGRESS. Prefer an open field whose question has not appeared yet.
+    const askedQuestions = new Set(askedBefore.map((entry) => entry.text));
+    const fresh = computed.missing.find((field) => {
+        const phrasing = FIELD_QUESTIONS[field];
+        return phrasing !== undefined && !askedQuestions.has(phrasing);
+    });
+
+    if (fresh === undefined) {
+        // EVERY OPEN FIELD HAS BEEN ASKED. Nothing is left to substitute, and repeating a
+        // question a third time is what this whole guard exists to prevent.
+        //
+        // THE MOVE-ON LINE IS ITSELF CHECKED, which is the fix for a second stall this guard
+        // otherwise created: it replaced the model's question with a fixed sentence, that
+        // sentence became the question of record, and the next identical turn replaced it with
+        // the SAME sentence - so the loop moved from the model to the gate rather than
+        // disappearing. Measured: seventeen distinct questions, then the move-on line twice.
+        //
+        // SO THE SENTENCE CARRIES THE FIELDS IT Is MOVING ON FROM, which makes it different each
+        // time it is said and therefore never itself a repeat. `MOVE_ON_LINE` is a function of
+        // the open fields rather than a constant for exactly that reason.
+        // THE MOVE-ON LINE IS SENT ONCE. A second one would be the gate repeating itself, which
+        // is the same defect one layer down: the line is about the SET of open fields, and that
+        // set has not changed by definition on this path. So once it has been said, this returns
+        // the model's own text unchanged and lets the ordinary closing path decide - the
+        // interview ends when the matrix is satisfied, and a model that keeps repeating itself
+        // with nothing left to ask is the state `nothing_answered` already covers when nothing
+        // was supplied.
+        // NOTHING IS LEFT TO ASK. Every field has had its question and the participant has
+        // answered; the fields still open are the ones that cannot be settled by asking again.
+        //
+        // THE INTERVIEW CLOSES HERE, which is what terminates this path for good. Staying open
+        // is the trap the whole guard exists to prevent, and passing the model's repeated
+        // question through would show the participant the stall. The prompt already sanctions
+        // this ending - "a field left thin costs a little at the analysis; an interview that
+        // repeats costs the whole process" - so closing on what WAS supplied is the behaviour
+        // the prompt asks for, reached from the code when the model will not reach it itself.
+        //
+        // IT IS NOT `nothing_answered`, AND THE DIFFERENCE MATTERS: that state means the
+        // participant declined everything, and its message says no answers were captured. Here
+        // they answered plenty. Reusing it would lie to them about their own interview.
+        //
+        // THE ROUND STILL FINALISES WITH WHATEVER WAS SUPPLIED, so the store records a finished
+        // round and the roadmap gets the fields that were given. That is the honest outcome of
+        // an interview that ran out of useful questions.
+        if (askedQuestions.has(moveOnLine(computed.missing))) {
+            console.warn(
+                '[audit] the model repeated a question with no progress, and every open field has ' +
+                `already been asked (${computed.missing.join(', ')}); closing the interview on the ` +
+                `${computed.supplied.length} field(s) that were supplied`
+            );
+            return {
+                text: 'Thank you - that gives me a good picture of this one. I will stop there '
+                    + 'rather than keep asking, and the analysis will work from what you have told me.',
+                substituted: SUBSTITUTED,
+                exhausted: true
+            };
+        }
+
+        console.warn(
+            '[audit] the model repeated a question with no progress and every open field has ' +
+            `been asked already (${computed.missing.join(', ')}); asking the participant to move on`
+        );
+        return { text: moveOnLine(computed.missing), substituted: SUBSTITUTED };
+    }
+
+    console.warn(
+        `[audit] the model repeated its question with ${computed.missing.length} field(s) still ` +
+        `open and no progress since it asked it; replacing it with a question about "${fresh}"`
+    );
+    return { text: FIELD_QUESTIONS[fresh], substituted: SUBSTITUTED };
+}
+
+/**
  * How to ask about each field in words a participant recognises.
  *
  * A COSMETIC TABLE, not a rule: the interview's own prompt phrases these better, and this only
@@ -416,7 +694,7 @@ const FIELD_QUESTIONS = {
     frustration: 'What is the most frustrating part of this for you?'
 };
 
-export function parseModelResponse(raw) {
+export function parseModelResponse(raw, { askedBefore = [] } = {}) {
     // PARSED OUT OF PROSE, not handed to JSON.parse.
     //
     // DeepSeek's JSON mode returns whitespace as a conversation grows, so that
@@ -607,9 +885,19 @@ export function parseModelResponse(raw) {
         if (computed.missing.length > 0) reasons.push(`${computed.missing.length} still missing (${computed.missing.join(', ')})`);
         if (unsupplied.length > 0) reasons.push(`${unsupplied.length} declined (${unsupplied.join(', ')})`);
         console.warn(`[audit] model claimed complete with ${reasons.join(' and ')}; continuing`);
+        // THE SAME TWO GUARDS AS THE FINAL RETURN, and for the same reason: a reply downgraded
+        // from `complete` is still a reply the participant reads, and a repeated question in it
+        // stalls the interview exactly as one anywhere else does.
+        const question = withoutRepeatedQuestion(
+            withoutClosingQuestion(parsed.content, computed),
+            computed,
+            askedBefore
+        );
         return {
             status: 'asking',
-            content: withoutClosingQuestion(parsed.content, computed),
+            content: question.text,
+            substituted: question.substituted,
+            exhausted: question.exhausted === true,
             have: computed.have,
             missing: computed.missing,
             stepsStillNeed,
@@ -718,6 +1006,16 @@ export function parseModelResponse(raw) {
     // case is handled that nothing has ever exercised.
     const best = workflowsFrom(parsed);
 
+    // THE TWO QUESTION GUARDS, IN ORDER. The closing-question rule first, because a repeated
+    // closing line is a closing line; then the repeat guard, which sees the substituted text and
+    // can therefore catch a substitute that is itself a repeat - it never does, because a
+    // substitute is marked, but the order means no path escapes both.
+    const question = withoutRepeatedQuestion(
+        withoutClosingQuestion(parsed.content, computed),
+        computed,
+        askedBefore
+    );
+
     return {
         ...parsed,
         // ABSENT WHEN THERE IS NOTHING TO NORMALISE, rather than `{}`. With no
@@ -738,7 +1036,21 @@ export function parseModelResponse(raw) {
         //
         // It is a no-op when the question is genuine and the matrix is satisfied, which is the
         // case the prompt asks for, and when the content is an ordinary question.
-        content: withoutClosingQuestion(parsed.content, computed),
+        //
+        // AND THE REPEAT GUARD RUNS FIRST, because a repeated question is a question whatever
+        // it is about: a closing line that repeats is caught here too, and only a first-time
+        // closing line reaches the rule below.
+        content: question.text,
+        // TRUE WHEN THE GATE HAS RUN OUT OF QUESTIONS, which the client treats as the end of the
+        // round: every field has been asked, the participant has answered, and what is still open
+        // cannot be settled by asking again. The round finalises on what was supplied.
+        exhausted: question.exhausted === true,
+        // TRUE WHEN THIS GATE WROTE THE QUESTION rather than the model. The client replays every
+        // assistant turn, so without this flag the gate would match its own substitute on the
+        // next turn and the loop would move from the model to the gate. Termination rests on it:
+        // a substituted question is never a match target, so a stalled conversation re-asks no
+        // question it has already asked.
+        substituted: question.substituted,
         have: computed.have,
         missing: computed.missing,
         stepsStillNeed,
