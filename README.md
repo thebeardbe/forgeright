@@ -325,7 +325,19 @@ scripts/build-palette-css.js  regenerates palette.css from the data
 lib/mail/                  mail sending behind one interface (console, proton)
 views/audit.ejs            the questionnaire page
 views/admin-login.ejs      the sign-in page and the cookie notice
-views/admin-console.ejs    where signing in lands; the real console is step 3
+views/admin-console.ejs    where signing in lands: the organisation, its invitations,
+                           its users, and the rejudge entry points
+views/admin-roadmap.ejs    THE DELIVERABLE: every process, highest score first, with its
+                           steps, its terms, and the answers behind it
+views/admin-answers.ejs    every answer, with the process it was grouped into and why
+views/partials/console-notice.ejs  the outcome of a rejudge, shown on both console pages
+views/partials/response-fields.ejs the participant's own fields, rendered once for both
+views/partials/demo-banner.ejs     the read-only notice for a demo session
+lib/auth/console.js        the console routes: sign-in scope, invitations, users
+lib/auth/console-views.js  the two view routes, mounted inside the console router
+lib/auth/rejudge.js        the rejudge: re-identify a response, then reweigh the process
+lib/auth/demo-login.js     the read-only demo link: config, token, session marking
+lib/auth/demo-readonly.js  what a demo session may not do
 public/js/audit.js         chat and analysis rendering
 test/                      tests, written independently of the builder
 ```
@@ -468,6 +480,43 @@ Admin sign-in is deliberately different: single use, and 15 minutes. It grants a
 organisation rather than one person's answers, so the blast radius is not
 comparable and neither is the rule.
 
+### The read-only demo link
+
+A link you can send to somebody who wants to see the tool with one organisation's
+data, without giving them an account and without any way to change anything.
+
+**It is off unless you turn it on.** Four variables, all in the environment; see
+`.env.example` for the full description of each.
+
+| Variable | What it does |
+| :--- | :--- |
+| `DEMO_LOGIN` | must be `1`. **Without it the route is not registered at all**, so an unconfigured deployment answers `/admin/demo` exactly as it answers any unknown console path |
+| `DEMO_LOGIN_ORG` | the organisation to show, read from configuration and never from the request |
+| `DEMO_LOGIN_TOKEN` | the credential, at least 24 characters, compared in constant time |
+| `DEMO_LOGIN_DAYS` | how long links stay valid, 60 by default |
+
+**Read-only is enforced on the server, not by hiding buttons.** Every mutating route
+on the admin router refuses a demo session with a 403, and a route added later is
+refused by default: the check is mounted before every route rather than added to each
+one, and it fails closed. The controls on screen are shown disabled with a line
+saying the demo is read-only, because a console with the buttons missing reads as
+broken software. Signing out is the one action a demo session may still take.
+
+**Why a separate route rather than a long-lived sign-in token.** The sign-in tokens
+are single-use and short-lived, and both rules are load-bearing. A link that works for
+weeks is a different kind of credential, not a weakened one, so it is modelled
+separately: weakening the real sign-in token to serve the demo would take a live
+defence away from the thing that guards actual access.
+
+**The token is never logged and never stored.** Only its hash would be, and the demo
+token is not in the database at all: it lives in configuration, so a database read
+does not hand over the link that leaves the building. Every use is logged with the
+organisation and the time, so a leaked link is visible after the fact.
+
+**The organisation is pinned when a link is used**, so rotating `DEMO_LOGIN_ORG` does
+not move viewers who already hold a session. Re-issue the link if that is what you
+want, and note the pinned session stays read-only either way.
+
 ### Themes
 
 The appearance is one of 22 palettes, chosen per browser.
@@ -544,8 +593,19 @@ proxy config and in `.env`, never hardcoded in the application.
   link.** A participant with a token can answer, and answers are stored against
   their invitation, but the bot conversation itself still runs from the browser
   session and does not yet write through the store on every turn.
-- Admin sign-in and the console exist (steps 2 and 3). The console shows one
-  organisation: its name, its invitations with opened state, and its users.
+- **The console is built for all three workflows, and it is read-only for a demo
+  session.** A signed-in admin sees one organisation: its name, its invitations with
+  opened state, and its users, plus the two views that are the point of the tool.
+  **Every answer** shows each response with the process it was grouped into, the
+  model's reasoning for that grouping, the participant's own words beside it, and the
+  version history. **The roadmap** is the deliverable: every process sorted by score,
+  each with its steps (the ones needing a person marked), the paragraph explaining the
+  number, the ten terms behind it, the answers behind it, and its earlier readings.
+  A process born from a split the model was unsure about carries a "split while
+  unsure" tag until an admin rejudges it. **Rejudge** is a reasoned request, not a
+  category: it re-identifies the response through workflow 2 and then reweighs, from
+  either the answer or the process, and the earlier score stays readable.
+  See "The read-only demo link" above for sending this to somebody without an account.
 - **Every address that signs in becomes an admin of its own organisation.**
   There is no allow-list: self-service is the intended first-run behaviour, and
   the login response is identical for a known and an unknown address. Requiring
@@ -555,7 +615,7 @@ proxy config and in `.env`, never hardcoded in the application.
   others working, which is what a participant who missed the first email needs;
   "Reset all access" and "Lost my link" revoke them all and issue one. Neither a
   resend nor a reset can re-mail the *exact* earlier link: the database keeps only
-  a hash, never the readable value. See "Long-lived participant links" above for
+  a hash, never the readable value. See "Long-lived participant links, and the trade accepted" above for
   why that is the accepted trade, and the console's help text for what each button
   does.
 - **Rate limiting is in memory, per process.** It stops a loop or a script
