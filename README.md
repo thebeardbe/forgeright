@@ -56,8 +56,63 @@ before any credential exists.
 
 ```bash
 cp .env.example .env      # then set SESSION_SECRET
-docker compose up
+docker compose up         # the local console, on https://localhost:8443
 ```
+
+**There are two shapes and `docker compose up` picks the local one.** `.env.example`
+sets `COMPOSE_PROFILES=local`, which is what chooses it and what makes a bare
+`docker compose up` start anything at all: both shapes sit behind a profile so that
+neither drags the other along, and without that line the command succeeds and starts
+nothing.
+
+| | Local console | Behind a proxy |
+|---|---|---|
+| command | `docker compose up` | `docker compose --profile tailscale up` |
+| what is published | Caddy on `8443`, TLS terminated here | the app on `127.0.0.1:3000`, no Caddy |
+| URL | `https://localhost:8443/admin` | whatever terminates the TLS |
+| TLS | Caddy's own CA, self-signed | terminated by the proxy in front |
+
+Switch between them: `docker compose --profile local down` first, or the previous
+shape keeps its port.
+
+### The shape for a proxy that already terminated TLS
+
+For a live instance behind `tailscale serve`, which proxies
+`https://pi-agents.tail399956.ts.net/forgeright` to `http://127.0.0.1:3000`:
+
+```bash
+docker compose --profile tailscale up
+```
+
+**No Caddy in this shape, and that is the point.** Tailscale has already terminated
+the TLS, so a second terminator in the chain would be TLS inside TLS, and Caddy's
+certificate is issued for `localhost` by its own CA and cannot answer for a tailnet
+name anyway. The application is published directly and trusts the forwarded protocol
+header, because the hop in front of it is named in `TRUST_PROXY`.
+
+**It is published on `127.0.0.1`, not `0.0.0.0`.** The app refuses plain HTTP by
+design, so offering one on every interface would expose it to the LAN and to the
+tailnet. Bound to loopback it is reachable by `tailscale serve` - which dials its
+target from this host - and by nothing else.
+
+**Two settings in this shape are not what you would guess:**
+
+- `TRUST_PROXY=172.30.0.1`, the **bridge gateway**, not `127.0.0.1`. A request
+  published to the host arrives from the gateway, because `docker-proxy` forwards it,
+  so the `TRUST_PROXY=127.0.0.1` in `.env` - correct for running the app directly on
+  the host - names an address this container never sees. With it, every request
+  through the tunnel is refused and redirected, and the console never loads.
+- `ALLOWED_HOST` **must include the tailnet name**, which the compose service sets
+  for you. The app refuses a Host it was not told about, so a browser arriving as
+  `pi-agents.tail399956.ts.net` would get a 421 otherwise.
+
+**Set `DEMO_LOGIN_TOKEN` in `.env` for this shape.** It is reachable beyond this
+machine, so the committed placeholder is **refused**: the app declines to register the
+demo route and says so in the log. Locally the placeholder is fine.
+
+**The app is still not reachable except through the proxy** in this shape, and that is
+verifiable rather than asserted: the LAN address, the tailnet address and the bridge
+gateway all refuse a connection, and only the host's own loopback answers.
 
 Then open **https://localhost:8443/admin** and sign in as `demo@example.test`, or
 follow the read-only demo link:

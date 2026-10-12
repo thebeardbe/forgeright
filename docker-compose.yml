@@ -17,6 +17,52 @@
 # which is what the real deployment does behind its proxy. See Caddyfile.
 #
 # ===========================================================================
+# TWO SHAPES: PICK THE ONE THAT MATCHES WHERE THE TLS IS TERMINATED
+# ===========================================================================
+#
+# `docker compose up` publishes Caddy on 8443 and gives you a self-signed HTTPS console at
+# https://localhost:8443. THAT IS THE LOCAL CONSOLE, for looking at the product on the
+# machine it runs on. Nothing else needs to exist first.
+#
+# `docker compose --profile tailscale up` publishes THE APPLICATION ITSELF on host port
+# 3000, with no Caddy, for the case where something ELSE has already terminated TLS -
+# the live instance behind `tailscale serve`, which proxies
+# https://pi-agents.tail399956.ts.net/forgeright to http://127.0.0.1:3000.
+#
+# THE TWO ARE MUTUALLY EXCLUSIVE, AND THAT NEEDS ONE LINE IN .env. Compose profiles are
+# ADDITIVE: `--profile tailscale` alone would start the tailscale service ON TOP of the
+# unprofiled local one, giving two applications over one store and two things answering on
+# different ports. So BOTH shapes are behind a profile, and one is chosen by default:
+#
+#   COMPOSE_PROFILES=local     # in .env, so a bare `docker compose up` is the local console
+#
+# With that line, `docker compose up` is the local shape and
+# `docker compose --profile tailscale up` is the tailscale shape, and neither drags the
+# other along. WITHOUT IT, a bare `docker compose up` starts NOTHING, because every service
+# would be behind a profile - which is why .env.example sets it and the README repeats it.
+#
+# TO SWITCH SHAPES: `docker compose --profile local down` then bring up the other.
+#
+# WHY THE SECOND SHAPE EXISTS AT ALL. Caddy in the first shape terminates TLS itself and is
+# named `localhost` with its own internal CA. Behind Tailscale that is wrong twice over:
+# Tailscale has ALREADY terminated the TLS, so Caddy would be a second TLS session inside
+# the first (and its self-signed certificate would fail validation, having been issued for a
+# name no client believes), and Caddy's site is named `localhost`, so it cannot answer for
+# pi-agents.tail399956.ts.net at all. Putting Caddy in front of an existing TLS terminator is
+# not a configuration to get right; it is the wrong component.
+#
+# SO THE APPLICATION IS PUBLISHED DIRECTLY, AND THE TLS IS NOT OUR PROBLEM: the hop in front
+# terminates it, sets X-Forwarded-Proto: https, and the app believes that header because the
+# hop is named in TRUST_PROXY. The app still refuses plain HTTP from anywhere else.
+#
+# WHY BOTH SHAPES ARE IN ONE FILE. They share the build, the image, the store volume, the
+# demo mount and the environment. Two files would be two places for the store path and the
+# demo settings to drift apart, and the drift would be silent.
+#
+# WHICH SHAPE IS RUNNING IS VISIBLE IN `docker compose ps`: the tailscale shape has a
+# `forgeright-tailscale` service with a published port.
+#
+# ===========================================================================
 # RUNNING A SECOND COPY, OR ANY COPY BESIDE ANOTHER
 # ===========================================================================
 #
@@ -63,6 +109,10 @@
 
 services:
   forgeright:
+    # `local` ONLY, never both. This service exists to be proxied by Caddy; the tailscale
+    # shape serves the application with `forgeright-tailscale` instead, and starting this
+    # one too would put two applications over one store volume. See the TWO SHAPES block.
+    profiles: ["local"]
     # A PINNED ADDRESS TOO, so the two services cannot swap and leave TRUST_PROXY naming the
     # application itself - which would let the app trust its own forwarded headers.
     networks:
@@ -174,6 +224,13 @@ services:
   # the app refuses insecure connections by design, and that rule is load-bearing.
   # ---------------------------------------------------------------------------
   proxy:
+    # NOT STARTED IN THE TAILSCALE SHAPE, which is the whole point of that shape: Caddy
+    # cannot sit behind a terminator that already terminated. `profiles` with a name that
+    # is not `tailscale` does not do this on its own, because a service with NO profile is
+    # always started; the two shapes are separated by the tailscale service carrying
+    # `profile` and the proxy shape being what `docker compose up --profile local` gives.
+    # See the TWO SHAPES block at the top for which command to run.
+    profiles: ["local"]
     image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
     restart: unless-stopped
     ports:
@@ -199,6 +256,113 @@ services:
         # A PINNED ADDRESS, so the app's TRUST_PROXY above names something guaranteed
         # rather than whatever Docker happened to allocate.
         ipv4_address: ${FORGERIGHT_PROXY_IP:-172.30.0.3}
+
+  # ---------------------------------------------------------------------------
+  # THE OTHER SHAPE: the application itself, published on host port 3000, with the
+  # TLS terminated by something in front of it. See the TWO SHAPES block at the top.
+  #
+  # IT IS BEHIND A PROFILE, so `docker compose up` does not start it and the default
+  # local console is unchanged. A profile rather than a second file because everything
+  # except the published port and the trust setting is identical, and two files would
+  # drift.
+  # ---------------------------------------------------------------------------
+  forgeright-tailscale:
+    profiles: ["tailscale"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: forgeright:local
+    restart: unless-stopped
+    # BOUND TO THE HOST LOOPBACK ONLY, AND THAT IS THE SECURITY PROPERTY OF THIS SHAPE.
+    #
+    # `127.0.0.1:3000:3000` rather than `3000:3000`. Publishing on 0.0.0.0 would offer
+    # PLAIN HTTP - the app's refusal to serve one is deliberate, see lib/auth/require-secure.js -
+    # to anything that can reach this host, including the LAN and, on this machine, the
+    # tailnet itself at 100.70.135.127. Bound to loopback, the listener is on 127.0.0.1
+    # and no other interface: MEASURED, and the measurements are worth recording because
+    # the obvious assumption is wrong twice over.
+    #
+    #   - Tailscale is NOT on loopback. `tailscale serve` proxies to http://127.0.0.1:3000,
+    #     and it dials that target FROM THE HOST ITSELF, so a loopback listener is
+    #     reachable by it. (Measured: a loopback-published port answers on 127.0.0.1 and
+    #     refuses on the tailnet address 100.70.135.127 - which is why the target has to be
+    #     127.0.0.1 and why 0.0.0.0 is not needed for this to work.)
+    #   - From any OTHER network namespace - a neighbouring container, the LAN address, the
+    #     tailnet address - the loopback listener is unreachable. (Measured: 000 for all
+    #     three.)
+    #
+    # So this is the narrowest publish that still serves the owner's link.
+    ports:
+      - "127.0.0.1:${FORGERIGHT_TAILSCALE_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      # --- forced, and these differ from the proxy shape ---
+      HOST: 0.0.0.0
+      PORT: "3000"
+      STORE_DIR: /data/store
+      # THE TAILSCALE HOSTNAME, because that is the name the BROWSER uses. The app refuses
+      # a Host it was not told about, so leaving this as "localhost" would 421 every request
+      # arriving through the tunnel. Overridable for a different tailnet.
+      #
+      # 127.0.0.1 IS LISTED TOO, so a direct curl on the host - the fastest way to tell an
+      # app problem from a tunnel problem - is not refused.
+      ALLOWED_HOST: "${FORGERIGHT_ALLOWED_HOST:-pi-agents.tail399956.ts.net,127.0.0.1,localhost}"
+      # THE REAL PUBLIC URL, INCLUDING THE PATH THE TUNNEL MOUNTS UNDER. This is the URL
+      # the browser uses and what sign-in links are built from. It is https even though
+      # THIS container speaks http, because the scheme the browser sees is decided by the
+      # terminator in front.
+      PUBLIC_BASE_URL: "${FORGERIGHT_PUBLIC_BASE_URL:-https://pi-agents.tail399956.ts.net/forgeright}"
+      # THE BRIDGE GATEWAY, NOT 127.0.0.1. This is the measurement that matters most in
+      # this shape, and the intuitive value is wrong:
+      #
+      #   [auth] refusing an insecure request to GET /admin (host 127.0.0.1:3999, peer 172.17.0.1)
+      #
+      # A request published to the host arrives from the DOCKER GATEWAY, because
+      # docker-proxy forwards it - so `TRUST_PROXY=127.0.0.1` (the value in the repo's
+      # .env, which is correct for the host-run deployment) names nothing this container
+      # will ever see. With it, every request through the tunnel is refused with a 308
+      # redirect loop and the console never loads.
+      #
+      # The gateway is the FIRST address of the network's subnet, so it follows
+      # FORGERIGHT_SUBNET rather than being a second thing to keep in step.
+      TRUST_PROXY: "${FORGERIGHT_GATEWAY_IP:-172.30.0.1}"
+      BASE_PATH: ""
+      # The proxy strips the /forgeright prefix (tailscale serve does - the handler path is
+      # what is stripped before the request is forwarded), so the app is mounted at the
+      # root and this stays empty. A path here would double the prefix.
+      #
+      # THE DEMO TOKEN COMES FROM .env, AND THE PLACEHOLDER IS REFUSED IN THIS SHAPE BY
+      # THE APPLICATION, not by a requirement in this file. Set DEMO_LOGIN_TOKEN in .env.
+      #
+      # NOT `${DEMO_LOGIN_TOKEN:?}` HERE, which is the obvious way and is wrong: Compose
+      # interpolates the WHOLE file before it applies a profile, so a missing value stops
+      # `docker compose up` too - breaking the local console for exactly the fresh clone
+      # this file has to keep working. Measured, that is what the first attempt did.
+      #
+      # The app is also the better layer for the rule. It knows the difference between
+      # "unset" (falls through to the placeholder) and "set to the placeholder", and it
+      # refuses with a message naming the value, the rule and the fix - while a Compose
+      # interpolation error would say only that a variable is missing. See
+      # lib/auth/demo-token-policy.js.
+      DEMO_LOGIN: "1"
+      DEMO_LOGIN_ORG: "example-ltd-demo"
+      DEMO_LOGIN_TOKEN: "${DEMO_LOGIN_TOKEN:-local-demo-read-only-token-change-me}"
+      DEMO_LOGIN_DAYS: "60"
+    volumes:
+      # THE SAME STORE VOLUME AS THE PROXY SHAPE, deliberately: running the other shape
+      # afterwards shows the same organisations rather than an empty console.
+      - forgeright-store:/data/store
+      - ./data/demo:/app/data/demo:ro
+    healthcheck:
+      # THE SAME CHECK AS THE PROXY SHAPE, and it works unmodified: /healthz is the one
+      # path exempt from the HTTPS rule, and the check comes from inside the container
+      # where the peer is loopback.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
 
 networks:
   default:
