@@ -23,6 +23,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
@@ -196,6 +197,39 @@ function transcriptsInFile(orgId) {
 }
 
 /**
+ * The transcript of the round opened by a given token's invitation.
+ *
+ * The round model means one open round per invitation, so a token identifies which
+ * row to read without relying on it being the newest row in the file.
+ *
+ * @param {string} token A participant token.
+ * @returns {Array<object>|null|undefined} The transcript, or undefined when no row.
+ */
+function transcriptsInFileAtRoundFor(token) {
+    const hash = hashParticipantToken(token);
+    const db = new DatabaseSync(path.join(STORE_DIR, 'orgs', `${ORG_A.id}.db`));
+    try {
+        const row = db.prepare(
+            `SELECT r.transcript
+             FROM response r
+             JOIN participant_tokens t ON t.invitation_id = r.invitation_id
+             WHERE t.token_hash = ?
+             ORDER BY r.created_at DESC, r.id DESC
+             LIMIT 1`
+        ).get(hash);
+        if (!row) return undefined;
+        return row.transcript === null ? null : JSON.parse(row.transcript);
+    } finally {
+        db.close();
+    }
+}
+
+/** The stored hash of a participant token, so a test can find its row directly. */
+function hashParticipantToken(token) {
+    return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+/**
  * Creates an organisation and one invitation by driving the public store API
  * directly, so the test owns the ids and the tokens it will use over HTTP.
  *
@@ -254,16 +288,29 @@ test('POST /api/response with A\'s token lands in A\'s file, and is absent from 
 });
 
 test('answers written as A are invisible as B and visible as A through the store API', () => {
-    // The store API is the read path the console uses; the isolation must hold
-    // there too, not only in the raw files.
-    const analysisA = store.getResponsesForAnalysis(ORG_A.id);
-    const analysisB = store.getResponsesForAnalysis(ORG_B.id);
+    // The store API is the read path the console uses; the isolation must hold there
+    // too, not only in the raw files.
+    //
+    // TWO ACCESSORS, because the round model splits them: `getAllResponses` includes a
+    // still-open partial round, and `getResponsesForAnalysis` excludes it. The write
+    // this test depends on is whatever the earlier tests left, which is a partial, so
+    // the VISIBILITY half is asserted through `getAllResponses` and the SCORING half
+    // through `getResponsesForAnalysis`.
+    const allA = store.getAllResponses(ORG_A.id);
+    const allB = store.getAllResponses(ORG_B.id);
 
-    assert.ok(analysisA.some((r) => r.data && r.data.marker === 'write-as-A'), 'A sees its own answer');
+    assert.ok(allA.some((r) => r.data && r.data.marker === 'write-as-A'), 'A sees its own answer');
     assert.equal(
-        analysisB.some((r) => r.data && r.data.marker === 'write-as-A'),
+        allB.some((r) => r.data && r.data.marker === 'write-as-A'),
         false,
         'B does not see A\'s answer'
+    );
+
+    // B sees nothing of A through the analysis accessor either, in either direction.
+    assert.equal(
+        store.getResponsesForAnalysis(ORG_B.id).some((r) => r.data && r.data.marker === 'write-as-A'),
+        false,
+        'B\'s analysis never sees A\'s answer'
     );
 });
 
@@ -515,23 +562,31 @@ test('a malformed transcript is refused with 400, not silently dropped', async (
 test('an ABSENT transcript is accepted and stored as no transcript', async () => {
     // A caller with none to give is not blocked, and it is distinct from an empty
     // conversation.
-    const res = await post('/api/response', { token: TOKEN_A, department: 'Finance', data: { marker: 'no-transcript' } });
+    //
+    // A FRESH INVITATION, because the round model gives one open round per
+    // invitation: a token already used by an earlier test would continue THAT round,
+    // and the transcript under test would be that round's rather than this write's.
+    const fresh = store.addInvitation(ORG_A.id, { email: `absent-${Date.now()}@example.test`, department: 'Finance' });
+
+    const res = await post('/api/response', { token: fresh.token, data: { marker: 'no-transcript' } });
     assert.equal(res.status, 200);
     assert.equal(res.json().transcriptMessages, 0);
     await settle();
 
-    const stored = transcriptsInFile(ORG_A.id);
-    // The newest row is the one just written; its transcript is null.
-    assert.equal(stored.at(-1), null, 'no transcript is stored as null, not as []');
+    // The round this token just opened carries no transcript.
+    const stored = transcriptsInFileAtRoundFor(fresh.token);
+    assert.equal(stored, null, 'no transcript is stored as null, not as []');
 });
 
 test('an EMPTY transcript is accepted and stored as an empty array', async () => {
-    const res = await post('/api/response', { token: TOKEN_A, department: 'Finance', data: { marker: 'empty-transcript' }, transcript: [] });
+    const fresh = store.addInvitation(ORG_A.id, { email: `empty-${Date.now()}@example.test`, department: 'Finance' });
+
+    const res = await post('/api/response', { token: fresh.token, data: { marker: 'empty-transcript' }, transcript: [] });
     assert.equal(res.status, 200);
     assert.equal(res.json().transcriptMessages, 0);
     await settle();
 
-    assert.deepEqual(transcriptsInFile(ORG_A.id).at(-1), [], 'an empty transcript is stored as []');
+    assert.deepEqual(transcriptsInFileAtRoundFor(fresh.token), [], 'an empty transcript is stored as []');
 });
 
 test('THE FORMAT COMMITMENT IS NEVER STORED in a transcript', async () => {

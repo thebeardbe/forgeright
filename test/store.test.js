@@ -1154,6 +1154,9 @@ test('a write through the store is visible through a second connection', () => {
 });
 
 test('a write through a second connection is visible through the store', () => {
+    // A raw row inserted with `submitted_at NULL` is a PARTIAL round, so it is visible
+    // through `getAllResponses` and excluded from `getResponsesForAnalysis`. The
+    // visibility property is unchanged; only which accessor sees it.
     const org = newOrg('Cross-connection write');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { order: 1 } });
@@ -1169,9 +1172,10 @@ test('a write through a second connection is visible through the store', () => {
         db.close();
     }
 
-    const rows = store.getResponsesForAnalysis(org.id);
-    assert.equal(rows.length, 2);
-    const markers = rows.map((r) => (r.data.via === 'second' ? 'second' : 'order-1'));
+    // The second connection's write IS visible - through the accessor that includes partials.
+    const all = store.getAllResponses(org.id);
+    assert.equal(all.length, 2, 'the second connection\'s write is visible');
+    const markers = all.map((r) => (r.data.via === 'second' ? 'second' : 'order-1'));
     assert.deepEqual(markers.sort(), ['order-1', 'second']);
 });
 
@@ -1193,7 +1197,9 @@ test('interleaved writes from two connections both land, with no loss', () => {
         db.close();
     }
 
-    const rows = store.getResponsesForAnalysis(org.id);
+    // Read through `getAllResponses`, which includes the raw partials: the property
+    // under test is that no interleaved write was lost, not which accessor returns it.
+    const rows = store.getAllResponses(org.id);
     assert.equal(rows.length, 10, 'every interleaved write must be present');
     assert.equal(new Set(rows.map((r) => r.data.seq)).size, 10, 'no write may be lost or overwritten');
 });
