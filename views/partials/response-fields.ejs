@@ -1,14 +1,21 @@
-<% /*
+<%#
     The participant's own fields, rendered once for both views.
 
     SHARED SO THE TWO VIEWS CANNOT DRIFT: a field added here appears everywhere it
-    is shown, and the escaping rule is written once. Every value goes through &lt;%= */ %>,
-    which escapes: the text came from a participant or a model and must never be
-    inserted as markup.
+    is shown, and the escaping rule is written once. EVERY VALUE GOES THROUGH AN
+    ESCAPING TAG, the one that prints with a percent-and-equals. The text came from a
+    participant or a model, so it must never be inserted as markup.
 
-    Empty and absent are different, and shown differently: a field the participant
-    did not give is omitted rather than rendered blank, so a reader can tell "they
-    said nothing about this" from "they said nothing".
+    EMPTY AND ABSENT ARE DIFFERENT, and shown differently: a field the participant did
+    not give is omitted rather than rendered blank, so a reader can tell "they said
+    nothing about this" from "they said nothing".
+
+    THIS COMMENT USED TO BE WRITTEN AS A BLOCK WITH A NESTED TAG IN IT, and that tag
+    terminated the comment where it appeared. Everything after it became live template
+    output, so the second half of this very paragraph rendered to the page - the
+    paragraph explaining that participant text must not be inserted as markup. A
+    comment must not contain a delimiter of its own LANGUAGE, which is why this one
+    says "the tag that prints with a percent-and-equals" instead of writing it.
 %>
 <%
     const FIELDS = [
