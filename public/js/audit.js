@@ -26,16 +26,20 @@
 
     /**
      * The participant's token, when the page was reached from an invitation
-     * link. THE TOKEN IS THE CREDENTIAL: with one present the access-code gate
-     * is skipped entirely, because the code was never given to a participant
-     * and asking for it is a dead end.
+     * link. THE TOKEN IS THE ONLY CREDENTIAL: it is sent as `participantToken` with
+     * every request, and the server resolves the organisation from it.
+     *
+     * THERE WAS A SECOND FIELD, `state.pass`, ALSO SET TO THIS TOKEN and sent beside
+     * `participantToken` on both requests. It was the access code's slot, reused to
+     * carry the token while the code gate existed; the server no longer reads that
+     * field at all, so both it and the field are gone. Sending the same credential
+     * twice under two names invites a reader to think they are different things.
      */
     const TOKEN = cfg.participantToken || '';
     const hasToken = TOKEN !== '';
 
     const state = {
         conversation: [],
-        pass: TOKEN,
         waiting: false,
         audit: null,
         result: null
@@ -78,44 +82,30 @@
         if (el) el.remove();
     }
 
-    async function start() {
-        const entered = $('pass').value.trim();
-        if (!entered) {
-            alert(S.invalidCode);
-            return;
-        }
-        state.pass = entered;
-
-        // Verify the code against the server before showing the chat, so a wrong
-        // code fails here rather than on the participant's first answer.
-        try {
-            const res = await fetch(apiPath('/api/chat'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    toolId: cfg.toolId,
-                    pass: state.pass,
-                    participantToken: TOKEN || undefined,
-                    lang: cfg.lang,
-                    messages: []
-                })
-            });
-            if (res.status === 403) {
-                alert(S.invalidCode);
-                return;
-            }
-        } catch (err) {
-            console.error(err);
-            alert(S.networkError);
-            return;
-        }
-
-        $('unlock').classList.add('hidden');
-        $('conversation').classList.remove('hidden');
-
-        state.conversation = [{ role: 'assistant', content: S.initialMessage }];
-        appendMessage('ai', S.aiLabel, S.initialMessage);
-    }
+    // THERE IS NO start() HERE ANY MORE, and its absence is deliberate.
+    //
+    // It was the access-code step: it read the code from #pass, posted it as `pass` with the
+    // first turn, then hid #unlock and revealed #conversation. The access code is gone (see
+    // mayUseQuestionnaire in lib/routes-api.js) and so are #pass, #unlock and #start-btn,
+    // which leaves nothing for this function to read, send, or hide.
+    //
+    // IT WAS ALSO A CRASH WAITING TO HAPPEN. It called $('unlock').classList.add(...) on an
+    // element that no longer exists, which is a TypeError on null. It did not fire, because
+    // both of the things that called it were the missing controls:
+    //
+    //   if ($('start-btn')) ...   // #start-btn is not rendered, so this never bound
+    //   if ($('pass')) { ... }    // #pass is not rendered, so this never bound either
+    //
+    // Measured in a browser against a real invitation link, before this removal:
+    //   elements start() depends on: {"startBtn":false,"pass":false,"unlock":false}
+    //   if line 113 executed now -> TypeError: Cannot read properties of null
+    // and the page was working, because nothing reached it.
+    //
+    // SO DELETING IS THE HONEST FIX rather than adding a third existence check to a function
+    // that cannot be reached. A guard would preserve the shape of a flow that no longer
+    // exists, leaving the next reader to work out why a control that is never rendered is
+    // being defended. The token is the only credential, and beginWithToken() below is the
+    // only way in.
 
     async function send() {
         if (state.waiting) return;
@@ -137,7 +127,6 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     toolId: cfg.toolId,
-                    pass: state.pass,
                     participantToken: TOKEN || undefined,
                     lang: cfg.lang,
                     messages: state.conversation
@@ -269,7 +258,6 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     toolId: cfg.toolId,
-                    pass: state.pass,
                     participantToken: TOKEN || undefined,
                     audit: state.audit
                 })
@@ -446,18 +434,13 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
-        // The unlock controls are absent when a token arrived, so their
-        // listeners are only attached when they exist.
-        if ($('start-btn')) $('start-btn').addEventListener('click', start);
+        // NO UNLOCK LISTENERS. The controls they bound to, #start-btn and #pass, are
+        // not rendered any more and the function they called is gone, so a page with a
+        // resolved token starts the conversation directly - which is the only case.
         if (hasToken) beginWithToken();
         $('send-btn').addEventListener('click', send);
         $('download-md').addEventListener('click', downloadMarkdown);
 
-        if ($('pass')) {
-            $('pass').addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') start();
-            });
-        }
         $('input').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') send();
         });
