@@ -7,6 +7,23 @@ data/store/orgs/
 data/store/admin.db
 data/store/admin.db-wal
 data/store/admin.db-shm
+
+# THE SEEDED DEMO DATABASE IS COMMITTED, DELIBERATELY, so the demo travels with the
+# repository instead of existing only on the machine that built it. `data/demo/` is not
+# covered by the rules above, and that is the point of putting it there.
+#
+# ONLY THE SIDECARS ARE IGNORED, NEVER THE DATABASE. A `-wal` file holds writes the
+# `.db` does not yet contain, so committing one, or restoring it out of step with its
+# database, is a corruption waiting to happen. The seed CHECKPOINTS on exit, so a clean
+# run leaves only the `.db`; these rules cover a run that was interrupted.
+data/demo/orgs/*.db-wal
+data/demo/orgs/*.db-shm
+
+# The installation database for the demo store: it holds the demo session rows, which
+# are per-machine state and not part of the shipped artefact.
+data/demo/admin.db
+data/demo/admin.db-wal
+data/demo/admin.db-shm
 .scratch/
 *.log
 .DS_Store

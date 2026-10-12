@@ -18,13 +18,18 @@
  *
  * RUN IT WITH A REAL PROVIDER, and it costs real calls:
  *
- *     AI_PROVIDER=deepseek STORE_DIR=/tmp/forgeright-demo node scripts/seed-demo-org.js
+ *     AI_PROVIDER=deepseek STORE_DIR=data/demo node scripts/seed-demo-org.js
  *
  * `STORE_DIR` IS REQUIRED, NOT DEFAULTED, and it may not be the default store. This
  * script DELETES an organisation to make itself re-runnable, and the default store is
  * where real data lives. A separate directory also sidesteps the pre-v6 organisation
  * files already in `data/store/orgs/`, which this code refuses by design: the script
  * never reads them, because it never looks at that directory.
+ *
+ * `STORE_DIR=data/demo` IS THE COMMITTABLE LOCATION, and `data/store/orgs/` is NOT:
+ * that directory is gitignored wholesale, because it holds live organisation files. A
+ * seeded database under `data/demo/` is a checked-in artefact instead, which is the
+ * point of it. See "SHIPPING THE SEEDED DATABASE" below.
  *
  * `.env` sets `AI_PROVIDER=mock`, and the mock is an INTERVIEW simulator: it answers
  * every call with the next scripted question, so identification and weighing cannot
@@ -47,6 +52,26 @@
  * a refused call stops the run with the reason, the organisation id and what had been
  * completed. Whatever was written stays where it is and is reported, so a half-built
  * organisation is never mistaken for a working one.
+ *
+ * SHIPPING THE SEEDED DATABASE. The result is one self-contained file at
+ * `<STORE_DIR>/orgs/example-ltd-demo.db`, and it is meant to be COMMITTED so the demo
+ * travels with the repository. To install it on another machine:
+ *
+ *   1. copy the file to that machine's `data/demo/orgs/`;
+ *   2. set `STORE_DIR=data/demo` there, and `DEMO_LOGIN_ORG=example-ltd-demo`;
+ *   3. set the three other `DEMO_LOGIN*` variables from `.env.example`.
+ *
+ * The final deployment then needs **no provider and no API key**: the processes are
+ * already grouped and scored, and the console only reads them. Nothing re-runs the
+ * pipeline there, which is the whole reason the database is committed rather than
+ * rebuilt on the machine that shows it.
+ *
+ * THE READ-ONLY DEMO LINK IS THE OTHER HALF, AND IT IS CONFIGURED ELSEWHERE. This
+ * script needs `STORE_DIR` and a real `AI_PROVIDER`; the link needs `DEMO_LOGIN=1`,
+ * `DEMO_LOGIN_ORG`, `DEMO_LOGIN_TOKEN` and optionally `DEMO_LOGIN_DAYS`, and it is off
+ * unless the first of those is set. A reader following only this script builds the
+ * organisation and then has no documented way to send it, which is why the variables
+ * are named here as well as in `.env.example`, where the reasoning for each lives.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -63,7 +88,7 @@ if (DEMO_STORE === '') {
         '[seed] STORE_DIR is not set. It is required rather than defaulted: this script\n' +
         '       DELETES and rebuilds an organisation, and it must never do that to the\n' +
         '       real store. Run it as:\n\n' +
-        '         AI_PROVIDER=deepseek STORE_DIR=/tmp/forgeright-demo node scripts/seed-demo-org.js\n'
+        '         AI_PROVIDER=deepseek STORE_DIR=data/demo node scripts/seed-demo-org.js\n'
     );
     process.exit(2);
 }
@@ -71,13 +96,14 @@ if (path.resolve(DEMO_STORE) === path.resolve(DEFAULT_STORE)) {
     console.error(
         `[seed] STORE_DIR resolves to the DEFAULT store (${DEFAULT_STORE}).\n` +
         '       Refusing: this script deletes an organisation, and that is where real\n' +
-        '       data lives. Point STORE_DIR somewhere else, for example /tmp/forgeright-demo.'
+        '       data lives. Point STORE_DIR somewhere else, for example data/demo.'
     );
     process.exit(2);
 }
 
 const {
-    createOrganisation, getOrganisation, addInvitation, addResponse, listOrganisationIds
+    createOrganisation, getOrganisation, addInvitation, addResponse, listOrganisationIds,
+    closeAll
 } = await import('../lib/store/index.js');
 const { orgDbPath, storeDir } = await import('../lib/store/paths.js');
 const { listProcessesForConsole, recordIdentification } = await import('../lib/store/processes.js');
@@ -86,67 +112,14 @@ const { listRoadmap, recordWeighing } = await import('../lib/store/weighing.js')
 const { runIdentification } = await import('../ai/identify-core.js');
 const { runWeighing } = await import('../ai/weigh-core.js');
 const { buildMockAudit } = await import('../ai/fixtures/mock-audit.js');
+// The fixture's transformation and the demo's identity, in their own module: see
+// ./demo-fixture.js for the pinned org id, the name, and why the admin address must
+// differ from the demo viewer's.
+const {
+    DEMO_ORG_ID, ORG_NAME, DEMO_ADMIN_EMAIL, DEMO_NAME_MARKERS,
+    departmentFor, responseDataFor, demoEmailFor
+} = await import('./demo-fixture.js');
 const { loadAiConfig } = await import('../ai/config.js');
-
-/**
- * The organisation's name, and it does more for the demo's honesty than anything else
- * the console shows.
- *
- * THE CONSOLE HAS NO ILLUSTRATIVE BANNER. The `illustrative` flag is rendered only by
- * the participant client (`public/js/audit.js`), and nothing carries it into the
- * console's process or response views, so the ROADMAP gives a reader no signal at all
- * that the data is fabricated. This is verified, not assumed: `grep` over `views/` and
- * `lib/auth/` finds no reference to it. The name is therefore the console's only
- * marker, so it carries the marker rather than being a tidy product name.
- *
- * `EXAMPLE Ltd` is the conventional fictitious-company name in English usage, so it
- * reads as illustrative to a reader without explanation. The parenthetical says what
- * the data is, because a demo left running is exactly the state in which somebody
- * forgets it is not real.
- */
-const ORG_NAME = 'EXAMPLE Ltd (illustrative demo data, not a real client)';
-
-/**
- * How a previous demo is recognised. Matched on the name rather than an id, because the
- * id changes on every run and the point of a re-run is to find the last one. Both
- * fragments are required, so a hand-made organisation that merely mentions "demo" is
- * not deleted by accident.
- */
-const DEMO_NAME_MARKERS = ['EXAMPLE', 'demo'];
-
-/**
- * The address attached to the demo organisation as its admin.
- *
- * THE DEMO IS UNREACHABLE WITHOUT THIS, which is not obvious and was found by running
- * it. The console resolves an organisation from the SIGNED-IN EMAIL, and
- * `lib/provision.js` creates a BRAND NEW organisation the first time an address signs
- * in. So signing in with an address this script did not register produces an empty
- * organisation beside the seeded one, and the roadmap shows nothing. Attaching the
- * admin here is what makes the seeded organisation the one that address sees.
- *
- * It is a fixed address rather than the owner's, so a demo store cannot be confused
- * with a real login and so the same address works on every reset.
- */
-const DEMO_ADMIN_EMAIL = 'demo@example.test';
-
-/** The department a fixture response belongs to. */
-function departmentFor(workflow) {
-    // NORMALISED FROM `reportedBy`, WHICH IS NOT A DEPARTMENT: the fixture uses it to
-    // say WHO gave the estimate, and one value is "Finance (second respondent)".
-    // `addResponse` requires a real department name, and the console groups and counts
-    // by it, so the parenthetical is dropped rather than stored as a department called
-    // "Finance (second respondent)".
-    return String(workflow.reportedBy || 'Unknown').replace(/\s*\(.*\)\s*$/, '').trim();
-}
-
-/** The response data the pipeline reads: the fixture workflow minus its bookkeeping. */
-function responseDataFor(workflow) {
-    // `reportedBy` and `conflictsWith` are fixture metadata ABOUT who said what. They
-    // are not fields the matrix reads, and copying them into a response would put
-    // unattributable commentary into the data a reader is shown.
-    const { reportedBy, conflictsWith, ...data } = workflow;
-    return data;
-}
 
 /** The name of an organisation, or null when it cannot be read. */
 function nameOf(orgId) {
@@ -264,7 +237,7 @@ async function main() {
     const removed = removePreviousDemos();
     if (removed.length > 0) console.log(`[seed] removed ${removed.length} previous demo organisation(s)`);
 
-    const orgId = createOrganisation(ORG_NAME).id;
+    const orgId = createOrganisation(ORG_NAME, DEMO_ORG_ID).id;
     console.log(`[seed] created organisation ${orgId}`);
 
     // THE ADMIN, WITHOUT WHICH THE CONSOLE CANNOT SEE THIS ORGANISATION. Signing in
@@ -279,7 +252,7 @@ async function main() {
 
     for (const workflow of responses) {
         const department = departmentFor(workflow);
-        const invitation = addInvitation(orgId, { email: `${workflow.id}@example.test`, department });
+        const invitation = addInvitation(orgId, { email: demoEmailFor(workflow.id), department });
         const data = responseDataFor(workflow);
         const response = addResponse(orgId, invitation.token, { department, data });
 
@@ -368,4 +341,50 @@ function report(orgId, responseCount, identifications, weighings) {
     console.log('[seed]   back. Invite yourself from the console to walk the participant half.');
 }
 
+/**
+ * Closes every connection, which CHECKPOINTS THE WAL INTO THE DATABASE FILE.
+ *
+ * THIS IS WHAT MAKES THE FILE COMMITTABLE. The store runs in WAL mode, so while a
+ * connection is open the recent writes live in a `-wal` sidecar beside the database.
+ * Committing the `.db` without it would ship a database missing its last writes, and
+ * committing both would ship two files that have to be restored together - a
+ * corruption waiting for whoever copies only one. Closing the connection folds the WAL
+ * back in and removes the sidecars, leaving one self-contained file.
+ *
+ * RUN WHETHER THE SEED SUCCEEDED OR FAILED. A partial organisation is still worth
+ * checkpointing: the failure message tells the operator it is partial, and a
+ * half-written file with a stale WAL would be worse than either.
+ *
+ * THE CONSEQUENCE FOR GIT is that `data/demo/orgs/` contains exactly one `.db`, and the
+ * ignore rules for the WAL sidecars are there in case a run is interrupted rather than
+ * as the normal state.
+ */
+/**
+ * Closes every connection, which CHECKPOINTS THE WAL INTO THE DATABASE FILE.
+ *
+ * THIS IS WHAT MAKES THE FILE COMMITTABLE. The store runs in WAL mode, so while a
+ * connection is open the recent writes live in a `-wal` sidecar beside the database.
+ * Committing the `.db` without it would ship a database missing its last writes, and
+ * committing both would ship two files that have to be restored together - a
+ * corruption waiting for whoever copies only one. Closing the connection folds the WAL
+ * back in and removes the sidecars, leaving one self-contained file.
+ *
+ * RUN WHETHER THE SEED SUCCEEDED OR FAILED. A partial organisation is still worth
+ * checkpointing: the failure message tells the operator it is partial, and a
+ * half-written file with a stale WAL would be worse than either.
+ *
+ * THE CONSEQUENCE FOR GIT is that `data/demo/orgs/` contains exactly one `.db`, and the
+ * ignore rules for the WAL sidecars are there in case a run is interrupted rather than
+ * as the normal state.
+ */
 await main();
+
+// AFTER the work, not before: this is the checkpoint.
+try {
+    const closed = closeAll();
+    console.log(`[seed] checkpointed and closed ${closed} store connection(s)`);
+} catch (err) {
+    console.error(`[seed] could not close the store cleanly: ${err.message}`);
+    console.error('[seed] the -wal sidecar may still hold writes; do NOT commit the file yet.');
+    process.exit(1);
+}
