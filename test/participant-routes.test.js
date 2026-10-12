@@ -30,7 +30,6 @@ import { DatabaseSync } from 'node:sqlite';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(__dirname, '..', 'server.js');
 
-const ACCESS_CODE = 'participant-route-code';
 const ALLOWED_HOST = 'allowed.example.test';
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-participant-routes-'));
 // The test process imports the store in-process to create the organisations and
@@ -74,8 +73,7 @@ function spawnedEnv(port) {
         SESSION_SECRET: 'a'.repeat(64),
         STORE_DIR,
         AI_PROVIDER: 'mock',
-        MAIL_SENDER: 'console',
-        AUDIT_ACCESS_CODE: ACCESS_CODE
+        MAIL_SENDER: 'console'
     };
 }
 
@@ -589,63 +587,71 @@ test('POST /lost-link responds identically whether or not the address was invite
 // 7. mayUseQuestionnaire: WHICH CREDENTIAL ADMITS A REQUEST
 // ===========================================================================
 //
-// lib/routes-api.js accepts two credentials: a live participant token, or the
-// shared access code. The behaviour under test, and NOT endorsed here, is that a
-// PRESENT but unresolvable participantToken refuses and the access code is
-// IGNORED. That is reported as a finding rather than asserted as correct.
+// lib/routes-api.js accepts ONE credential: a live participant token. The shared
+// access code was removed (see mayUseQuestionnaire), so there is no second way in.
+//
+// DELETED HERE, because the behaviour no longer exists: `the access code alone still
+// admits the questionnaire` asserted that a request carrying only `pass` was
+// admitted, and that path is gone.
 
-test('a live participant token admits the questionnaire without the access code', async () => {
+test('a live participant token admits the questionnaire', async () => {
     const res = await post('/api/chat', {
         participantToken: TOKEN_A,
         messages: [{ role: 'user', content: 'hello' }]
     });
-    assert.equal(res.status, 200, 'a live token is enough on its own');
+    assert.equal(res.status, 200, 'a live token is the way in');
 });
 
-test('the access code alone still admits the questionnaire', async () => {
-    const res = await post('/api/chat', {
-        pass: ACCESS_CODE,
-        messages: [{ role: 'user', content: 'hello' }]
-    });
-    assert.equal(res.status, 200, 'the original gate is unchanged');
-});
-
-test('a bogus participant token is refused even when the access code is valid', async () => {
-    // THE BEHAVIOUR UNDER SCRUTINY. A present-but-unresolvable token does not fall
-    // through to the access code: it refuses, and the code is ignored. Pinned as
-    // observed so a change is visible; see the report for whether it is right.
+test('a bogus participant token is refused', async () => {
     const res = await post('/api/chat', {
         participantToken: 'a-stale-token-in-the-page-config',
-        pass: ACCESS_CODE,
         messages: [{ role: 'user', content: 'hello' }]
     });
-    assert.equal(res.status, 403, 'the valid code does not rescue a bad token');
+    assert.equal(res.status, 403);
     assert.equal(res.json().status, 'error');
+    assert.equal(res.json().content, 'That link is not valid any more. Ask for a new one.');
 });
 
-test('a revoked participant token is refused and does not fall through to the code', async () => {
+test('a revoked participant token is refused', async () => {
     const victim = orgWithInvitation('Org Code Fallthrough', 'Legal');
     store.resetAccess(victim.org.id, victim.invitation.id);
 
     const res = await post('/api/chat', {
         participantToken: victim.invitation.token,
-        pass: ACCESS_CODE,
         messages: [{ role: 'user', content: 'hello' }]
     });
-    assert.equal(res.status, 403, 'a revoked token is refused and the code is ignored');
+    assert.equal(res.status, 403);
 });
 
-test('a bogus token with no code is refused, and the reason does not name the code', async () => {
+test('a bogus token is refused with the LINK wording, not a code', async () => {
     const res = await post('/api/chat', {
         participantToken: 'bogus',
         messages: [{ role: 'user', content: 'hello' }]
     });
     assert.equal(res.status, 403);
-    assert.equal(res.json().content.includes('Invalid code'), false, 'the refusal names the link, not the code');
+    assert.equal(res.json().content, 'That link is not valid any more. Ask for a new one.');
 });
 
-test('no credential at all is refused', async () => {
+test('no credential at all is refused, and the refusal says what to DO', async () => {
+    // MORE IMPORTANT NOW, not less: this is no longer a fallback that a code could
+    // satisfy, it is the only refusal for a request that names no participant.
     const res = await post('/api/chat', { messages: [{ role: 'user', content: 'hello' }] });
     assert.equal(res.status, 403);
-    assert.equal(res.json().content, 'Invalid code.', 'the tokenless path still reports the code gate');
+    assert.equal(
+        res.json().content,
+        'You need an invitation link to start. Ask for a new one.',
+        'the wording says what to do, not merely what failed'
+    );
+});
+
+test('a request carrying the removed `pass` field alone is refused like no credential', async () => {
+    // The tokenless branch is gone, so a `pass` value is ignored rather than honoured.
+    // This is the closest expressible form of the deleted access-code test, and it
+    // asserts the OPPOSITE: the code no longer admits anyone.
+    const res = await post('/api/chat', {
+        pass: 'any-value-at-all',
+        messages: [{ role: 'user', content: 'hello' }]
+    });
+    assert.equal(res.status, 403, 'a shared code cannot admit a request any more');
+    assert.equal(res.json().content, 'You need an invitation link to start. Ask for a new one.');
 });

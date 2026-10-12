@@ -106,7 +106,6 @@ async function startServer(demoEnv = {}) {
             STORE_DIR,
             AI_PROVIDER: 'mock',
             MAIL_SENDER: 'console',
-            AUDIT_ACCESS_CODE: 'code',
             ...demoEnv
         },
         stdio: ['ignore', 'pipe', 'pipe']

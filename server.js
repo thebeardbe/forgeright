@@ -21,7 +21,7 @@ import { loadAiConfig } from './ai/config.js';
 import { assertSessionSecretConfigured } from './lib/auth/session.js';
 import { cookieReader, router as adminRouter, assertPublicBaseUrlUsable } from './lib/auth/routes.js';
 import { requireSecureConnection } from './lib/auth/require-secure.js';
-import { assertMailSenderUsable } from './lib/mail/index.js';
+import { assertMailSenderUsable, mailReadinessProblems } from './lib/mail/index.js';
 import { closeAll } from './lib/store/index.js';
 import { BASE_PATH, PUBLIC_PATH, describeMount, describePublicPath } from './lib/base-path.js';
 import { resolveTrustProxy, hostnameFromHeader } from './lib/trust-proxy.js';
@@ -66,6 +66,14 @@ const HOST = (process.env.HOST || '127.0.0.1').trim();
 // the hardest kind of misconfiguration to diagnose from the outside.
 assertSessionSecretConfigured();
 assertMailSenderUsable();
+// AND WHETHER IT CAN ACTUALLY SEND, which the check above does not answer. A valid
+// transport name says the configuration is understood; it says nothing about a
+// missing binary or an expired session, and both fail silently at the first send
+// rather than here. WARNED, not thrown: the console does not need mail to work, and
+// an operator signing in to fix mail should not be locked out by it.
+for (const problem of mailReadinessProblems()) {
+    console.warn(`[mail] ${problem}`);
+}
 // The mail-link configuration is validated here too: a PUBLIC_BASE_URL that
 // cannot be combined with BASE_PATH must stop the process at startup, not throw
 // on an admin's first login attempt, which it did before this check existed.
@@ -339,9 +347,13 @@ const server = app.listen(PORT, HOST, () => {
     console.log(`[server] trust proxy: ${TRUST_PROXY.summary}`);
     console.log(`[server] bound to ${HOST}:${PORT}${HOST === '127.0.0.1' ? ' (loopback only; set HOST to widen it deliberately)' : ''}`);
 
-    if (!process.env.AUDIT_ACCESS_CODE) {
-        console.warn('[server] WARNING: AUDIT_ACCESS_CODE is unset, every request will be rejected.');
-    }
+    // A WARNING ABOUT AUDIT_ACCESS_CODE USED TO SIT HERE AND WAS FALSE. It said that
+    // with the variable unset "every request will be rejected", and that was never
+    // true: a participant token satisfied the questionnaire's gate on its own, so the
+    // interview worked with no code set at all. A startup message that describes
+    // behaviour the code does not have is worse than no message, because it sends an
+    // operator looking for a setting that is not the problem. The variable is gone
+    // entirely now; see mayUseQuestionnaire in lib/routes-api.js.
     if (ALLOWED_HOSTS.length === 0) {
         console.warn('[server] ALLOWED_HOST is unset: accepting any host (development only).');
     } else {

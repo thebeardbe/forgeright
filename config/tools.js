@@ -13,8 +13,12 @@ export const TOOLS = {
     cartiere_audit: {
         id: 'cartiere_audit',
         title: 'Workflow Audit',
-        promptDir: 'cartiere_audit',
-        accessCodeEnv: 'AUDIT_ACCESS_CODE'
+        // The prompt directory under data/prompts/, and the name the client sends
+        // as toolId. `accessCodeEnv` used to live here, naming the environment
+        // variable holding a shared code that gated a tokenless questionnaire
+        // visit. Both are gone: access is by participant token only, so there is
+        // no per-tool secret left to name.
+        promptDir: 'cartiere_audit'
     }
 };
 

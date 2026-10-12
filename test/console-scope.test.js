@@ -31,7 +31,6 @@ import { DatabaseSync } from 'node:sqlite';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(__dirname, '..', 'server.js');
 
-const ACCESS_CODE = 'console-scope-code';
 const ALLOWED_HOST = 'allowed.example.test';
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-console-scope-'));
 
@@ -64,8 +63,7 @@ function spawnedEnv(port) {
         SESSION_SECRET: 'a'.repeat(64),
         STORE_DIR,
         AI_PROVIDER: 'mock',
-        MAIL_SENDER: 'console',
-        AUDIT_ACCESS_CODE: ACCESS_CODE
+        MAIL_SENDER: 'console'
     };
 }
 

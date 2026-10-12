@@ -25,20 +25,18 @@
 
     <div class="card">
         <%#
-            A VALID TOKEN MEANS NO ACCESS-CODE PROMPT. The token is the credential:
-            it is unguessable, single-purpose, and was delivered to this person.
-            Asking for a separate code that they were never given is a dead end,
-            which is what this page used to do. The gate below therefore exists
-            only for a tokenless visit, where there is nothing else to check.
-        %>
-        <% if (!tokenResolved) { %>
-            <div id="unlock" class="row">
-                <input type="password" id="pass" placeholder="<%= strings.unlockPlaceholder %>">
-                <button id="start-btn"><%= strings.startButton %></button>
-            </div>
-        <% } %>
+            THE TOKEN IS THE ONLY WAY IN, so there is no access-code prompt and no
+            start button. This page is rendered only for a token that resolved (see
+            renderQuestionnaire in lib/auth/participant-routes.js, its single caller),
+            so the conversation is never hidden and the client starts it directly.
 
-        <div id="conversation" class="<%= tokenResolved ? '' : 'hidden' %>">
+            A tokenless "unlock" form used to sit here, guarded by `if (!tokenResolved)`.
+            That branch could not be reached: every caller passed tokenResolved: true,
+            so the markup was dead and the field asked for a shared code that no route
+            anywhere accepted. Both the field and the code are gone. See the note on
+            mayUseQuestionnaire in lib/routes-api.js.
+        %>
+        <div id="conversation">
             <div id="history" class="history"></div>
             <div id="input-area" class="row">
                 <input type="text" id="input" placeholder="<%= strings.inputPlaceholder %>">

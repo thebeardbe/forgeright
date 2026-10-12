@@ -29,7 +29,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.join(__dirname, '..');
 const SERVER = path.join(PROJECT_ROOT, 'server.js');
 
-const ACCESS_CODE = 'console-views-code';
 const ALLOWED_HOST = 'allowed.example.test';
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-console-views-'));
 process.env.STORE_DIR = STORE_DIR;
@@ -68,8 +67,7 @@ function spawnedEnv(port) {
         SESSION_SECRET: 'a'.repeat(64),
         STORE_DIR,
         AI_PROVIDER: 'mock',
-        MAIL_SENDER: 'console',
-        AUDIT_ACCESS_CODE: ACCESS_CODE
+        MAIL_SENDER: 'console'
     };
 }
 
