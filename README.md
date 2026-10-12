@@ -37,7 +37,7 @@ until that list is empty.
 
 ```bash
 npm install
-cp .env.example .env      # then set AUDIT_ACCESS_CODE and SESSION_SECRET
+cp .env.example .env      # then set SESSION_SECRET
 openssl rand -hex 32      # paste this as SESSION_SECRET
 npm start                 # http://localhost:3000
 npm test
@@ -67,7 +67,7 @@ nothing.
 
 | | Local console | Behind a proxy |
 |---|---|---|
-| command | `docker compose up` | `docker compose --profile tailscale up` |
+| command | `docker compose up` | `docker compose --profile proxy up` |
 | what is published | Caddy on `8443`, TLS terminated here | the app on `127.0.0.1:3000`, no Caddy |
 | URL | `https://localhost:8443/admin` | whatever terminates the TLS |
 | TLS | Caddy's own CA, self-signed | terminated by the proxy in front |
@@ -75,44 +75,50 @@ nothing.
 Switch between them: `docker compose --profile local down` first, or the previous
 shape keeps its port.
 
-### The shape for a proxy that already terminated TLS
-
-For a live instance behind `tailscale serve`, which proxies
-`https://pi-agents.tail399956.ts.net/forgeright` to `http://127.0.0.1:3000`:
+### The shape for a server behind an existing TLS terminator
 
 ```bash
-docker compose --profile tailscale up
+docker compose --profile proxy up
 ```
 
-**No Caddy in this shape, and that is the point.** Tailscale has already terminated
-the TLS, so a second terminator in the chain would be TLS inside TLS, and Caddy's
-certificate is issued for `localhost` by its own CA and cannot answer for a tailnet
-name anyway. The application is published directly and trusts the forwarded protocol
-header, because the hop in front of it is named in `TRUST_PROXY`.
+**No Caddy in this shape, and that is the point.** Something in front has already
+terminated the TLS, so a second terminator in the chain would be TLS inside TLS, and
+Caddy's certificate is issued for `localhost` by its own CA and cannot answer for a
+public hostname anyway. The application is published directly and trusts the forwarded
+protocol header, because the hop in front of it is named in `TRUST_PROXY`.
+
+**The profile is named for the shape, not for a product.** It means "there is already
+a terminator in front of this container", and nginx, Caddy on the host, Tailscale or
+anything else all satisfy it. (`--profile tailscale` still works as an alias, from
+before the rename.)
 
 **It is published on `127.0.0.1`, not `0.0.0.0`.** The app refuses plain HTTP by
-design, so offering one on every interface would expose it to the LAN and to the
-tailnet. Bound to loopback it is reachable by `tailscale serve` - which dials its
-target from this host - and by nothing else.
+design, so offering one on every interface would expose it to the LAN. A terminator
+running **on the host** reaches a loopback listener, because it dials it from the host
+itself; a terminator in **another container** cannot, and needs the two on a shared
+network. That is your setup rather than this app's concern, and it is the one case
+where the publish has to change.
 
-**Two settings in this shape are not what you would guess:**
+**See `DEPLOY.md`** for what a real deployment needs: the settings that cause a login
+loop when they are wrong, generating the two secrets, and why `AI_PROVIDER=mock` cannot
+run a real interview.
 
-- `TRUST_PROXY=172.30.0.1`, the **bridge gateway**, not `127.0.0.1`. A request
-  published to the host arrives from the gateway, because `docker-proxy` forwards it,
-  so the `TRUST_PROXY=127.0.0.1` in `.env` - correct for running the app directly on
-  the host - names an address this container never sees. With it, every request
-  through the tunnel is refused and redirected, and the console never loads.
-- `ALLOWED_HOST` **must include the tailnet name**, which the compose service sets
-  for you. The app refuses a Host it was not told about, so a browser arriving as
-  `pi-agents.tail399956.ts.net` would get a 421 otherwise.
+### What a deployment is for: two links
 
-**Set `DEMO_LOGIN_TOKEN` in `.env` for this shape.** It is reachable beyond this
-machine, so the committed placeholder is **refused**: the app declines to register the
-demo route and says so in the log. Locally the placeholder is fine.
+A running instance serves two different audiences, and they are deliberately separate:
 
-**The app is still not reachable except through the proxy** in this shape, and that is
-verifiable rather than asserted: the LAN address, the tailnet address and the bridge
-gateway all refuse a connection, and only the host's own loopback answers.
+- **The console**, at `/admin`, for running a real audit. This is the working tool: you
+  invite participants, they answer, and the console groups and scores what they said.
+  It needs a real `AI_PROVIDER` and a key, because the intake conversation is an actual
+  conversation.
+- **The read-only demo link**, at `/admin/demo`, for showing somebody what the output
+  looks like without giving them an account or asking them to answer anything. It opens
+  one committed demonstration organisation, refuses every write, and cannot see any real
+  data. It works on `AI_PROVIDER=mock`, because it only reads what is already scored.
+
+The second exists because the first is a tool people have to use before they can judge
+it. Sending a link that shows a populated roadmap is the difference between describing
+the product and demonstrating it.
 
 Then open **https://localhost:8443/admin** and sign in as `demo@example.test`, or
 follow the read-only demo link:
@@ -537,10 +543,9 @@ Why the questionnaire is included, not just the admin console:
   roadmap the client then acts on.
 - The **answers are employees describing how the business runs**, which is the
   sensitive material this product exists to collect.
-- `AUDIT_ACCESS_CODE` travels in the request body of `/api/chat` and `/api/score`.
 
 `req.secure` decides, so a proxy that terminates TLS must be trusted for this to
-work: set `TRUST_PROXY=1` when exactly one proxy sits in front, and only when that
+work: set `TRUST_PROXY` to the proxy's address, and only when that
 proxy is the only thing able to reach the port. A client that can reach the port
 directly could otherwise send `X-Forwarded-Proto` itself.
 

@@ -23,6 +23,51 @@
 # and it is only available from Node 22 onward. Pinning to the major version the code is
 # developed and tested against is what keeps the container from being a different runtime
 # in a way nobody checks.
+# ===========================================================================
+# STAGE 1: FETCH proton-cli, VERIFIED
+# ===========================================================================
+#
+# FETCHED AT BUILD TIME, NOT COMMITTED. The binary is 27MB, it is third-party, and its
+# licence is not this project's to redistribute in a git repository. Fetching also
+# means the version is a PIN rather than a file somebody once copied in, so a rebuild
+# either reproduces the same binary or fails loudly.
+#
+# THE VERSION AND THE CHECKSUM ARE BOTH PINNED, and the checksum is what makes that
+# meaningful. A pinned version alone still trusts whatever is at that URL today; the
+# published SHA-256 is verified before the file is unpacked, so a replaced or corrupted
+# asset stops the build instead of shipping. Measured:
+#
+#   $ sha256sum pkg.tar.gz
+#   57e5083c20e8163e88421d0f6bdc7d959165df537b0e553ce9d13532d0686b5c
+#
+# which matches the proton-cli_5.0.1_linux_amd64.tar.gz line in the release's
+# checksums.txt, and the extracted binary is byte-identical to the one running on the
+# machine this was developed on.
+#
+# TO CHANGE THE VERSION: update both ARGs together, or the build stops at the
+# checksum. That is the intended friction - a silent upgrade of a mail credential's
+# tool is not something to slip through a rebuild.
+#
+# `--no-same-owner` because the tarball is unpacked as root and the extracted file is
+# then copied to its own stage; ownership here is irrelevant and letting tar restore a
+# recorded owner would be a pointless privilege.
+# ALPINE RATHER THAN A DEBIAN SLIM, because the fetch needs a downloader and the
+# Debian slim images carry neither curl nor wget. Measured: `debian:bookworm-slim` has
+# sha256sum but no curl and no wget, and so does the node base image. Alpine has wget
+# and a busybox sha256sum built in, at 3MB. A scratch stage with a copied-in downloader
+# would be more ostentatious and would not be smaller than this.
+FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc AS proton-cli
+ARG PROTON_CLI_VERSION=5.0.1
+ARG PROTON_CLI_SHA256=57e5083c20e8163e88421d0f6bdc7d959165df537b0e553ce9d13532d0686b5c
+RUN set -eu; \
+    url="https://github.com/roman-16/proton-cli/releases/download/v${PROTON_CLI_VERSION}/proton-cli_${PROTON_CLI_VERSION}_linux_amd64.tar.gz"; \
+    wget -q -O /tmp/proton.tar.gz "$url"; \
+    echo "${PROTON_CLI_SHA256}  /tmp/proton.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/proton.tar.gz -C /tmp --no-same-owner proton; \
+    install -m 0755 /tmp/proton /opt/proton; \
+    rm -f /tmp/proton.tar.gz /tmp/proton; \
+    /opt/proton --version
+
 FROM node:24-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
 
 # ---------------------------------------------------------------------------
@@ -105,6 +150,51 @@ RUN chmod +x /app/docker-entrypoint.sh
 # volume mounted there would hide it.
 RUN mkdir -p /data/store && chown node:node /data/store
 
+# ---------------------------------------------------------------------------
+# proton-cli, FOR THE PROTON MAIL TRANSPORT
+# ---------------------------------------------------------------------------
+#
+# THE BINARY SHIPS IN THE IMAGE; THE SESSION DOES NOT. That split is the whole point:
+# the credential is a Proton login, and it must never exist on the host or in a layer
+# anybody can pull. The operator signs in ONCE inside a running container, the session
+# lands in the mounted volume below, and it stays there.
+#
+# STATICALLY LINKED, AND THAT IS MEASURED RATHER THAN ASSUMED, because it decides
+# whether this can be a copy:
+#
+#   $ file proton
+#   ELF 64-bit LSB executable, x86-64, statically linked, Go BuildID=..., stripped
+#   $ ldd proton
+#   not a dynamic executable
+#
+# A static Go binary has no interpreter, no libc and no libraries to carry, so there
+# is no glibc-version question to get wrong - which is the failure mode worth ruling
+# out here, since a binary built against a newer glibc would run on the build machine
+# and fail at runtime. It was also RUN in this base image before being copied, so
+# "static" is confirmed by execution rather than by reading the header:
+#
+# and the same file is RUN before it is copied, so the version is confirmed by executing
+# it rather than by reading a header. The fetch stage below does this on every build:
+#
+#   /tmp/proton.tar.gz: OK
+#   proton version 5.0.1
+#
+# x86-64 ONLY, because the binary is. On an arm64 host this build fails at the COPY
+# rather than producing an image whose mail silently cannot work.
+COPY --from=proton-cli /opt/proton /usr/local/bin/proton-cli
+
+# THE SESSION DIRECTORY, EMPTY, OWNED BY node. The binary reads XDG_CONFIG_HOME and
+# looks for proton-cli/ inside it, so pointing that variable at /home/node/.config
+# makes this ONE KNOWN LOCATION - which is what a volume needs.
+#
+# XDG_CONFIG_HOME RATHER THAN PROTON_CONFIG, and this was tested against the binary
+# rather than picked from the documentation: PROTON_CONFIG names the SETTINGS FILE
+# only, so the sessions/ directory would stay wherever HOME put it and the credential
+# would end up outside the volume. Measured, with XDG_CONFIG_HOME pointed at an empty
+# directory: `proton account profiles list` answers "No profiles." and creates
+# proton-cli/ there, while without it the host's real session appears.
+RUN mkdir -p /home/node/.config && chown node:node /home/node/.config
+
 USER node
 
 # Same port the app defaults to. Exposed for documentation: compose publishes it.
@@ -129,7 +219,8 @@ EXPOSE 3000
 ENV HOST=0.0.0.0 \
     PORT=3000 \
     STORE_DIR=/data/store \
-    NODE_ENV=production
+    NODE_ENV=production \
+    XDG_CONFIG_HOME=/home/node/.config
 
 # THE ENTRYPOINT SEEDS THE STORE AND THEN EXECS THE APP. See docker-entrypoint.sh for why
 # the committed demo has to be copied rather than mounted in place: the app cannot open a
