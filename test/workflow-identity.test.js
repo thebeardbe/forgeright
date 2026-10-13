@@ -21,6 +21,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -283,28 +284,93 @@ test('a merge is LOUD - the console.warn fires, because a silent merge is worse 
     assert.match(logged, /proc-one/, 'and names the id the round kept');
 });
 
-test('the rule requires EXACTLY ONE on each side - several held, several incoming, both declined', async () => {
-    // With several held, position and step sharing are not evidence enough to say WHICH one is
-    // being reworded, so the rule applies only when the round holds exactly one process.
-    const twoHeld = await loadClient({
+test('the rule runs on a MULTI-ENTRY reply - several held, several incoming, both resolved', async () => {
+    // REWRITTEN. It encoded the contract that was replaced - "exactly one on each side" - on the
+    // reasoning that "step sharing is not evidence enough to say WHICH one is being reworded". An
+    // EXACT STEP-NAME MATCH is exactly that evidence, so the guards were the defect: a real reply
+    // carries TWO entries, both guards blocked, and the rule was DEAD CODE on every interview.
+    //
+    // THE TWO CASES BELOW ARE THE BUILDER'S, and both now give the correct answer: a multi-held
+    // reply resolves against whichever held process it shares a step with, and a multi-entry reply
+    // resolves each entry on its own.
+
+    // SEVERAL HELD, ONE INCOMING: p3 shares step S with p1, so it takes p1's id.
+    const severalHeld = await loadClient({
         replies: [
             { status: 'complete', content: 'a', audit: { workflows: [{ id: 'p1', title: '1', steps: [STEP('S')] }, { id: 'p2', title: '2', steps: [STEP('T')] }] } },
             { status: 'complete', content: 'b', audit: { workflows: [{ id: 'p3', title: '3', steps: [STEP('S')] }] } }
         ]
     });
-    await twoHeld.send('one');
-    await twoHeld.send('two');
-    assert.equal(/reworded the process/.test(twoHeld.warnings.join(' ')), false, 'several held: declined');
+    await severalHeld.send('one');
+    await severalHeld.send('two');
 
-    const twoIncoming = await loadClient({
+    assert.match(severalHeld.warnings.join(' '), /reworded the process/, 'several held: the match FIRES');
+    // p3 takes p1's identity, and p2 is carried forward beside it, so the round still holds both.
+    const afterSeveralHeld = severalHeld.posts.at(-1).data.workflows.map((w) => w.id).sort();
+    assert.deepEqual(afterSeveralHeld, ['p1', 'p2'], 'p3 becomes p1, and p2 is untouched');
+
+    // ONE HELD, SEVERAL INCOMING: p2 shares step S with the held p1 and takes its id; p3 shares
+    // nothing with either and is KEPT as its own process.
+    const severalIncoming = await loadClient({
         replies: [
             { status: 'complete', content: 'a', audit: { workflows: [{ id: 'p1', title: '1', steps: [STEP('S')] }] } },
             { status: 'complete', content: 'b', audit: { workflows: [{ id: 'p2', title: '2', steps: [STEP('S')] }, { id: 'p3', title: '3', steps: [STEP('T')] }] } }
         ]
     });
-    await twoIncoming.send('one');
-    await twoIncoming.send('two');
-    assert.equal(/reworded the process/.test(twoIncoming.warnings.join(' ')), false, 'several incoming: declined');
+    await severalIncoming.send('one');
+    await severalIncoming.send('two');
+
+    assert.match(severalIncoming.warnings.join(' '), /reworded the process/, 'several incoming: the match fires');
+    const afterIncoming = severalIncoming.posts.at(-1).data.workflows;
+    // TWO entries, not one: p2 resolved to p1 and p3 kept its own id.
+    assert.equal(afterIncoming.length, 2, 'two processes in the reply stay two');
+    assert.deepEqual(afterIncoming.map((w) => w.id).sort(), ['p1', 'p3'], 'p2 became p1; p3 is untouched');
+});
+
+test('A TWO-ENTRY REPLY IS RESOLVED - the shape a real reply has, which no test covered', async () => {
+    // THE TEST THAT WOULD HAVE FAILED AGAINST THE OLD GUARD, and the reason this survived four
+    // review rounds: every test in this file drove ONE-entry replies, and both old guards required
+    // exactly one. A real reply carries two - the stale carry-forward beside the current wording -
+    // so the rule returned untouched every turn and the duplicate was never seen.
+    //
+    // ASSERTED ON A PAYLOAD OF THE SHAPE THE HARNESS ACTUALLY PRODUCES: two entries, no step
+    // shared with `held` (a first turn), sharing a step WITH EACH OTHER. Resolving against `held`
+    // alone cannot see this, because neither entry is held.
+    const client = await loadClient({
+        replies: [{
+            status: 'complete', content: 'x',
+            audit: {
+                workflows: [
+                    { id: 'first', title: 'First', steps: [STEP('Open the bill'), STEP('Check the lines')] },
+                    { id: 'second', title: 'Second', steps: [STEP('Check the lines'), STEP('Total the charges')] }
+                ]
+            }
+        }]
+    });
+    await client.send('go');
+
+    const saved = client.posts.at(-1).data.workflows;
+    assert.equal(saved.length, 1, 'the two entries sharing a step name become ONE - the old guard left both');
+    assert.match(client.warnings.join(' '), /described ONE process twice/, 'and the fold is announced');
+});
+
+test('the order is IRRELEVANT: the same pair either way keeps the same winner', async () => {
+    // The winner is chosen by `measurableCount`, so which entry comes first must not change which
+    // one survives - otherwise the reply's own ordering would decide a participant's record.
+    const rich = { id: 'rich', title: 'Rich', steps: [STEP('Check the lines'), STEP('Total the charges')], frequencyPerWeek: 5, minutesPerInstance: 12 };
+    const sparse = { id: 'sparse', title: 'Sparse', steps: [STEP('Check the lines')] };
+
+    const forward = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows: [rich, sparse] } }] });
+    await forward.send('go');
+    const backward = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows: [sparse, rich] } }] });
+    await backward.send('go');
+
+    for (const [label, client] of [['rich first', forward], ['sparse first', backward]]) {
+        const saved = client.posts.at(-1).data.workflows;
+        assert.equal(saved.length, 1, `${label}: one entry survives`);
+        assert.equal(saved[0].steps.length, 2, `${label}: the RICHER entry is kept, whichever order it arrived in`);
+        assert.equal(saved[0].minutesPerInstance, 12, `${label}: with its content, not only its id`);
+    }
 });
 
 test('the step-name comparison TRIMS and CASE-FOLDS, so case and padding do not defeat it', async () => {
@@ -366,7 +432,183 @@ test('KNOWN LIMIT: a rewording that renames EVERY step still duplicates', async 
 });
 
 // ===========================================================================
-// 3. THE `exhausted` CARRY-FORWARD - the answer-saving order
+// 3b. THE CASES THAT MUST **NOT** MERGE - the direction that matters most
+// ===========================================================================
+//
+// Fusing two genuinely different processes DISCARDS a participant's work, which is the harm the
+// whole rule exists to avoid. Every case below must leave the entries as they arrived.
+
+test('two DIFFERENT processes sharing no step name stay TWO', async () => {
+    // The core harm. Neither shares a step with the other, and neither carries nothing, so neither
+    // form of the claim applies - the rule must keep both.
+    const client = await loadClient({
+        replies: [{
+            status: 'complete', content: 'x',
+            audit: {
+                workflows: [
+                    { id: 'invoices', title: 'Invoices', steps: [STEP('Open the invoice'), STEP('Book it')] },
+                    { id: 'phones', title: 'Phones', steps: [STEP('Answer the call'), STEP('Log the issue')] }
+                ]
+            }
+        }]
+    });
+    await client.send('go');
+
+    const saved = client.posts.at(-1).data.workflows;
+    assert.equal(saved.length, 2, 'two different processes stay two');
+    assert.deepEqual(saved.map((w) => w.id).sort(), ['invoices', 'phones']);
+    assert.equal(/described ONE process twice/.test(client.warnings.join(' ')), false, 'and nothing is folded');
+});
+
+test('two processes each matching a DIFFERENT held process stay TWO', async () => {
+    // Each entry resolves against its own held process, so a multi-held round must not be collapsed
+    // into whichever one matched first.
+    const client = await loadClient({
+        replies: [
+            { status: 'complete', content: 'a', audit: { workflows: [
+                { id: 'held-invoices', title: 'Invoices', steps: [STEP('Open the invoice')] },
+                { id: 'held-phones', title: 'Phones', steps: [STEP('Answer the call')] }
+            ] } },
+            { status: 'complete', content: 'b', audit: { workflows: [
+                { id: 'reworded-invoices', title: 'Invoices again', steps: [STEP('Open the invoice')] },
+                { id: 'reworded-phones', title: 'Phones again', steps: [STEP('Answer the call')] }
+            ] } }
+        ]
+    });
+    await client.send('one');
+    await client.send('two');
+
+    const saved = client.posts.at(-1).data.workflows;
+    const ids = saved.map((w) => w.id).sort();
+    assert.ok(ids.includes('held-invoices'), 'the invoices entry resolved to its held id');
+    assert.ok(ids.includes('held-phones'), 'and the phones entry to ITS held id');
+    assert.equal(saved.length, 2, 'each matched a different held process, so the round still holds both');
+});
+
+test('a NEWLY NAMED process ALONE is kept - the case that killed the reverted filter', async () => {
+    // THE CASE THAT MATTERS MOST FOR `carriesNothing`. The prompt tells the model that a newly named
+    // process "STARTS THE CONVERSATION AGAIN... as a fresh matrix from its `task` and `trigger`
+    // onward", so it arrives EXACTLY like an empty entry: task and trigger, no steps. Used as a
+    // DROP predicate it discarded that process and could hand `/api/score` an empty array - which
+    // is why that attempt was reverted. It is only safe BESIDE a richer sibling, so a LONE empty
+    // entry must survive untouched.
+    const client = await loadClient({
+        replies: [
+            { status: 'complete', content: 'a', audit: { workflows: [{ id: 'first', title: 'First', steps: [STEP('Open the invoice')] }] } },
+            { status: 'complete', content: 'b', audit: { workflows: [{ id: 'newly-named', title: 'A different job', task: 'A different job', trigger: 'the phone rings' }] } }
+        ]
+    });
+    await client.send('one');
+    await client.send('two');
+
+    const saved = client.posts.at(-1).data.workflows;
+    assert.ok(saved.map((w) => w.id).includes('newly-named'),
+        'the step-less newly-named process is KEPT, not discarded');
+    assert.equal(/described ONE process twice/.test(client.warnings.join(' ')), false,
+        'and it was not folded into the richer sibling');
+});
+
+// ===========================================================================
+// 3c. THE REAL PAYLOADS - read from disk, not hand-built
+// ===========================================================================
+//
+// THIS CHAIN HAS PRODUCED FIVE DEFECTS AND FOUR WERE FOUND BY FIXTURES THAT DID NOT MATCH THE
+// ARTEFACT. So the two payloads that exposed this one are read from the host rather than re-created
+// from a description. They live OUTSIDE the repo, so the tests skip with a clear message when they
+// are absent rather than failing on a machine that does not have them.
+
+/** Reads the phone-bills reply, a bare JSON array of workflows. Returns null when absent. */
+function readBills() {
+    try {
+        return JSON.parse(fs.readFileSync('/tmp/bills.json', 'utf8'));
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Reads the fuel-card round, a bare JSON array of workflows. Returns null when absent.
+ *
+ * PINNED AS A FILE RATHER THAN READ FROM THE DATABASE, and that is a correction. The first
+ * version opened a COPY of the round's store, which was right about not writing beside the
+ * original and wrong about stability: the store is live while a container holds it, and a
+ * read taken during a checkpoint saw a re-seeded state, so the case skipped on a host that
+ * still had the payload. A response payload does not change once the round is closed, so
+ * extracting it is the stable form - and it is the same form `readBills` already uses.
+ *
+ * @returns {Array<object>|null}
+ */
+function readFuelCard() {
+    try {
+        return JSON.parse(fs.readFileSync('/tmp/fuelcard.json', 'utf8'));
+    } catch {
+        return null;
+    }
+}
+
+test('the REAL phone-bills reply folds to ONE entry, keeping the richer one and its content', async (t) => {
+    const workflows = readBills();
+    if (workflows === null) { t.skip('/tmp/bills.json is not present on this host'); return; }
+
+    // THE PAYLOAD: 2 entries, both 5 steps, 3 shared step names, one without `minutesPerInstance`.
+    assert.equal(workflows.length, 2, 'the artefact holds two entries');
+    assert.equal(workflows.filter((w) => w.minutesPerInstance === undefined).length, 1,
+        'and one of them lacks minutesPerInstance - the richer/sparser pair');
+
+    const client = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows } }] });
+    await client.send('go');
+
+    const saved = client.posts.at(-1).data.workflows;
+    assert.equal(saved.length, 1, 'the two entries fold to ONE');
+    // BOTH THE ID AND THE CONTENT, because checking the id alone passes on a wrong result.
+    assert.equal(saved[0].id, 'checking-the-company-mobile-phone-bills-against-the-handset',
+        'and the RICHER entry\'s id is kept');
+    assert.equal(saved[0].minutesPerInstance, 240, 'with its content, not a step-less stub');
+    assert.equal(saved[0].steps.length, 5, 'and its five steps');
+    assert.match(client.warnings.join(' '), /described ONE process twice/, 'and the fold is announced');
+});
+
+test('the REAL fuel-card round folds a step-less entry into the 7-step one', async (t) => {
+    const workflows = readFuelCard();
+    if (workflows === null) { t.skip('/tmp/fuelcard.json is not present on this host'); return; }
+
+    // THE PAYLOAD: a 4-key step-less entry beside a 19-key 7-step one - the BY-ABSENCE case.
+    assert.equal(workflows.length, 2, 'the artefact holds two entries');
+    assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 1,
+        'and exactly one carries no steps');
+
+    const client = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows } }] });
+    await client.send('go');
+
+    const saved = client.posts.at(-1).data.workflows;
+    assert.equal(saved.length, 1, 'the step-less entry is folded away');
+    assert.equal(saved[0].steps.length, 7, 'keeping the entry WITH the steps');
+    assert.equal(Object.keys(saved[0]).length, 19, 'and its full set of fields, not the 4-key stub');
+    assert.match(client.warnings.join(' '), /described ONE process twice/, 'and it is announced, not silent');
+});
+
+test('the by-absence fold, on the SHAPE the fuel-card round had: a step-less entry beside a rich one', async () => {
+    // THE SAME CASE AS THE ARTEFACT, built here because the host file is mutable (see above). A
+    // step-less 4-key entry beside a 19-key 7-step one, which is what the fuel-card round held.
+    const stepLess = { id: 'stale-wording', title: 'Stale', task: 'Reconciling fuel-card statements', trigger: 'the statements arrive' };
+    const rich = {
+        id: 'fuel-card-full', title: 'Reconciling fuel-card statements', task: 'Reconciling fuel-card statements', trigger: 'the statements arrive',
+        steps: Array.from({ length: 7 }, (_, i) => STEP(`Fuel step ${i}`)), frequencyPerWeek: 5, timePerPeriod: { hours: 2, period: 'week' },
+        minutesPerInstance: 20, peopleAffected: 2, handoffTo: ['Finance']
+    };
+
+    const client = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows: [stepLess, rich] } }] });
+    await client.send('go');
+
+    const saved = client.posts.at(-1).data.workflows;
+    assert.equal(saved.length, 1, 'the step-less entry folds into the rich one');
+    assert.equal(saved[0].steps.length, 7, 'the entry WITH the steps is kept');
+    assert.equal(saved[0].minutesPerInstance, 20, 'and its content, not the step-less stub');
+    assert.match(client.warnings.join(' '), /described ONE process twice/, 'and the fold is announced');
+});
+
+// ===========================================================================
+// 4. THE `exhausted` CARRY-FORWARD - the answer-saving order
 // ===========================================================================
 
 test('an EXHAUSTED turn CARRIES a previously-held process forward, saved AND scored', async () => {
