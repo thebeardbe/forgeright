@@ -558,23 +558,36 @@ function moveOnLine(open) {
 const SUBSTITUTED = true;
 
 /**
- * What the participant sees when the round closes because nothing more is being recorded.
+ * What the participant sees when the round closes because the interview stopped gaining evidence.
  *
- * HONEST AND MID-INTERVIEW AWARE. It can fire while they are part-way through an answer, so it
- * does not say "thank you for your answers" as though the conversation had finished naturally -
- * it says the tool has stopped gathering, that this is not their fault, and that what they gave
- * is kept. That is the truth: the fields supplied ARE recorded and ARE scored, and the failure is
- * the interviewer's rather than theirs.
+ * TRUE WHETHER THE CAP FIRED ON A STALL OR ON A DIP, and that is why the wording changed. It
+ * used to say "I have not been able to record anything new from the last few answers", which is
+ * a claim about the last few turns - and the reviewer measured that it is FALSE about one time in
+ * five, because `evidenced` fluctuates: a dip in the payload is counted against the peak, so the
+ * cap can fire while the interview was still recording. Telling a participant the tool recorded
+ * nothing, when it had, is the owner's original complaint arriving from the mechanism meant to
+ * prevent it.
  *
- * IT DOES NOT APOLOGISE FOR THE PRODUCT. An admin may read this page or ask about it, and
- * "we are sorry" without a reason invites a support conversation nobody can act on. It names
- * what happened, in terms a participant can agree with.
+ * SO IT SAYS WHAT IS TRUE IN BOTH CASES: the tool has taken what it can usefully take. That is a
+ * statement about the interviewer's judgement rather than about a measurement, so it does not
+ * depend on which side of the fluctuation the cap fired on.
+ *
+ * IT STILL SAYS THE ANSWERS ARE SAVED AND COUNT, which is true in both cases and is what a
+ * participant most needs to know.
+ *
+ * IT DOES NOT APOLOGISE. An admin may read this page, and a bare apology invites a support
+ * conversation nobody can act on. It names what is happening in terms a participant can agree
+ * with.
+ *
+ * DISTINCT FROM THE OTHER TWO TERMINAL MESSAGES, which a test compares directly:
+ *   nothing_answered - "we did not manage to capture any answers"   (they declined everything)
+ *   exhausted        - "that gives me a good picture of this one"    (every question was asked)
+ *   this one         - "I have everything I can usefully take"       (the interview stopped gaining)
  */
 const EVIDENCE_CAP_CONTENT =
-    'Thank you - let us stop here. I have not been able to record anything new from the last few '
-    + 'answers, so rather than keep asking I will work with what you have told me. Everything you '
-    + 'did give is saved, and it counts. Someone can follow up with you if there is more to '
-    + 'capture.';
+    'Thank you - let us stop here. I have everything I can usefully take from this one, so rather '
+    + 'than keep asking I will work with what you have told me. Everything you gave is saved, and '
+    + 'it counts. Someone can follow up with you if there is more to capture.';
 
 /**
  * HOW MANY TURNS THE INTERVIEW MAY GO WITHOUT GAINING ANY EVIDENCE.
@@ -601,16 +614,19 @@ const EVIDENCE_CAP_CONTENT =
  *   working - reached a TWELVE TURN plateau, because `evidenced` counts the effort pair as two
  *   fields and can hold still while a payload step lands between them.
  *
- * TWELVE WAS TOO TIGHT, and that measurement is why this is not twelve. A cap that ends a run
+ * TWELVE WAS TOO TIGHT - the first choice, before the measurement above - and that measurement is
+ * why the constant is twenty. The twelve and twenty below are HISTORY rather than the current
+ * value; `TURNS_WITHOUT_EVIDENCE_CAP` is the only place the number lives. A cap that ends a run
  * which is still gaining a field every eight turns is the false positive this design has to
  * avoid - it discards real answers and tells the participant the tool gave up on them. Twenty
  * clears that plateau with room to spare while still ending a stuck run about five times sooner
  * than the observed 100-turn signature.
  *
  * THE COST IS DELIBERATE AND NAMED: a genuinely stuck participant sees up to twenty questions
- * before the round closes, which is worse than twelve. That is the trade this cap makes, and the
- * reason is that cutting off a working interview is worse than a longer wait on a broken one:
- * the first loses evidence the participant gave, the second only loses their patience.
+ * before the round closes, which is worse than the twelve of the first choice. That is the trade
+ * this cap makes, and the reason is that cutting off a working interview is worse than a longer
+ * wait on a broken one: the first loses evidence the participant gave, the second only loses
+ * their patience. (Twelve is historical here too - see the note above.)
  */
 const TURNS_WITHOUT_EVIDENCE_CAP = 20;
 

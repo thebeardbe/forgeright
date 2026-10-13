@@ -105,6 +105,30 @@ The reviewer's full report is the source for these. Ordered by what matters.
 
 ### Correctness
 
+- **M1: a fluent interview can lose ONE field when `evidenced` fluctuates.** The evidence cap
+  counts turns since the payload's evidence last grew, against a PEAK. The payload is not
+  monotonic - the model rewrites `processes` each turn and drops fields it had filled, so the
+  count dips and rises - and a dip is counted as time passing. So a run that is working can
+  reach twenty turns since its peak with ONE field still open, and the cap closes the round.
+
+  **One fluent run in five, losing one field, not the interview.** The reviewer's ten-turn
+  capture is the evidence: the interview held 13-15 fields throughout and `turnsWithoutEvidence`
+  read 7 at the last turn purely from fluctuation. The supplied fields are recorded and scored,
+  so the cost is a thin field rather than a lost conversation.
+
+  **THE UNION FIX IS A NO-OP, PROVEN, SO DO NOT SPEND A PASS ON IT.** It reads as the obvious
+  repair - keep the union of fields ever seen rather than reading the current payload - and it
+  changes nothing, because the counter depends only on the RUNNING MAXIMUM of the series.
+  Taking a running max of a series that is already its own running max is idempotent:
+  `counter(S) = counter(runningMax(S)) = 7`. The peak already IS the union.
+
+  **What would actually separate the two cases** is a counter keyed on "the count did not change
+  AT ALL", rather than on "did not exceed the peak": a dip has a short identical streak (4 in
+  the measured runs) and a real stall has a long one (17). That distinguishes fluctuation from a
+  stop without depending on the payload being monotonic. **Not recommended now** - it is a
+  change to the mechanism that closed five defects, and the harm it removes is one field in
+  one run in five.
+
 - **H4: `/api/score` is trusted from the client.** Partly addressed: the payload
   is now validated by the same `validateWorkflows` the model path uses, so a
   malformed audit is a 400 with a reason rather than a blank heading or a crash.

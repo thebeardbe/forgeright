@@ -197,11 +197,22 @@ export function reconcileMatrix({ processes, claimedHave = null, claimedMissing 
     // result is a model that stalls with the guard passing every repeat as legitimate.
     //
     // `evidenced` is the same test `provable` uses for completion at the end: a field counts
-    // only when THE PAYLOAD ITSELF carries a value of the right shape. It can only grow as the
-    // interview goes on, because a payload that has a field keeps it, so it is the one list a
-    // churning model cannot move. `provided` is the earlier name for exactly this idea - see
-    // normalizeProcessesPayload - and it is not reused here because that one is about a single
-    // payload's shape rather than the reconciliation.
+    // only when THE PAYLOAD ITSELF carries a value of the right shape, rather than being claimed.
+    // `provided` is the earlier name for exactly this idea - see normalizeProcessesPayload - and
+    // it is not reused here because that one is about a single payload's shape rather than the
+    // reconciliation.
+    //
+    // IT CAN SHRINK, WHICH AN EARLIER VERSION OF THIS COMMENT DENIED. It claimed the list "can
+    // only grow as the interview goes on, because a payload that has a field keeps it" - and
+    // live runs falsify that in every one that dipped, because the model REWRITES `processes`
+    // each turn and drops fields it had already filled. One measured series went
+    // 1,5,7,6,2,10,2,12,11,0,0,0,...; another 1,3,3,4,5,6,5,7,9,7,10,...
+    //
+    // SO THE LIST FLUCTUATES, and the cap that reads it counts against a PEAK rather than the
+    // previous turn. That is why a dip can be counted as a plateau: the peak holds its old value
+    // while the current count falls, and the turns-since counter keeps climbing. The behaviour is
+    // correct for a stall and pessimistic for a dip, which is recorded in NOTES.md as M1 rather
+    // than fixed here - the counter is not changed by this comment.
     return { have, missing, supplied, evidenced: [...provable], declined: [...declinedEverywhere] };
 }
 
