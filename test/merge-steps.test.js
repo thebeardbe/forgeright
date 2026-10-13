@@ -346,9 +346,16 @@ test('the merge is pure: no store, no connection, no org id', async () => {
     const source = await import('node:fs/promises').then((fs) => fs.readFile(new URL('../ai/merge-steps.js', import.meta.url), 'utf8'));
     assert.equal(/from '\.\.\/lib\//.test(source), false, 'ai/ does not import lib/');
     assert.equal(/requireConnection|new DatabaseSync/.test(source), false, 'no connection is opened');
-    // And the only import is within the ai layer.
+    // And the only imports are within the ai layer.
+    //
+    // THE EXHAUSTIVE LIST, KEPT EXHAUSTIVE. The property is "no dependency outside ai/", and
+    // naming the imports is what makes it exhaustive rather than approximate - an omitted entry
+    // would let a `../lib/` import ride in beside a listed `./matrix.js` and pass. So the list is
+    // updated when the layer gains a module rather than loosened to a prefix check, and
+    // `./response-shape.js` is the resolution helper both readers now share.
     const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]);
-    assert.deepEqual(imports, ['./matrix.js'], 'the only dependency is ai/matrix.js');
+    assert.deepEqual(imports, ['./matrix.js', './response-shape.js'],
+        'the only dependencies are within ai/');
 });
 
 // ===========================================================================
