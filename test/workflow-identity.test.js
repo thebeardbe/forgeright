@@ -585,20 +585,27 @@ test('the REAL fuel-card reply is LEFT ALONE - its stub carries no steps to co-t
     const workflows = readArtefact(ARTEFACTS.fuelcard.file);
     if (workflows === null) { t.skip(`${ARTEFACTS.fuelcard.file} is not present on this host`); return; }
 
-    // THE PAYLOAD: a 4-key step-less entry beside a 19-key 7-step one. It USED to fold (the
-    // removed by-absence arm), and it does NOT now, deliberately: with no steps on the stub there
-    // is no positive evidence, and the arm that inferred from absence destroyed a newly named
-    // process. An extra "not measured" row is cosmetic; a discarded process is silent data loss.
+    // THE PAYLOAD: a 4-key step-less entry beside a 19-key 7-step one - it used to fold, and does
+    // not now. THE COUNT IS THE ASSERTION: if this outcome changes, a test written to explain the
+    // decision has to be updated on purpose, which is the friction wanted when absence-based folding
+    // is considered again.
+    //
+    // THE MESSAGE ON EACH ASSERTION SAYS A DECISION, NOT A LAW. "Absence alone is not enough
+    // evidence" is a record of what was decided and measured, not a claim that no better evidence
+    // could fold a step-less carry-forward. A future fix that finds such evidence while still
+    // KEEPING a newly-named process WILL turn this red while being correct - so the messages point
+    // at where the decision and its reasoning live (`ai/audit.js`, "THERE IS NO BY-ABSENCE ARM"),
+    // so whoever hits it reads the four-versus-two word-overlap measurement before trying.
     assert.equal(workflows.length, 2, 'the artefact holds two entries');
     assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 1,
         'and exactly one carries no steps');
 
     const { saved, warnings } = await savedWorkflows(workflows);
 
-    assert.equal(saved.length, 2, 'the stub is NOT discarded - absence is not evidence');
+    assert.equal(saved.length, 2, 'the stub survives: absence alone does not fold it (see the note on the removed arm in ai/audit.js, and its four-versus-two word-overlap measurement)');
     assert.equal(saved.filter((w) => (w.steps || []).length === 7).length, 1, 'the rich entry is untouched');
     assert.equal(saved.filter((w) => (w.steps || []).length === 0).length, 1, 'and the stub survives');
-    assert.equal(foldedAnything(warnings), false, 'nothing is folded, so nothing is announced');
+    assert.equal(foldedAnything(warnings), false, 'and no fold is announced, because none was made');
 });
 
 test('the NEW artefact: TWO step-less stubs beside one rich entry are ALL KEPT', async (t) => {
@@ -614,10 +621,10 @@ test('the NEW artefact: TWO step-less stubs beside one rich entry are ALL KEPT',
 
     const { saved, warnings } = await savedWorkflows(workflows);
 
-    assert.equal(saved.length, 3, 'all three survive: nothing is inferred from absence');
+    assert.equal(saved.length, 3, 'all three survive: nothing here folds on absence (see the note on the removed arm in ai/audit.js)');
     assert.equal(idsOf(saved).length, 3, 'three distinct entries');
     assert.equal(saved.filter((w) => (w.steps || []).length === 5).length, 1, 'the rich entry is among them');
-    assert.equal(foldedAnything(warnings), false, 'and nothing was folded');
+    assert.equal(foldedAnything(warnings), false, 'and no fold is announced, because none was made');
 });
 
 test('EVERY PERMUTATION of each artefact gives the same result', async (t) => {
