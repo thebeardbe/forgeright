@@ -35,6 +35,7 @@
  */
 
 import { stepNeedsReasoning } from './matrix.js';
+import { responseWorkflow } from './response-shape.js';
 
 export { stepNeedsReasoning };
 
@@ -77,7 +78,23 @@ function stepKey(step) {
  * the same rule as `decidedHow`: first non-empty wins, so a later account that
  * quoted is not dropped for arriving second.
  *
- * @param {Array<object>} responses Response rows, each with `data.steps`.
+ * THE RESPONSE SHAPE IS RESOLVED, NOT ASSUMED, and the comment here is part of the fix. This
+ * used to say `each with \`data.steps\``, which was TRUE OF THE DEMO FIXTURE AND FALSE OF EVERY
+ * REAL INTERVIEW, and a comment asserting a shape the code does not hold is how this hidden for
+ * so long. A response is stored in one of two shapes:
+ *
+ *   a LIVE INTERVIEW round saves `{ workflows: [ { steps: [...] } ] }`  - nested, what the client posts
+ *   an IMPORTED round saves the workflow directly, so `steps` is at the top level
+ *
+ * The reads below used to go straight to `response.data.steps` and
+ * `response.data.touchedDepartments`, so on a live round they found NOTHING: the merge saw no
+ * steps, every step-derived term scored as unmeasured, and a real process weighed 0 with "No
+ * steps were recorded" for work the participant had described in full. `responseWorkflow` (see
+ * `ai/response-shape.js`) is the ONE definition of this shape, shared with the console, so the
+ * reader and the renderer cannot drift apart again.
+ *
+ * @param {Array<object>} responses Response rows, each with `data` in EITHER stored shape: a live
+ *   interview's `{ workflows: [...] }` or an imported workflow directly.
  * @returns {{
  *   steps: Array<object>,
  *   reasoningSteps: number,
@@ -98,18 +115,25 @@ export function mergeProcessSteps(responses) {
     for (const response of Array.isArray(responses) ? responses : []) {
         if (!response) continue;
 
+        // RESOLVED ONCE, HERE, WHERE THE RESPONSE ENTERS THE MERGE, rather than at each read
+        // below. Both fields come from the same resolved workflow, so a shape the resolver
+        // understands cannot be read correctly for the steps and wrongly for the departments.
+        const workflow = responseWorkflow(response.data);
+
         // The departments and their counts are read from the responses BEHIND the
         // process rather than from a field: "which departments described this" is
         // how many people spoke, not how many teams the work crosses, and the two
         // questions have different answers.
-        const departments = (response.data && response.data.touchedDepartments) || [];
+        const departments = (workflow && workflow.touchedDepartments) || [];
         const list = Array.isArray(departments) ? departments : [];
         const names = list.length > 0 ? list : [response.department];
         for (const name of names.filter(Boolean)) {
             describedBy.set(name, (describedBy.get(name) || 0) + 1);
         }
 
-        const steps = (response.data && response.data.steps) || [];
+        // FROM THE SAME RESOLVED WORKFLOW as the departments above. On a live interview this is
+        // `data.workflows[0].steps`; on an imported round it is `data.steps`.
+        const steps = (workflow && workflow.steps) || [];
         for (const step of Array.isArray(steps) ? steps : []) {
             const key = stepKey(step);
             if (key === '') continue;
