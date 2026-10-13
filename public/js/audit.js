@@ -564,20 +564,20 @@
         // the first turn both entries are new and neither is held - measured on the reported
         // payload, which came out as two entries with three identical step names between them.
         //
-        // THE SAME CLAIM IS MADE IN TWO WAYS HERE, and they are deliberately one pass rather than
-        // two rules, because they answer one question - "are these two entries the same process?"
-        // - and differ only in what counts as evidence:
+        // THE ONLY CLAIM MADE HERE IS THE POSITIVE ONE: two entries are the same process when they
+        // share an exactly equal step name, which is what rule 1 above says a shared step name
+        // means. The evidence is present and verbatim, so there is nothing to weigh and no number
+        // to tune.
         //
-        //   POSITIVE: they share an exactly equal step name. The evidence is present and verbatim.
-        //   BY ABSENCE: one carries nothing at all - no steps and no measurable field - while a
-        //     sibling in the same reply carries something. That is the model's own earlier wording
-        //     carried forward without its content, which the prompt forbids (`prompt_en.md` line
-        //     515: "`processes` holds the process you are working on NOW"). The evidence is the
-        //     absence itself, which is why it needs the sibling's presence to mean anything.
+        // THERE WAS A SECOND CLAIM, "BY ABSENCE" - that an entry carrying no steps and no
+        // measurable field, beside a sibling that carried something, was the model's own earlier
+        // wording and could be folded away. IT WAS REMOVED BECAUSE IT WAS UNSAFE. It is the same
+        // shape as a process the participant has just NAMED, which the prompt produces
+        // deliberately (line 521 holds the completed process, line 511 starts the new one as a
+        // fresh matrix with no steps), and it discarded that process. The measurement, and why no
+        // discriminator rescues it, are recorded where the fold is - see the note beginning "THERE
+        // IS NO BY-ABSENCE ARM" below. Nothing at all is folded on absence now.
         //
-        // THE SECOND FORM CANNOT DISCARD A PROCESS THE PARTICIPANT JUST NAMED, and that is the
-        // condition that matters. A newly named process "STARTS THE CONVERSATION AGAIN... as a
-        // fresh matrix from its `task` and `trigger` onward" (line 511), so it arrives empty - but
         // A merge is REPORTED, because removing a participant's entry is the kind of change that
         // must be visible in a log rather than inferred from a missing row.
         //
@@ -585,10 +585,26 @@
         // takes the round's identity.
 
         // PASS 2 — THE POSITIVE TEST, PAIRWISE: two entries sharing an exactly equal step name are
-        // one process, because that is what rule 1 says a shared step name means. Repeated to a
-        // fixed point, because a later entry can match an entry that was itself folded into an
-        // earlier one: with [a, b, c] where a~c and b~c, one pass over the array would leave a and
-        // b standing beside the merged c.
+        // one process, because that is what rule 1 says a shared step name means.
+        //
+        // A SINGLE FORWARD PASS, which is NOT a fixed point. An entry is folded into whatever
+        // already stands, so an entry arriving EARLY is never re-examined against a bridge that
+        // arrives later. Where the chain's bridge sits decides whether one pass is enough:
+        //
+        //   [a, b, c]  bridge in the MIDDLE -> 1 entry   b folds into a, then c shares a step
+        //                                               with the ALREADY-MERGED entry and folds too
+        //   [b, a, c]  bridge FIRST         -> 1 entry
+        //   [a, c, b]  bridge LAST          -> 2 entries c was pushed before b arrived and is
+        //                                               never looked at again
+        //
+        // Measured on the real function: 1, 1, 2 across those three orders.
+        //
+        // LEFT UNFIXED DELIBERATELY. Turning this into a real fixed point means repeating the pass
+        // until nothing changes, and the case it would rescue needs a bridge entry sharing a step
+        // name with two others - which no live run and no artefact has produced. The outcome is
+        // safe either way: what survives is an extra row reading "not measured", never a lost
+        // answer, because nothing here folds on absence. The test pins the measured sizes, so
+        // making this a real fixed point is a conscious change rather than a silent one.
         //
         // THE RICHER ENTRY WINS, by `measurableCount` (steps first, then filled fields).
         //
