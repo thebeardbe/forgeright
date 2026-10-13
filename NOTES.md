@@ -675,3 +675,26 @@ audit.js:187) - the payload is not in its own history.
 
 That is why the reconciliation is in the client and cannot be a prompt
 instruction.
+
+## `ai/audit-core.js` is 1412 lines
+
+Past the 1000-line hard limit, so per the guidelines it may only shrink from here.
+It was already the largest file before this session's work added to it.
+
+**It is the file every defect above lives in or beside**, which is not a
+coincidence: the interview's turn loop, the matrix gate, the payload build and the
+completion guard are all in one place, so a change to any of them is a change to
+all of them. The workflow-identity module was split out for exactly this reason
+and followed `ai/field-shapes.js`, which was split from `ai/matrix.js` earlier.
+
+A split is wanted, and it is not a five-minute job. The natural seams, from the
+work above:
+
+- the payload build and the shape resolution (`workflowsFrom`,
+  `normaliseProcessesPayload`) - what the model said, and where its fields are;
+- the completion guard and the matrix gate - whether the round may close;
+- the question rewriting (`withoutRepeatedQuestion`, `withoutClosingQuestion`,
+  the closing-question suppression) - what the participant is asked.
+
+**Do not start it inside a feature.** Per the guidelines it belongs in its own
+session, with a handoff first.
