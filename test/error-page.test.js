@@ -235,6 +235,30 @@ test('the `includes` reasoning holds: a JSON type ANYWHERE in the list wins', as
     assert.doesNotMatch(res.text, /<!DOCTYPE html>/, 'and no page is sent');
 });
 
+test('a header PREFERRING HTML but naming JSON gets JSON - INTENDED, quality values are not read', async () => {
+    // THE BEHAVIOUR THE COMMENT NOW ADMITS TO. `text/html;q=0.9, application/json;q=0.1` prefers
+    // HTML by quality value, and this returns JSON anyway. That is DELIBERATE rather than a bug: a
+    // caller that names `application/json` at all is a program that will try to parse the body, so
+    // a page would produce a parse error instead of the error it asked about. Honouring the
+    // preference would mean replying with something the caller cannot read, to satisfy a ranking it
+    // expressed for a format it did not ask for.
+    //
+    // PINNED SO A FUTURE READER DOES NOT "FIX" THIS INTO A QUALITY-VALUE PARSER. If someone does,
+    // this test is the one that tells them it was a decision.
+    const res = await request({
+        path: '/definitely-not-a-page',
+        headers: { accept: 'text/html;q=0.9, application/json;q=0.1' }
+    });
+
+    assert.equal(res.status, 404);
+    assert.match(res.contentType, /^application\/json/, 'JSON wins despite the lower quality value');
+    assert.doesNotMatch(res.text, /<!DOCTYPE html>/, 'no page, because the caller named JSON');
+
+    // And the reverse - HTML named alone - still gets the page, so this is not "JSON always".
+    const html = await request({ path: '/definitely-not-a-page', headers: { accept: 'text/html;q=0.9' } });
+    assert.match(html.contentType, /^text\/html/, 'HTML alone still gets the page');
+});
+
 test('a JSON error carries the shape a client parses', async () => {
     // The body must be valid JSON with the `error` key the module documents, or a client reading it
     // breaks on the error path - the failure this format decision exists to prevent.
@@ -246,14 +270,21 @@ test('a JSON error carries the shape a client parses', async () => {
 });
 
 // ===========================================================================
-// 2. THE 500 HANDLER - reachable offline, and it must not leak
+// 2. THE ERROR STATUS - a client error keeps its status, a throw becomes 500
 // ===========================================================================
 
 /**
- * A malformed JSON body reaches `express.json()`, which throws, which reaches the error handler.
+ * A malformed JSON body, which `express.json()` rejects with `err.status = 400`.
  *
- * THIS IS A REAL THROW THROUGH THE REAL HANDLER, not a simulated one: it is the only path in this
- * app that produces an unhandled error offline, and it exercises exactly the code the commit added.
+ * THIS IS A CLIENT ERROR, NOT AN UNCAUGHT THROW, and the name says so. The earlier fixture called
+ * this an "uncaught throw" and asserted 500, which ENCODED THE BUG: Express attaches 400 to a
+ * malformed body, and a handler that answered 500 told the sender "this is a fault on our side,
+ * not yours" about a request THEY malformed. Six tests shared that fixture and every one of them
+ * wanted the real status, which is 400.
+ *
+ * SO IT IS USED WHERE THE TEST IS ABOUT A MALFORMED BODY (the status, the wording, the leak and
+ * the format), and the genuine-throw fixture below is used where the test is about an uncaught
+ * throw.
  */
 async function malformedBodyRequest(extra = {}) {
     return request({
@@ -265,23 +296,132 @@ async function malformedBodyRequest(extra = {}) {
     });
 }
 
-test('an uncaught throw is answered with the 500 page, not a stack trace', async () => {
+/**
+ * An OVERSIZED JSON body, which `express.json()` rejects with `err.status = 413`.
+ *
+ * The JSON limit is 256kb, so this exceeds it. The parse never runs, so this is a second status
+ * that travels from a middleware rather than from a route.
+ */
+async function oversizedBodyRequest(extra = {}) {
+    const filler = 'x'.repeat(300 * 1024);
+    const body = `{"a":"${filler}"}`;
+    return request({
+        method: 'POST',
+        path: '/api/score',
+        rawBody: body,
+        headers: { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(body)) },
+        ...extra
+    });
+}
+
+/**
+ * A GENUINE UNCAUGHT THROW through the real handler, with a status of its own choosing.
+ *
+ * No route in this app throws uncaught, so this cannot be reached through a real request - the
+ * handler body is read OUT OF server.js and mounted on a two-route app, which is as close as an
+ * offline test can come and is stated as such. `status` is what the thrown error carries, which is
+ * how the unrecognised-status case is built.
+ */
+async function genuineThrow(status) {
+    const express = (await import('express')).default;
+    const { sendError } = await import('../lib/error-page.js');
+    const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
+
+    // The handler must resolve the status the way server.js does, or this tests nothing about it.
+    assert.match(source, /return sendError\(req, res, Number\(err\.status\) \|\| 500\);\n\}/,
+        'server.js resolves the status with `Number(err.status) || 500`');
+
+    const app = express();
+    // THE VIEW ENGINE AND LOCALS ARE CONFIGURED, as server.js does, or `sendError`'s
+    // `res.render('error', ...)` throws "No default engine" and the 500 comes from Express's
+    // default rather than from the page - which would make this test pass for the wrong reason.
+    // `currentUrl` is the one local the theme picker needs that no middleware here supplies; on the
+    // real server it is set at server.js:148, above the routes.
+    app.set('view engine', 'ejs');
+    app.set('views', path.join(PROJECT_ROOT(), 'views'));
+    app.use((req, res, next) => { res.locals.currentUrl = req.path; next(); });
+    app.get('/boom', (req, res, next) => {
+        const error = new Error('a genuine fault');
+        if (status !== undefined) error.status = status;
+        next(error); // the real Express path: an error passed to next()
+    });
+    // The body, verbatim from server.js, with the status resolution the test above asserts.
+    app.use((err, req, res, next) => {
+        if (res.headersSent) return next(err);
+        return sendError(req, res, Number(err.status) || 500);
+    });
+
+    const port = await freePort();
+    const server = app.listen(port, '127.0.0.1');
+    await new Promise((resolve) => server.once('listening', resolve));
+    try {
+        return await new Promise((resolve, reject) => {
+            const req = http.request({ host: '127.0.0.1', port, path: '/boom', headers: { accept: 'text/html' } }, (r) => {
+                let text = '';
+                r.setEncoding('utf8');
+                r.on('data', (c) => { text += c; });
+                r.on('end', () => resolve({ status: r.statusCode, text, contentType: r.headers['content-type'] || '' }));
+            });
+            req.on('error', reject);
+            req.end();
+        });
+    } finally {
+        await new Promise((resolve) => server.close(resolve));
+    }
+}
+
+test('a MALFORMED BODY is the sender\'s error: 400, with wording about the request', async () => {
+    // REPURPOSED from "an uncaught throw is answered with the 500 page". The fixture posts broken
+    // JSON, which is a CLIENT error, so the test now asserts what it is actually producing and its
+    // name says "malformed body" rather than lying about being an uncaught throw.
     const res = await malformedBodyRequest({ accept: 'text/html' });
 
-    assert.equal(res.status, 500, 'the status is 500');
+    assert.equal(res.status, 400, 'a malformed body is a 400, not a 500');
     assert.match(res.contentType, /^text\/html/, 'and a page is sent');
-    assert.match(res.text, /Something went wrong here|Something broke/i, 'the page says what happened');
+    assert.match(res.text, /request did not make sense|not in the form this site expects/i,
+        'the wording is about the request');
+    assert.doesNotMatch(res.text, /fault on our side, not yours/i,
+        'and does NOT blame the server, which is the wrong message this fix corrects');
 });
 
-test('the 500 page leaks NOTHING of the error - no message, no stack, no path', async () => {
-    // The error this throws is a SyntaxError from `express.json()`, whose message names the body
-    // and whose stack names the file. None of it may reach the response.
+test('a GENUINE UNCAUGHT THROW is a 500 - the fixture that name really needs', async () => {
+    // The real throw path, through the real handler body. Distinct from the malformed body above:
+    // nothing the sender did caused this, so it is 500 and the page says so.
+    const res = await genuineThrow(undefined);
+
+    assert.equal(res.status, 500, 'an uncaught throw is a 500');
+    assert.match(res.text, /Something went wrong here|fault on our side/i, 'and the page says it is ours');
+    assert.doesNotMatch(res.text, /\n\s+at [A-Za-z]/, 'with no stack');
+});
+
+test('an OVERSIZED body is a 413, with size wording and NOT the 500 message', async () => {
+    // The second wrong message the fix exposed: an oversized body previously kept 413 but showed
+    // the 500 copy, about a body the sender made too large.
+    const res = await oversizedBodyRequest({ accept: 'text/html' });
+
+    assert.equal(res.status, 413, 'an oversized body keeps its 413');
+    assert.match(res.text, /too much to send|larger than this site accepts/i, 'the wording is about size');
+    assert.doesNotMatch(res.text, /fault on our side, not yours/i, 'and not the server-fault message');
+});
+
+test('an error with an UNRECOGNISED status falls back to 500 - the safe direction', async () => {
+    // `Number(err.status) || 500` rather than `err.status || 500`: anything unrecognised reads as a
+    // server fault. Claiming a client error for something we threw would send the sender looking
+    // for a mistake they did not make, which is the distinction these pages exist to get right.
+    for (const weird of ['teapot', 0, null, NaN, undefined]) {
+        const res = await genuineThrow(weird);
+        assert.equal(res.status, 500, `err.status ${JSON.stringify(weird)} falls back to 500`);
+    }
+});
+
+test('a MALFORMED BODY leaks NOTHING - no message, no stack, no body fragment', async () => {
+    // Kept from the earlier version, which is genuinely about leaking rather than about the status,
+    // so it keeps its fixture and only its status expectation changes. The error is a SyntaxError
+    // from `express.json()`, whose message names the body and whose stack names the file.
     //
-    // THE MESSAGE IS ASSERTED BY ITS ACTUAL TEXT, not by a phrase: on this Node version the parser
-    // says "Expected property name or '}' in JSON at position 1", and an earlier version of this
-    // test looked for "Unexpected token" and would have passed while the message WAS being
-    // rendered. So the assertion matches the message the parser really produces, plus the JSON
-    // body fragment it quotes, which is the leak that matters.
+    // THE MESSAGE IS ASSERTED BY ITS ACTUAL TEXT: on this Node version the parser says "Expected
+    // property name or '}' in JSON at position 1", and an earlier check looked for "Unexpected
+    // token" and would have passed while the message WAS being rendered.
     const res = await malformedBodyRequest({ accept: 'text/html' });
 
     assert.doesNotMatch(res.text, /Expected property name|Unexpected token|in JSON at position/i,
@@ -293,12 +433,9 @@ test('the 500 page leaks NOTHING of the error - no message, no stack, no path', 
 });
 
 test('a DISTINCTIVE secret in the error does not reach the response, while the log has it', async () => {
-    // The commit's counting claim, made concrete: put a string in the request that ends up in the
-    // thrown error's message or stack, and assert it is absent from the page.
-    //
-    // `express.json()` echoes a fragment of the body in its message for some inputs, so the secret
-    // is placed where it would be quoted. The LOG is checked to have it, so the test cannot pass
-    // merely because nothing was logged.
+    // Kept from the earlier version: this is about LEAKING, not about which status. The fixture is
+    // the malformed body because it echoes a body fragment in its message, which is where a secret
+    // would travel - so the status is 400 here, and that is stated rather than asserted as 500.
     const secret = 'zQX-SECRET-4417';
     const booted = await bootWith();
     try {
@@ -313,20 +450,20 @@ test('a DISTINCTIVE secret in the error does not reach the response, while the l
             body
         });
 
-        assert.equal(res.status, 500, 'the throw is a 500');
+        assert.equal(res.status, 400, 'a malformed body is a 400 (the leak is what this tests)');
         assert.equal(res.text.includes(secret), false, 'the secret does NOT appear in the response');
         // The log carries the real error, which is what makes the page's silence safe.
-        assert.match(booted.output(), /unhandled error/i, 'the log records the unhandled error');
+        assert.match(booted.output(), /unhandled error/i, 'the log records the error');
         assert.equal(booted.output().includes(secret), true, 'and the log DOES carry the secret, so the page can be silent');
     } finally {
         await booted.kill();
     }
 });
 
-test('the 500 page is the same with NODE_ENV unset - no development exception', async () => {
-    // The commit chose to have NO development branch, "because a NODE_ENV branch is one more thing
-    // that can be absent on a real host while looking configured". Checked: with NODE_ENV absent
-    // the page is still clean, so a mis-set environment cannot turn on a stack trace.
+test('the error page is the same with NODE_ENV unset - no development exception', async () => {
+    // Kept: this is about the ABSENCE OF A DEVELOPMENT BRANCH, not about the status, so the
+    // malformed body is fine as a trigger and the status is 400. Checked with NODE_ENV absent,
+    // which is how a mis-set environment could have switched a stack trace on.
     const booted = await bootWith({ NODE_ENV: '' });
     try {
         const body = '{ not json';
@@ -339,7 +476,7 @@ test('the 500 page is the same with NODE_ENV unset - no development exception', 
             body
         });
 
-        assert.equal(res.status, 500);
+        assert.equal(res.status, 400, 'a malformed body is a 400 with NODE_ENV unset too');
         assert.doesNotMatch(res.text, /\n\s+at [A-Za-z]/, 'no stack with NODE_ENV unset');
         assert.doesNotMatch(res.text, /Expected property name|Unexpected token|not json/i, 'and no parser message');
     } finally {
@@ -347,10 +484,10 @@ test('the 500 page is the same with NODE_ENV unset - no development exception', 
     }
 });
 
-test('a JSON client gets a JSON 500, so the client can parse its own failure', async () => {
-    // The format decision applies to the 500 as much as to the 404: a fetch posting to /api/score
-    // with a JSON Accept must not be handed a page for its failure. This is the case that would
-    // otherwise surface as a JSON syntax error on the client rather than as the error it was.
+test('a JSON client gets a JSON 400 for a malformed body, so it can parse its own failure', async () => {
+    // REPURPOSED from "a JSON client gets a JSON 500". The FORMAT decision is what this tests, and
+    // it applies at any status; the fixture is a malformed body, so the status is 400. The client
+    // would otherwise surface a JSON page as a syntax error rather than as the error it was.
     const body = '{ not json';
     const res = await request({
         method: 'POST',
@@ -359,7 +496,7 @@ test('a JSON client gets a JSON 500, so the client can parse its own failure', a
         headers: { 'content-type': 'application/json', accept: 'application/json', 'content-length': String(Buffer.byteLength(body)) }
     });
 
-    assert.equal(res.status, 500, 'still a 500');
+    assert.equal(res.status, 400, 'a malformed body is a 400');
     assert.match(res.contentType, /^application\/json/, 'answered as JSON');
     const parsed = JSON.parse(res.text);
     assert.equal(typeof parsed.error, 'string', 'with the `error` key a client reads');
@@ -435,6 +572,37 @@ test('the headersSent path hands off to Express rather than throwing a second ti
 // 4. NOTHING LEAKS, AT ANY REACHABLE STATUS
 // ===========================================================================
 
+test('the 421 HIDES its theme picker, and no other status does - the scoping asserted both ways', async () => {
+    // THE FINDING THE FIX ADDRESSES. The 421 is served precisely because the host was refused, so
+    // every same-host URL is refused with it: MEASURED, `/settings/theme` returns 421 on the
+    // rejected host, so the picker rendered, populated with all 23 options, and submitting it did
+    // nothing - a second dead end for a reader already confused by the first.
+    //
+    // BOTH DIRECTIONS, because the point is that the flag is SCOPED to one status: hiding the
+    // picker on a 404 or 500 would be wrong, since those hosts are accepted and the picker works
+    // there.
+    const rejected = await request({ path: '/', host: 'wrong-host.example', headers: { accept: 'text/html' } });
+    const notFound = await request({ path: '/definitely-not-a-page', headers: { accept: 'text/html' } });
+
+    // THE COUNT IS THE ASSERTION, not mere absence: the picker's own markup names `theme-picker`.
+    const pickerCount = (text) => (text.match(/theme-picker/g) ?? []).length;
+
+    assert.equal(pickerCount(rejected.text), 0, 'the 421 renders ZERO theme pickers');
+    assert.equal(pickerCount(notFound.text), 1, 'a 404 on an accepted host renders EXACTLY ONE');
+});
+
+test('the picker WORKS on a host that is accepted, which is why it is only hidden on the 421', async () => {
+    // The reason hiding is scoped rather than global: on an accepted host the round-trip succeeds,
+    // so removing the control everywhere would take away a working feature. The 421 cannot offer it
+    // because the form posts to `/settings/theme`, refused by the same guard.
+    const theme = await request({ path: '/settings/theme?to=dracula', headers: { accept: 'text/html' } });
+    assert.equal(theme.status, 302, 'the theme route round-trips on an accepted host');
+
+    // And on the rejected host the same route is refused, which is the fact the flag encodes.
+    const refused = await request({ path: '/settings/theme?to=dracula', host: 'wrong-host.example', headers: { accept: 'text/html' } });
+    assert.equal(refused.status, 421, 'the theme route is refused on the rejected host, so the picker could not work');
+});
+
 test('the 421 names NEITHER the offending host NOR the allowed one', async () => {
     // The page a visitor reaches by using a host the installation does not answer for. Naming the
     // allowed list would hand out the configuration; naming the host they used would echo input.
@@ -488,14 +656,18 @@ test('the 404 does not echo the failing path or a query parameter', async () => 
 test('every reachable status is served as itself', async () => {
     const wrongHost = await request({ path: '/', host: 'wrong-host.example', headers: { accept: 'text/html' } });
     const notFound = await request({ path: '/definitely-not-a-page', headers: { accept: 'text/html' } });
-    const serverError = await malformedBodyRequest({ accept: 'text/html' });
+    const malformed = await malformedBodyRequest({ accept: 'text/html' });
+    const oversized = await oversizedBodyRequest({ accept: 'text/html' });
+    const genuine = await genuineThrow(undefined);
 
     assert.equal(wrongHost.status, 421, '421 for a refused host');
     assert.equal(notFound.status, 404, '404 for a missing route');
-    assert.equal(serverError.status, 500, '500 for an uncaught throw');
+    assert.equal(malformed.status, 400, '400 for a malformed body, which is the sender\'s error');
+    assert.equal(oversized.status, 413, '413 for an oversized body');
+    assert.equal(genuine.status, 500, '500 for a genuine uncaught throw');
 
     // None of them is 200, which is the failure a pretty page invites.
-    for (const [label, res] of [['421', wrongHost], ['404', notFound], ['500', serverError]]) {
+    for (const [label, res] of [['421', wrongHost], ['404', notFound], ['400', malformed], ['413', oversized], ['500', genuine]]) {
         assert.notEqual(res.status, 200, `${label} must not be 200`);
     }
 });
@@ -541,25 +713,28 @@ test('/api/score with no token still returns 403 JSON', async () => {
 // 7. REACHABILITY - what is not reachable, said rather than claimed
 // ===========================================================================
 
-test('the REACHABLE statuses are 421, 404 and 500, and each is exercised above', () => {
-    // The commit says "a bare 403 is currently unreachable from any route - stated rather than
-    // claimed as coverage". Checked here, and extended: 400 and 502 have no call site either.
-    //
-    // The claim is verified structurally, because the reachable ones are already driven through
-    // real requests above and the unreachable ones cannot be reached to test.
+test('the statuses REACHABLE THROUGH THE ERROR PAGE are the ones I measured, not the ones claimed', () => {
+    // ASSERT THE SET I FIND. The earlier version asserted `['404','421','500']`, which the fix
+    // falsified: `err.status` now travels, so a 400 and a 413 reach this page too. The set below is
+    // what the code does - a literal `sendError(req, res, N)` call site for 421/404/500, plus the
+    // status resolution that lets a middleware's status through.
     const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
-    const called = [...source.matchAll(/sendError\(req, res, (\d+)\)/g)].map((m) => m[1]);
+    const literal = [...source.matchAll(/sendError\(req, res, (\d+)\)/g)].map((m) => m[1]);
 
-    assert.deepEqual([...new Set(called)].sort(), ['404', '421', '500'],
-        'only 421, 404 and 500 are sent from a route');
+    // The literal call sites, plus the error handler's resolved status. The set is asserted as I
+    // measured it rather than as the comment claims.
+    assert.deepEqual([...new Set(literal)].sort(), ['404', '421'],
+        'the literal call sites are 421 and 404 - 500 comes through the error handler below');
+    assert.match(source, /sendError\(req, res, Number\(err\.status\) \|\| 500\)/,
+        'the error handler resolves a middleware status, so 400, 413 and 500 are reachable through it');
 });
 
-test('the 400, 403 and 502 pages exist but have no caller, so they are unreachable', async () => {
-    // The three pages are defined for completeness; none is reached through `sendError`. The
-    // console's own 403 renders `admin-no-access.ejs` and the API's 403 returns JSON, both of which
-    // are asserted above/below, so the page in `error.ejs` for 403 is dead code rather than a route.
+test('the statuses with NO caller stay unreachable, and the reason is recorded', async () => {
+    // 403 and 502 have no call site at all: the console's 403 renders `admin-no-access.ejs`, the
+    // API's 403 and 502 return JSON, and 502 is not emitted here. The comment in lib/error-page.js
+    // records why the entries stay, and this checks the FACT rather than the reasoning.
     const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
-    for (const status of ['400', '403', '502']) {
+    for (const status of ['403', '502']) {
         assert.equal(new RegExp(`sendError\\(req, res, ${status}\\)`).test(source), false,
             `${status} has no sendError call site`);
     }
