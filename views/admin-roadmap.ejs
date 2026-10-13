@@ -15,7 +15,10 @@
             <h1><%= organisation.name %></h1>
         </div>
         <div class="switchers">
-            <%- include('partials/theme-picker') %>
+            <%# THE THEME PICKER IS NOT HERE ANY MORE - it moved into the menu bar, which is
+                shared by all three console views. Leaving it here too would render two pickers
+                and two forms writing the same cookie. The sign-out button stays, because it is
+                an action rather than a setting. %>
             <form method="post" action="<%= basePath %>/admin/logout">
                 <button type="submit" class="secondary">Sign out</button>
             </form>

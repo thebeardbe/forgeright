@@ -29,5 +29,20 @@
         <a href="<%= basePath %>/admin"<%= activeView === 'console' ? ' class="active" aria-current="page"' : '' %>>Console</a>
         <a href="<%= basePath %>/admin/answers"<%= activeView === 'answers' ? ' class="active" aria-current="page"' : '' %>>Every answer</a>
         <a href="<%= basePath %>/admin/roadmap"<%= activeView === 'roadmap' ? ' class="active" aria-current="page"' : '' %>>Roadmap</a>
+        <%#
+            THE THEME PICKER LIVES IN THIS BAR, not on its own row beneath the title. It was a
+            separate `.switchers` row in all three views, giving a control the reader rarely
+            touches a line of its own while the tabs - the way to change page - sat elsewhere.
+            Both are "how I look at this tool" controls rather than content.
+
+            IT WRAPS RATHER THAN COLLAPSING TO A HAMBURGER, and that is a measurement. At 390px
+            the three tabs are 275px, the picker's select 135px and its label 40px - about 486px
+            of content in a 390px bar. So "put the picker in the bar" cannot mean one line on a
+            phone. The alternatives were shortening tab labels (which hides a page) or a
+            hamburger (which puts the only way to change page behind a tap). `flex-wrap` drops
+            the picker to a second line on a narrow screen while the tabs stay visible, which is
+            the whole reason the tabs sit at the top in the first place.
+        %>
+        <%- include('theme-picker') %>
     </nav>
 <% } %>

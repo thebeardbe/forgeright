@@ -15,6 +15,33 @@
  * read correctly in all 22 palettes and no rule here names a theme colour.
  */
 
+/* ─── THE CONSOLE IS WIDER THAN A PAGE OF PROSE ───────────────────────────────
+ *
+ * MEASURED BEFORE: `.wrap` is 620px at every viewport, which is 48% of a 1280px screen
+ * and left 322px of margin on each side. 620px is the right measure for a column of
+ * text - the landing page and the questionnaire keep it - and the WRONG one for a
+ * console whose main objects are a five-column table and an answers list.
+ *
+ * SCOPED BY THE STYLESHEET, NOT BY A NEW CLASS. This file is loaded by the three
+ * console views and by nothing else - `theme-head` takes `pageStyles`, and the
+ * questionnaire asks for `questionnaire` instead - so a rule here reaches the console,
+ * the answers view and the roadmap together and cannot leak onto the prose pages. A
+ * `.wrap.wide` class would have needed the same three views edited and would silently
+ * do nothing if a fourth forgot it.
+ *
+ * 1080px RATHER THAN A PERCENTAGE OR `none`. The console is an operator's tool and its
+ * widest object is a table of addresses and timestamps, so it gains nothing from a
+ * full 2560px window - the eye has to travel and the table's columns drift apart.
+ * 1080px is wide enough for the table plus the header controls beside it, and it keeps
+ * a comfortable measure for the paragraphs inside a process card.
+ *
+ * IT IS STILL A MAXIMUM, so below 1080px the console behaves exactly as before. The
+ * only change is on the screens that were wasting half their width.
+ */
+.wrap {
+    max-width: 1080px;
+}
+
 /* A response or a process that opens to its detail. <details> rather than a
    script: it expands without JavaScript, it is keyboard accessible, and the
    content is present for a page search even while collapsed. */
@@ -182,6 +209,22 @@
     background: var(--bg);
     border-bottom: 1px solid var(--line);
 }
+/* THE THEME PICKER, ALIGNED WITH THE TABS RATHER THAN SITTING ON THEM. It is included in the
+   bar by console-nav.ejs, and its own styles live in app.css because the questionnaire uses
+   the same control. This is only the bar's arrangement: pushed to the right on a wide screen
+   so it reads as a setting beside the navigation rather than a fourth page, and left to wrap
+   naturally on a phone where there is no width to spare.
+
+   `margin-left: auto` IS WHAT RIGHT-ALIGNS IT, and it costs nothing when the bar wraps: on
+   the second line the picker starts at the left edge with the tabs above it, which is where a
+   wrapped item belongs. */
+.views .theme-picker { margin-left: auto; }
+
+/* The select sits a shade lower than the pills because a form control has its own baseline.
+   `align-items: center` on the bar does most of it; this closes the last couple of pixels so
+   the picker's label lines up with the tab text rather than floating above it. */
+.views .theme-picker select { padding: 6px 8px; }
+
 .views a {
     padding: 7px 13px;
     border: 1px solid var(--line);
@@ -253,8 +296,38 @@ button[disabled] { opacity: 0.5; cursor: not-allowed; }
    `min-width` on the table inside it stops the columns squeezing to unreadable widths
    when the container is narrower than the content: without it the browser compresses
    cells rather than scrolling, and an address wraps to one character per line. */
-.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* THE SCROLLER WORKS; IT JUST DID NOT LOOK LIKE ONE. Measured below 500px: the table's
+   460px min-width exceeds the scroller's client width - 430px at a 500px viewport, 320px at
+   390px - so 30 to 140px of table sits past the right edge with nothing to say so. The
+   overlay scrollbar a phone draws is invisible until you already scroll (`scrollbar: 0`
+   measured, and no shadow or hint), so a column cut mid-word reads as a BROKEN LAYOUT
+   rather than as content to the right. That is the report, and this is the affordance.
+
+   A SHADOW ON THE RIGHT EDGE while there is more to see, so it appears exactly when it is
+   true and disappears at the end of the table. `background-attachment: local` is what makes
+   that work: the gradient scrolls WITH the content, so it is covered up once the reader
+   reaches the right-hand end. It stays off on a wide screen because there the table fits
+   the card and there is nothing to reveal.
+
+   IT NAMES NO PALETTE COLOUR. The shadow is built from `--line`, a semantic role, so it
+   reads correctly in all 22 themes rather than being a grey that suits one. */
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background-image: linear-gradient(to right, transparent, var(--line));
+    background-size: 18px 100%;
+    background-position: 100% 0;
+    background-repeat: no-repeat;
+    background-attachment: local;
+    border-radius: 4px;
+}
 .table-scroll table { min-width: 460px; }
+
+/* THE USERS TABLE SITS BELOW THE ADD-USER FORM, so it needs the separation the form does
+   not give it. This was an inline `margin-top:14px` on the element - the last `style=`
+   attribute in the views, and this project removed those once already. A class keeps the
+   rule where every other spacing rule lives and lets it be changed in one place. */
+.users-table { margin-top: 14px; }
 
 /* THE RAW CONVERSATION, INSIDE AN ANSWER.
    A nested <details>, so it does not compete with the answer's own summary until a reader

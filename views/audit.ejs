@@ -15,6 +15,10 @@
             <h1><%= strings.heading %></h1>
         </div>
         <div class="switchers">
+            <%# THE PICKER STAYS HERE RATHER THAN MOVING TO A MENU BAR, because this page has
+                no menu bar: it is the participant's questionnaire, not a console view, and it
+                carries no navigation between console pages. The console's picker moved into
+                `console-nav.ejs`, which is shared by the three views that have one. %>
             <%- include('partials/theme-picker') %>
             <div class="lang-switch">
                 <% supportedLangs.forEach(function (code, i) { %><% if (i > 0) { %>·<% } %><a href="?lang=<%= code %>" class="<%= code === lang ? 'active' : '' %>"><%= code.toUpperCase() %></a><% }); %>
@@ -43,7 +47,17 @@
                 <button id="send-btn">&#10148;</button>
             </div>
             <div id="actions" class="actions hidden">
-                <button id="download-md" class="secondary"><%= strings.downloadMarkdown %></button>
+                <%#
+                    HIDDEN FOR THE PoC, at the owner's request: "the button of download markdown
+                    can be hidden for now as it is not really useful". Hidden rather than deleted
+                    so it is one attribute away from coming back - the handler, the string and
+                    the styling all stay.
+
+                    THE LISTENER IS GUARDED IN audit.js, which is what makes this safe: it used
+                    to bind `$('download-md')` unconditionally, so an absent button threw and
+                    took the rest of the listener block with it. See the note there.
+                %>
+                <button id="download-md" class="secondary" hidden><%= strings.downloadMarkdown %></button>
             </div>
         </div>
     </div>

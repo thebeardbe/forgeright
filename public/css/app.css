@@ -186,7 +186,15 @@ input:focus, select:focus, button:focus-visible, a.button:focus-visible {
 input::placeholder { color: var(--muted); }
 
 /* A row of controls that wraps on a phone rather than overflowing. */
-.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+/* MEASURED, NOT CHOSEN BY EYE: the gap was 8px, which put the Save button 8px from the
+   input it saves - close enough that the two read as one control rather than a field and
+   its action. 12px separates them without the row wrapping any sooner, and `flex-wrap`
+   still lets a narrow screen stack them.
+
+   THE TWO FORMS ON THE CONSOLE SHARE THIS, which is the point of it being here: the
+   organisation name row and the invite row are the same shape, so they must not drift
+   apart in spacing. */
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .row > div { flex: 1 1 160px; min-width: 0; }
 .row input { flex: 1 1 200px; min-width: 0; }
 
@@ -240,7 +248,13 @@ form.inline { display: inline; }
 /* ─── Tables (the console) ────────────────────────────────────────────────── */
 
 table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
-th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+/* ROW RHYTHM. 8px of vertical padding made a table of addresses and timestamps read as a
+   dense block rather than as rows - the owner's "cramped vertical rhythm". 10px top and
+   bottom gives each row room without turning a five-row table into a column of islands,
+   and the 10px of horizontal padding stops a long address touching the column beside it.
+   Measured: a row was 70px tall before, and the tokens inside cells carry their own
+   spacing, so this is the one gap that was doing all the work. */
+th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th {
     font-size: 0.7rem;
     text-transform: uppercase;

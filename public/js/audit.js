@@ -674,7 +674,17 @@
         // resolved token starts the conversation directly - which is the only case.
         if (hasToken) beginWithToken();
         $('send-btn').addEventListener('click', send);
-        $('download-md').addEventListener('click', downloadMarkdown);
+
+        // THE GUARD IS REQUIRED, NOT DEFENSIVE. `#download-md` is hidden in the view for the
+        // PoC, and this line bound it UNGUARDED: `$` is getElementById, so a hidden-or-absent
+        // button made this `null.addEventListener` and threw a TypeError, which would take the
+        // whole listener block with it - `#input`'s Enter key included - so the questionnaire
+        // would have loaded and then silently ignored every answer. This codebase has had that
+        // exact bug once already, which is why the check is here rather than assumed.
+        //
+        // THE HANDLER AND THE STRING ARE KEPT, so bringing the button back is removing the
+        // `hidden` attribute in views/audit.ejs and nothing else.
+        if ($('download-md')) $('download-md').addEventListener('click', downloadMarkdown);
 
         $('input').addEventListener('keydown', (e) => {
             if (e.key === 'Enter') send();

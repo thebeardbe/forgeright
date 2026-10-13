@@ -25,7 +25,10 @@
             <p class="meta"><%= email %> (<%= role %>) &middot; this session runs until <%= expiresAt %></p>
         </div>
         <div class="switchers">
-            <%- include('partials/theme-picker') %>
+            <%# THE THEME PICKER IS NOT HERE ANY MORE - it moved into the menu bar, which is
+                shared by all three console views. Leaving it here too would render two pickers
+                and two forms writing the same cookie. The sign-out button stays, because it is
+                an action rather than a setting. %>
             <form method="post" action="<%= basePath %>/admin/logout">
                 <button type="submit" class="secondary">Sign out</button>
             </form>
@@ -140,7 +143,15 @@
             <button type="submit"<%= readOnly ? ' disabled' : '' %>>Add</button>
         </form>
 
-        <table style="margin-top:14px;">
+        <%# NOT WRAPPED IN `.table-scroll`, and that is measured rather than forgotten: its
+            three columns are an address, a role and a button, which fit the card at every
+            width down to 360px (296px of content in a 328px card). A scroll container here
+            would be a wrapper nothing needs.
+
+            THE INLINE `margin-top` IS GONE. It was the last `style=` attribute in the views,
+            moved into console.css as `.users-table` - this project removed these once and one
+            survived, so a rule belongs in the stylesheet rather than on the element. %>
+        <table class="users-table">
             <thead>
                 <tr><th>Email</th><th>Role</th><th></th></tr>
             </thead>
