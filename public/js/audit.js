@@ -467,25 +467,6 @@
     }
 
     /**
-     * Whether a workflow carries nothing the analysis can use.
-     *
-     * NOT A DROP PREDICATE, which is what this was in an earlier attempt and why that attempt was
-     * reverted. The prompt tells the model that a newly named process "STARTS THE CONVERSATION
-     * AGAIN... as a fresh matrix from its `task` and `trigger` onward"
-     * (`data/prompts/cartiere_audit/prompt_en.md` line 511), so a process the participant has just
-     * named arrives EXACTLY like an empty entry. Used at the payload boundary, this predicate
-     * discarded that process and could hand `/api/score` an empty array. It is safe HERE because
-     * it is only ever asked about an entry sitting BESIDE a richer one in the same reply, never
-     * about an entry on its own.
-     */
-    function carriesNothing(workflow) {
-        if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) return false;
-        if (Array.isArray(workflow.steps) && workflow.steps.length > 0) return false;
-        const fields = ['frequencyPerWeek', 'timePerPeriod', 'minutesPerInstance', 'peopleAffected'];
-        return fields.every((f) => workflow[f] === undefined || workflow[f] === null);
-    }
-
-    /**
      * Gives each process in this reply the identity the round already gave it, and collapses a
      * reply that describes the SAME process twice.
      *
@@ -510,9 +491,14 @@
      * A REPLY THAT DESCRIBES ONE PROCESS TWICE IS COLLAPSED, and this is the part that actually
      * removes the duplicate. Identity alone cannot do it: in the reported case BOTH entries share
      * the round's process, so both would take its id and the reply would still carry two entries
-     * with the same id. So when two or more entries resolve to the SAME id, they are one process
-     * and the RICHER one survives - the stale copy is a subset of the current one by construction,
-     * since it is the same work with less filled in.
+     * with the same id. So two entries that SHARE AN EXACT STEP NAME are one process, and the
+     * RICHER one survives - the same work with less filled in and differently worded, not a copy
+     * holding identical values.
+     *
+     * NOTHING IS FOLDED ON ABSENCE. An arm that discarded an entry carrying no steps, whenever
+     * another entry in the reply carried something, was built and removed: a process the
+     * participant had just NAMED arrives exactly that way (prompt line 511), so that arm discarded
+     * a live answer. See the note where the fold is, for the measurement that settled it.
      *
      * THE HARM DIRECTION IS UNCHANGED, and it is why the matching is per-entry rather than
      * all-or-nothing:
@@ -592,64 +578,92 @@
         // THE SECOND FORM CANNOT DISCARD A PROCESS THE PARTICIPANT JUST NAMED, and that is the
         // condition that matters. A newly named process "STARTS THE CONVERSATION AGAIN... as a
         // fresh matrix from its `task` and `trigger` onward" (line 511), so it arrives empty - but
-        // it arrives ALONE, as the only thing that turn produced, and this only fires beside a
-        // sibling that carries content. That is why this belongs here and not at the payload
-        // boundary, where the same predicate was tried and reverted.
-        //
-        // THE RICHER ENTRY WINS, by `measurableCount` (steps first, then filled fields). In the
-        // stale case the loser is a subset of the winner by construction - the same work with less
-        // filled in - so nothing is lost. In the reported case both entries carry five steps and
-        // only one carries `minutesPerInstance`, so the winner is the one that would score. The
-        // other order would keep the entry the analysis cannot use.
-        //
-        // IT CANNOT FUSE TWO DIFFERENT PROCESSES: they share no step name and neither is empty, so
-        // neither form of the claim applies and both are kept. Nothing here infers identity from
-        // similarity, and no threshold is involved.
-        //
         // A merge is REPORTED, because removing a participant's entry is the kind of change that
         // must be visible in a log rather than inferred from a missing row.
-        const merged = [];
-        for (const workflow of resolved) {
-            // Which entry already standing this one is the same process as, if any.
-            let match = -1;
-            for (let at = 0; at < merged.length; at += 1) {
-                const standing = merged[at];
-                if (sharesAStepName(standing, workflow)) {
-                    match = at;
-                    break;
-                }
-                // THE BY-ABSENCE FORM. Judged against a sibling that DOES carry something, so an
-                // empty entry on its own is never touched.
-                if (carriesNothing(workflow) && !carriesNothing(standing)) {
-                    match = at;
-                    break;
-                }
-                if (carriesNothing(standing) && !carriesNothing(workflow)) {
-                    match = at;
-                    break;
-                }
-            }
+        //
+        // PASS 1 IS ABOVE: every entry was resolved against `held`, so an entry the round knows
+        // takes the round's identity.
 
-            if (match === -1) {
+        // PASS 2 — THE POSITIVE TEST, PAIRWISE: two entries sharing an exactly equal step name are
+        // one process, because that is what rule 1 says a shared step name means. Repeated to a
+        // fixed point, because a later entry can match an entry that was itself folded into an
+        // earlier one: with [a, b, c] where a~c and b~c, one pass over the array would leave a and
+        // b standing beside the merged c.
+        //
+        // THE RICHER ENTRY WINS, by `measurableCount` (steps first, then filled fields).
+        //
+        // WHAT THE LOSER ACTUALLY IS, stated precisely because "it is a subset" would invite a
+        // reader to expect identical text and it is not. Measured on the artefacts: every key the
+        // loser carried is present in the winner, so nothing is DROPPED - but the shared keys do
+        // not always hold the same VALUE. Nine of them hold different wording, and some of the
+        // loser's phrases read fuller ("the monthly bill arrives by email" against "the bill
+        // arrives from email"). So the loser is the same work, LESS FILLED IN AND DIFFERENTLY
+        // WORDED, and what survives is one account of one process rather than two.
+        //
+        // WHAT THAT COSTS, measured rather than assumed: the steps survive, and the score reads
+        // the same apart from one `needsReasoning` flip, which is model noise rather than a lost
+        // answer. The alternative - keeping both - is what produced the duplicate row this exists
+        // to remove, and the score built from a stub while the real process sat beside it.
+        let merged = [];
+        for (const workflow of resolved) {
+            const at = merged.findIndex((standing) => sharesAStepName(standing, workflow));
+            if (at === -1) {
                 merged.push(workflow);
                 continue;
             }
 
-            // KEEP THE RICHER, and move it to the position the pair has been occupying so the
-            // reply's own ordering survives the merge.
-            const standing = merged[match];
+            const standing = merged[at];
             const winner = measurableCount(standing) >= measurableCount(workflow) ? standing : workflow;
             const loser = winner === standing ? workflow : standing;
             console.warn(
                 'the reply described ONE process twice (ids "' + String(standing.id) + '" and "' +
                 String(workflow.id) + '"); keeping the fuller entry (steps ' +
                 (Array.isArray(winner.steps) ? winner.steps.length : 0) + ', ' +
-                measurableCount(winner) % 100 + ' measurable field(s)) and discarding the sparser ' +
-                'one (steps ' + (Array.isArray(loser.steps) ? loser.steps.length : 0) + '), so the ' +
-                'same work is not counted twice'
+                (measurableCount(winner) % 100) + ' measurable field(s)) and discarding the ' +
+                'sparser one (steps ' + (Array.isArray(loser.steps) ? loser.steps.length : 0) + '), ' +
+                'so the same work is not counted twice'
             );
-            merged[match] = winner;
+            merged[at] = winner;
         }
+
+        // THERE IS NO BY-ABSENCE ARM, AND ITS ABSENCE IS A DELIBERATE DECISION RATHER THAN AN
+        // OVERSIGHT. The arm existed to fold an entry with no steps and no measurable field into a
+        // richer sibling, reading it as the model's own earlier wording carried forward - which
+        // `prompt_en.md` line 515 forbids ("`processes` holds the process you are working on NOW").
+        //
+        // IT WAS REMOVED BECAUSE IT SILENTLY DISCARDED A PROCESS THE PARTICIPANT HAD JUST NAMED.
+        // Measured through this function: a finished process with steps, sitting beside a process
+        // the participant had just named ("Onboarding a new supplier", `task` and `trigger` only),
+        // came out as ONE entry - the new process gone.
+        //
+        // THE TWO SITUATIONS ARE THE SAME SHAPE, and that is why no rule can separate them:
+        //
+        //   a stale carry-forward BESIDE ITS OWN PROCESS   -> an empty entry beside a rich sibling
+        //   a NEWLY NAMED PROCESS beside an UNRELATED ONE  -> an empty entry beside a rich sibling
+        //
+        // Neither empty entry has steps to co-test on, both arrive with `task` and `trigger` only,
+        // and the prompt creates BOTH: line 521 says keep holding the completed process until the
+        // participant confirms, line 511 says a newly named process starts as a fresh matrix with
+        // no steps. So `[rich, empty]` is a legitimate turn for two completely different reasons.
+        //
+        // I TESTED THE OBVIOUS DISCRIMINATOR - comparing the empty entry's task against its
+        // sibling's - AND IT DOES NOT WORK. Measured on the artefacts: the case the arm was built
+        // for (`/tmp/onerow.json`) shares only FOUR words with its rich sibling and one of its
+        // stubs has NO TRIGGER AT ALL, while a newly named process in the same domain shares TWO.
+        // Any overlap rule low enough to fold the first also destroys the second, and a participant
+        // naming a second process in a domain they have already described is the ordinary case
+        // rather than a corner one. There is no separating value, so there is no rule to write.
+        //
+        // THE ASYMMETRY DECIDES IT. An extra row is cosmetic: it renders as a second process
+        // reading "not measured", which a reader sees and can ignore. A discarded process is SILENT
+        // DATA LOSS, and it is unrecoverable - the participant is never asked again, because the
+        // matrix reset from the new process's `task` onward and the next turn simply continues.
+        // The cost of removing the arm is the extra rows it would have removed; the cost of keeping
+        // it is somebody's answer disappearing with nothing to show for it.
+        //
+        // WHAT IS LEFT FOLDS ONLY ON POSITIVE, VERBATIM EVIDENCE: an exactly equal step name, which
+        // the participant actually said twice. Nothing here is inferred from the ABSENCE of
+        // evidence, so nothing can be discarded merely for being new.
 
         return merged;
     }
