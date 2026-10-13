@@ -698,3 +698,64 @@ work above:
 
 **Do not start it inside a feature.** Per the guidelines it belongs in its own
 session, with a handoff first.
+
+## A step-less workflow may appear as a second roadmap row: accepted, not a bug
+
+A live interview produced a payload holding **two entries for one process**:
+
+```
+[0]  task "…the drivers FILL IN…"   4 keys, 0 steps     <- the model's EARLIER wording
+[1]  task "…the drivers GIVE ME…"   8 keys, 7 steps     <- the current one
+```
+
+The model carried its own previous version forward without its content, which the
+prompt forbids (`prompt_en.md:515`: *"`processes` holds the process you are working
+on NOW, not every process of the interview"*).
+
+**The row is honest and ships.** It renders as `DO LATER / not measured / 0 h/wk`,
+scores zero, and does not touch the total. Measured: the two entries collapse into
+one grouping when a match is known.
+
+**And it is narrower than it sounds.** There is **no automatic identification**:
+`runIdentification` runs only from an admin rejudge and the demo seed, so a completed
+interview produces **no roadmap rows at all** until an admin rejudges - and at that
+point the model sees the whole payload and has matched the stub to the real process
+in testing. The extra row appears only when no matching process is known at
+identification time.
+
+### A boundary filter was built and REVERTED. Do not rebuild it.
+
+**A newly-named process is INDISTINGUISHABLE from a stale carry-forward at the
+payload boundary.** The prompt says a new process *"STARTS THE CONVERSATION AGAIN…
+let it begin as a fresh matrix from its `task` and `trigger` onward"*
+(`prompt_en.md:509-513`), so it legitimately arrives with no steps and no
+measurements. Before identity is applied the two objects are identical:
+
+```
+fragment      keys: task, trigger, steps | has id: false | has title: false
+newly-named   keys: task, trigger, steps | has id: false | has title: false
+```
+
+and `withWorkflowIdentity` supplies the `id` and `title` **on the server, at exactly
+the step a filter would run** - so by the time a boundary check sees the object even
+that difference is gone. **No predicate over that payload can separate them.**
+
+**And the drop is worse than the row it removes.** On the newly-named turn the fresh
+process is the only entry, so dropping it yields `{"workflows": []}`, which
+`validateWorkflows` refuses - **the 400 and "The analysis could not be computed"
+come back**, which is defect 1 above reintroduced. It is also unrecoverable: the
+matrix reset from that task onward, so the model continues and the participant is
+**never re-asked**.
+
+A visible row labelled `not measured` is recoverable by a human reading the roadmap.
+A discarded process is not.
+
+### If the row ever does need removing
+
+Not at the payload boundary, and not at the roadmap render. `listRoadmap` returns
+**`process` rows** with their grouping, not the entries within a round, so a render
+filter would be cosmetic - it would change what is displayed, not what is stored or
+scored, and would touch the wrong objects. The honest place is the **prompt** (the
+model is violating a stated rule) or **`recordIdentification`**, where the match
+decision is already made. Fix what a live round actually shows, not what is
+predicted.
