@@ -41,7 +41,19 @@
 
     <% /* A response is the subject here: "this answer was read wrong". */ %>
     <% responses.forEach(function (response) { %>
-        <details class="item">
+        <%#
+            THE ANCHOR AND THE `open` STATE, both from the same id, and both SERVER-SIDE.
+
+            `id="response-<id>"` is what the roadmap links to, so a fragment scrolls here.
+            `?open=<id>` is what OPENS it - the route reads that parameter and the element
+            renders with `open` already set, so the page arrives with the answer expanded and no
+            script is involved. The two agree because they are built from one value.
+
+            WHY BOTH RATHER THAN ONE. A fragment alone scrolls but does not open, and the owner
+            asked for both: "it should be scroll to the answer and uncollapse it". A query
+            parameter alone opens but leaves the reader at the top of the page.
+        %>
+        <details class="item" id="response-<%= response.id %>"<%= openResponseId === response.id ? ' open' : '' %>>
             <summary>
                 <span class="summary-main">
                     <%#
@@ -111,13 +123,35 @@
                 </span>
             </summary>
 
+            <%#
+                THE READING ORDER IS THE OWNER'S, and it is NOT the order this page used to have.
+
+                    1. the STEPS, because the sequence is what a reviewer is judging
+                    2. then the participant's fields, mapped to the matrix
+                    3. then the raw conversation, collapsed
+
+                IT WAS: fields, then the grouping, then the transcript - so a reader met a wall of
+                `The work:`, `What starts it:` before learning what the answer was ABOUT. The steps
+                block leads now because it is the shape of the process, and the individual fields
+                are the detail behind it.
+
+                THE TWO HALVES COME FROM ONE PARTIAL, CALLED TWICE, so neither is rewritten and the
+                roadmap - which shares that partial and passes `includeSteps: false` - is
+                untouched. See the flag's note there.
+
+                THE RESOLVED WORKFLOW is passed both times, so each half reads fields from the
+                object that actually holds them.
+            %>
             <div class="detail">
+                <%- include('partials/response-fields', {
+                    data: responseWorkflow(response.data), includeFields: false
+                }) %>
+
                 <h3>What the participant said</h3>
                 <% /* The participant's own words, which the paragraph is checked against. */ %>
-                <%# The RESOLVED workflow, so the partial reads fields from the object that
-                    actually holds them. It already handles a null by saying the answer has no
-                    stored fields, which is the honest thing for a row with neither shape. %>
-                <%- include('partials/response-fields', { data: responseWorkflow(response.data) }) %>
+                <%- include('partials/response-fields', {
+                    data: responseWorkflow(response.data), includeSteps: false
+                }) %>
 
                 <% if (response.grouping) { %>
                     <h3>Read as this process</h3>

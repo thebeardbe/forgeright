@@ -79,11 +79,15 @@
 /* The body of an expanded item. */
 .detail { padding: 0 16px 16px; border-top: 1px solid var(--line); margin-top: -1px; }
 .detail h3 {
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--muted);
-    margin: 18px 0 8px;
+    letter-spacing: 0.14em;
+    /* `--ink` RATHER THAN `--muted`. Muted is mixed 90% toward the foreground to carry
+       paragraphs, so as a header colour it was no darker than the text under it - which is the
+       other half of "difficult to see the difference". The header now reads as a label by being
+       spaced and coloured, not only by being sized. */
+    color: var(--ink);
+    margin: 20px 0 8px;
 }
 .detail h3:first-child { margin-top: 14px; }
 
@@ -296,6 +300,48 @@ button[disabled] { opacity: 0.5; cursor: not-allowed; }
    `min-width` on the table inside it stops the columns squeezing to unreadable widths
    when the container is narrower than the content: without it the browser compresses
    cells rather than scrolling, and an address wraps to one character per line. */
+/* ─── A LINK TO ONE ANSWER, FROM THE ROADMAP ──────────────────────────────────
+ *
+ * `.answer-links` replaced a list of every participant field, so the styles here are what a
+ * reader sees INSTEAD of those fields - the department and what the answer contributed have to
+ * carry the section on their own.
+ *
+ * A PLAIN LIST, not a table: one answer per line, the department as the link and the
+ * contribution as quiet meta beside it. `tabular-nums` is not needed because nothing here is a
+ * column of figures.
+ */
+.answer-links { list-style: none; margin: 0; padding: 0; }
+.answer-links li {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+}
+.answer-links li:last-child { border-bottom: none; }
+.answer-links a { font-weight: 600; }
+
+/* THE STICKY NAV WOULD OTHERWISE COVER THE ANSWER A LINK SCROLLS TO.
+ *
+ * MEASURED: the nav is `position: sticky; top: 0` and stands 58px tall on a desktop viewport,
+ * 97px once the theme picker wraps to a second line on a phone. A fragment scroll puts the
+ * target's top edge at the viewport's top edge, so the first 58-97px of the answer would sit
+ * UNDERNEATH the nav - the summary line, which is the part naming the answer.
+ *
+ * `scroll-margin-top` IS THE STANDARD MECHANISM and it is what the fragment scroll respects. 74px
+ * clears the desktop nav with room for the row's own padding; the media query below raises it for
+ * the wrapped phone nav, which is the taller of the two and therefore the one that decides.
+ *
+ * IF THE NAV IS EVER RESIZED, THIS MUST MOVE WITH IT - which is why the two numbers are stated
+ * here rather than the reason being left implicit. */
+details.item { scroll-margin-top: 74px; }
+
+@media (max-width: 620px) {
+    /* The nav wraps to two rows below this width, measured at 97px on a 390px viewport. */
+    details.item { scroll-margin-top: 108px; }
+}
+
 /* THE SCROLLER WORKS; IT JUST DID NOT LOOK LIKE ONE. Measured below 500px: the table's
    460px min-width exceeds the scroller's client width - 430px at a 500px viewport, 320px at
    390px - so 30 to 140px of table sits past the right edge with nothing to say so. The

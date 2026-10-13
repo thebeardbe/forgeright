@@ -188,6 +188,27 @@
                     <p class="empty">This process has no current grouping.</p>
                 <% } %>
 
+                <%#
+                    THE ANSWERS BEHIND IT, AS LINKS RATHER THAN AS COPIES.
+
+                    IT USED TO RENDER EVERY PARTICIPANT FIELD INLINE - seven `words` rows per
+                    response, each one repeating what the answers view already holds. On a
+                    process with three participants that is twenty-one rows of `The work:`,
+                    `What starts it:` and so on, and the owner's words were that a link is
+                    clearer: "I prefer a link to the specific answer instead of a long list of
+                    what the participant answered. it is clearer to see what was answered."
+
+                    WHAT A READER STILL SEES, which is the thing the link must not lose: the
+                    DEPARTMENT, and what that answer CONTRIBUTED to this process. Those are the
+                    two facts that belong to the GROUPING rather than to the answer - everything
+                    else is a click away and identical when they get there. So a reader can still
+                    tell who is behind the process and what each of them settled, which is what
+                    this section is for.
+
+                    BOTH THE ID AND THE PARAMETER, so the link opens and scrolls. See the note on
+                    the `<details>` in admin-answers.ejs: the fragment scrolls, the parameter
+                    opens, and they are built from one value so they cannot disagree.
+                %>
                 <h3>The answers behind it</h3>
                 <% if (responses.length === 0) { %>
                     <p class="empty">
@@ -198,15 +219,16 @@
                         none, so it will stay as it is until something joins it.
                     </p>
                 <% } %>
-                <% responses.forEach(function (response) { %>
-                    <p class="meta">
-                        <%= response.department %>
-                        &middot; contributed: <%= (response.contributed || []).join(', ') || 'not recorded' %>
-                    </p>
-                    <%# The same resolver as the answers view, so a field appears everywhere it
-                        is shown or nowhere - which is what the partial's own comment promises. %>
-                    <%- include('partials/response-fields', { data: responseWorkflow(response.data), includeSteps: false }) %>
-                <% }); %>
+                <ul class="answer-links">
+                    <% responses.forEach(function (response) { %>
+                        <li>
+                            <a href="<%= basePath %>/admin/answers?open=<%= encodeURIComponent(response.responseId) %>#response-<%= encodeURIComponent(response.responseId) %>">
+                                <%= response.department %>
+                            </a>
+                            <span class="meta">contributed: <%= (response.contributed || []).join(', ') || 'not recorded' %></span>
+                        </li>
+                    <% }); %>
+                </ul>
 
                 <h3>Earlier versions</h3>
                 <div class="history">

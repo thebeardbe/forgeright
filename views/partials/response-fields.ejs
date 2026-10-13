@@ -76,6 +76,18 @@
 <% if (!data) { %>
     <p class="empty">This answer has no stored fields.</p>
 <% } else { %>
+    <%#
+        TWO INDEPENDENT FLAGS, so a caller can render the two halves in a different ORDER without
+        either half being rewritten. `includeFields` is new and defaults to true, so the roadmap's
+        call - `includeSteps: false` - is unchanged and still gets the fields alone.
+
+        THE ANSWERS VIEW CALLS THIS TWICE, once per half, because the owner's reading order is
+        STEPS FIRST and the partial renders fields first. Moving the blocks around inside the
+        partial would have reordered the ROADMAP too, which shares it, and the roadmap's steps
+        come from a different place - the merged process above - so the two orders are genuinely
+        different requirements rather than one that drifted.
+    %>
+    <% if (typeof includeFields === 'undefined' || includeFields) { %>
     <% FIELDS.filter(function (field) { return data[field.key] !== undefined && data[field.key] !== null; })
              .forEach(function (field) { %>
         <p class="words">
@@ -94,6 +106,7 @@
             <% } %>
         </p>
     <% }); %>
+    <% } %>
 
     <% /* The steps, with the reasoning flag marked: the flag IS the automation boundary,
         so it is shown rather than left in the data. */ %>
