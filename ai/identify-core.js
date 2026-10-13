@@ -65,6 +65,13 @@ async function loadIdentifyPrompt(toolId, lang) {
 export function buildComparisonMessage(response, knownProcesses, adminReasoning = null) {
     const parts = [];
 
+    // THE RAW STORED SHAPE GOES TO THE MODEL, and it is the one remaining place where
+    // the two shapes are read differently - a live round sends `{ workflows: [...] }`,
+    // an imported one sends the workflow directly. Identical results were measured live
+    // against the provider on both shapes, because a language model reads through the
+    // wrapper where a field lookup cannot. That is what makes it safe HERE and not
+    // elsewhere: anything that reads a NAMED field must resolve the shape first, or it
+    // finds nothing and reports the work as unmeasured.
     parts.push('## The new response to identify');
     parts.push('');
     parts.push(JSON.stringify(response.data ?? {}, null, 2));

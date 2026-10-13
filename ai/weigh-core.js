@@ -125,7 +125,11 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
  * itself information the weighing should see: two people who disagree about the
  * frequency may be describing two different steps of the same work.
  *
- * @param {Array<object>} responses Responses with `data` parsed.
+ * @param {Array<object>} responses Responses with `data` parsed, in EITHER stored
+ *   shape: a live interview's `{ workflows: [...] }` or an imported workflow directly.
+ *   Resolved through `responseWorkflow` before any field is read, so a caller does not
+ *   have to know which shape it holds - and a reader that assumes the flat one would
+ *   find no fields at all and weigh the work as unmeasured.
  * @returns {object}
  */
 /**
@@ -268,7 +272,8 @@ function mergeParticipants(responses) {
  * and it is a real step somebody does. Merging by name collapses duplicates, it
  * does not intersect.
  *
- * @param {Array<object>} responses
+ * @param {Array<object>} responses Responses with `data` parsed, in either stored
+ *   shape. `mergeProcessSteps` resolves it; see the note there.
  * @returns {Array<object>} Steps in first-seen order, one entry per distinct name.
  */
 function collectSteps(responses) {
