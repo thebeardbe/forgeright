@@ -64,11 +64,14 @@ lines.push(`/*
  * FOLLOW SYSTEM. The dark pair is the base value, so an unsupported browser still
  * gets a usable theme; the media query then overrides it for a light preference.
  *
- * The ids are Catppuccin and Catppuccin Latte: the same palette in the two modes,
- * so the OS preference chooses between two looks that were designed together.
+ * The ids are SYSTEM_DARK and SYSTEM_LIGHT from lib/palettes.js, and the two are
+ * NOT the same palette in two modes any more - the owner chose Matte Black for
+ * dark and Catppuccin Latte for light. They are still written as a pair here
+ * because every palette exposes the same semantic roles, so the application
+ * never has to agree with the choice.
  *
- * This is the same result the inline script in views/partials/theme.ejs produces,
- * so a browser without scripting still gets the system's preference.
+ * This is the same result the inline script in views/partials/theme-head.ejs
+ * produces, so a browser without scripting still gets the system's preference.
  */`);
 lines.push('@media (prefers-color-scheme: light) {');
 lines.push(...block(`    [data-theme="${FOLLOW_SYSTEM}"]`, 8, PALETTES[SYSTEM_LIGHT], paletteVars(PALETTES[SYSTEM_LIGHT])));

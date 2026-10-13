@@ -320,16 +320,43 @@ async function oversizedBodyRequest(extra = {}) {
  * No route in this app throws uncaught, so this cannot be reached through a real request - the
  * handler body is read OUT OF server.js and mounted on a two-route app, which is as close as an
  * offline test can come and is stated as such. `status` is what the thrown error carries, which is
- * how the unrecognised-status case is built.
+ * how the status-resolution cases are built.
+ *
+ * THE RESOLUTION EXPRESSION IS READ FROM server.js AND EXECUTED, not copied. An earlier version
+ * duplicated it (`Number(err.status) || 500`) and went stale the moment the real expression changed
+ * - a duplicated expression is the thing that just produced four failures. Reading it means the
+ * mirror cannot drift, and the one source assertion below proves it found the real thing rather
+ * than silently matching nothing.
  */
+
+/**
+ * The status resolution, lifted verbatim from server.js's error middleware.
+ *
+ * Returns a function `(err) => status`. It throws if the block cannot be found, so a rename in
+ * server.js fails loudly here rather than silently testing a stale copy.
+ */
+function statusResolverFromServer() {
+    const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
+
+    // THE BLOCK, from the resolution to the call that uses it. If this ever fails to match, the
+    // fixture is testing nothing and must say so rather than run a copy.
+    const match = source.match(/const rawStatus = [\s\S]*?\n    return sendError\(req, res, status\);/);
+    assert.notEqual(match, null,
+        'server.js still resolves an error status through `const rawStatus = ... return sendError(req, res, status)`');
+
+    // The middleware also checks `headersSent` before this; that is exercised separately below.
+    assert.match(source, /if \(res\.headersSent\) return next\(err\);/, 'the handler still has the headersSent hand-off');
+
+    // EXECUTED, with the last line turned into a return so the resolved status comes back.
+    const body = match[0].replace('return sendError(req, res, status);', 'return status;');
+    // eslint-disable-next-line no-new-func
+    return new Function('err', 'res', 'sendError', body);
+}
+
 async function genuineThrow(status) {
     const express = (await import('express')).default;
     const { sendError } = await import('../lib/error-page.js');
-    const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
-
-    // The handler must resolve the status the way server.js does, or this tests nothing about it.
-    assert.match(source, /return sendError\(req, res, Number\(err\.status\) \|\| 500\);\n\}/,
-        'server.js resolves the status with `Number(err.status) || 500`');
+    const resolveStatus = statusResolverFromServer();
 
     const app = express();
     // THE VIEW ENGINE AND LOCALS ARE CONFIGURED, as server.js does, or `sendError`'s
@@ -345,10 +372,10 @@ async function genuineThrow(status) {
         if (status !== undefined) error.status = status;
         next(error); // the real Express path: an error passed to next()
     });
-    // The body, verbatim from server.js, with the status resolution the test above asserts.
+    // The handler body's own decision, EXECUTED FROM server.js rather than re-typed.
     app.use((err, req, res, next) => {
         if (res.headersSent) return next(err);
-        return sendError(req, res, Number(err.status) || 500);
+        return sendError(req, res, resolveStatus(err, res, sendError));
     });
 
     const port = await freePort();
@@ -384,14 +411,71 @@ test('a MALFORMED BODY is the sender\'s error: 400, with wording about the reque
         'and does NOT blame the server, which is the wrong message this fix corrects');
 });
 
-test('a GENUINE UNCAUGHT THROW is a 500 - the fixture that name really needs', async () => {
-    // The real throw path, through the real handler body. Distinct from the malformed body above:
-    // nothing the sender did caused this, so it is 500 and the page says so.
+test('a GENUINE UNCAUGHT THROW with no status is a 500 - the fixture that name really needs', async () => {
+    // REWRITTEN: the source-text assertion is gone and this is now BEHAVIOUR, which is what the
+    // name describes. The real throw path, through the handler body EXECUTED from server.js.
+    // Distinct from the malformed body above: nothing the sender did caused this, so it is 500.
     const res = await genuineThrow(undefined);
 
-    assert.equal(res.status, 500, 'an uncaught throw is a 500');
+    assert.equal(res.status, 500, 'an uncaught throw with no status is a 500');
     assert.match(res.text, /Something went wrong here|fault on our side/i, 'and the page says it is ours');
     assert.doesNotMatch(res.text, /\n\s+at [A-Za-z]/, 'with no stack');
+});
+
+test('an error status is served as itself WITHIN 400-599, and folded to 500 outside it', async () => {
+    // REWRITTEN: it asserted the OLD resolution expression as literal source text. The intent is
+    // now met MORE STRONGLY by asserting the resulting status per case, which is what the name
+    // describes and which survives a change of expression - the thing that just went stale.
+    //
+    // THE CASES THE BUILDER MEASURED, each asserted as BEHAVIOUR. A numeric string coerces and
+    // passes; a status below 400 or above 599 is not an error status and folds to 500.
+    const served = [[400, 400], [413, 413], [418, 418], [599, 599], ['400', 400]];
+    for (const [input, expected] of served) {
+        const res = await genuineThrow(input);
+        assert.equal(res.status, expected, `err.status ${JSON.stringify(input)} is served as ${expected}`);
+    }
+
+    const folded = [200, 301, -1, 99999, 0, NaN, null, 399, 600, 100, Infinity];
+    for (const input of folded) {
+        const res = await genuineThrow(input);
+        assert.equal(res.status, 500, `err.status ${JSON.stringify(input)} folds to 500`);
+    }
+});
+
+test('err.status 200 does NOT serve an error page with a SUCCESS status - the worst invisible failure', async () => {
+    // THE CASE THAT MATTERS MOST, and the one neither the reviewer nor the builder had emphasised:
+    // an error page served with a 2xx is a monitor counting a server fault AS A SUCCESS. It is
+    // invisible - no crash, no log, no alert - and it is worse than the RangeError the review
+    // flagged, because that at least produced an error response.
+    //
+    // THE PROPERTY IS THAT A SUB-400 STATUS IS FOLDED, not that a particular expression is used.
+    // So this is asserted in a way that would fail if someone relaxed the floor to an integer test
+    // (which would let 200 and 301 through): the assertion is on the RESULTING STATUS.
+    for (const successLike of [200, 201, 204, 301, 302, 304]) {
+        const res = await genuineThrow(successLike);
+        assert.equal(res.status, 500, `err.status ${successLike} must NOT produce a success status`);
+        // It really is an error page at 500, not a redirect or an empty body.
+        assert.match(res.text, /Something went wrong here|fault on our side/i, 'and it is the 500 page');
+    }
+});
+
+test('the FLOOR is 400 rather than 100, so an error page cannot carry a 1xx or 2xx or 3xx', async () => {
+    // THE REASON FOR THE FLOOR, stated as a behaviour: everything reaching the error middleware is
+    // an error, because the throw already happened, so a sub-400 status is nonsense or a bug in
+    // whatever attached it. A 3xx from an error page would REDIRECT the client somewhere unrelated.
+    //
+    // The boundary is tested from both sides, so a change to the floor is caught whichever way it
+    // moves.
+    assert.equal((await genuineThrow(399)).status, 500, '399 is below the floor and folds');
+    assert.equal((await genuineThrow(400)).status, 400, '400 is the floor and is served');
+    assert.equal((await genuineThrow(599)).status, 599, '599 is the ceiling and is served');
+    assert.equal((await genuineThrow(600)).status, 500, '600 is above the ceiling and folds');
+
+    // A 3xx must not be served as a redirect: the response is the error page, and `fetch` following
+    // it would land somewhere unrelated rather than on the error.
+    const redirectish = await genuineThrow(302);
+    assert.equal(redirectish.status, 500, 'a 3xx becomes a 500, not a redirect');
+    assert.equal(redirectish.contentType.includes('text/html'), true, 'and the body is the error page, not a Location header');
 });
 
 test('an OVERSIZED body is a 413, with size wording and NOT the 500 message', async () => {
@@ -405,10 +489,13 @@ test('an OVERSIZED body is a 413, with size wording and NOT the 500 message', as
 });
 
 test('an error with an UNRECOGNISED status falls back to 500 - the safe direction', async () => {
-    // `Number(err.status) || 500` rather than `err.status || 500`: anything unrecognised reads as a
-    // server fault. Claiming a client error for something we threw would send the sender looking
-    // for a mistake they did not make, which is the distinction these pages exist to get right.
-    for (const weird of ['teapot', 0, null, NaN, undefined]) {
+    // REWRITTEN: it asserted the old expression in a comment and a stale pattern. Its intent is now
+    // satisfied MORE STRONGLY - the range check folds MORE cases to 500 than `Number(err.status) ||
+    // 500` did, not fewer. Asserted as the resulting status, which is the behaviour the name states.
+    //
+    // Claiming a client error for something we threw would send the sender looking for a mistake
+    // they did not make, so anything unrecognised reads as a server fault.
+    for (const weird of ['teapot', 0, null, NaN, undefined, -1, 99999]) {
         const res = await genuineThrow(weird);
         assert.equal(res.status, 500, `err.status ${JSON.stringify(weird)} falls back to 500`);
     }
@@ -713,20 +800,27 @@ test('/api/score with no token still returns 403 JSON', async () => {
 // 7. REACHABILITY - what is not reachable, said rather than claimed
 // ===========================================================================
 
-test('the statuses REACHABLE THROUGH THE ERROR PAGE are the ones I measured, not the ones claimed', () => {
-    // ASSERT THE SET I FIND. The earlier version asserted `['404','421','500']`, which the fix
-    // falsified: `err.status` now travels, so a 400 and a 413 reach this page too. The set below is
-    // what the code does - a literal `sendError(req, res, N)` call site for 421/404/500, plus the
-    // status resolution that lets a middleware's status through.
+test('the statuses REACHABLE THROUGH THE ERROR PAGE are the ones I measured, not the ones claimed', async () => {
+    // REWRITTEN, and this one KEEPS a source assertion because its PURPOSE is structural: it is
+    // about which call sites exist, and a call site cannot be observed by behaviour. Only the stale
+    // second assertion is replaced - it pinned the resolution expression, and the expression has
+    // changed twice. What replaces it is behaviour: the handler's resolved status IS reachable, and
+    // `genuineThrow` proves it by driving one through the body executed from server.js.
+    //
+    // ASSERT THE SET I FIND. An earlier version asserted `['404','421','500']`, which the fix
+    // falsified: `err.status` now travels, so a 400 and a 413 reach this page too. The literal set
+    // below is what the code does.
     const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
     const literal = [...source.matchAll(/sendError\(req, res, (\d+)\)/g)].map((m) => m[1]);
 
-    // The literal call sites, plus the error handler's resolved status. The set is asserted as I
-    // measured it rather than as the comment claims.
     assert.deepEqual([...new Set(literal)].sort(), ['404', '421'],
-        'the literal call sites are 421 and 404 - 500 comes through the error handler below');
-    assert.match(source, /sendError\(req, res, Number\(err\.status\) \|\| 500\)/,
-        'the error handler resolves a middleware status, so 400, 413 and 500 are reachable through it');
+        'the literal call sites are 421 and 404');
+
+    // THE ERROR HANDLER IS THE THIRD CALLER, and its status is whatever the resolution decides -
+    // 500 with no status, a middleware's status when there is one. Asserted as BEHAVIOUR: the
+    // resolved status reaches the response, which is what makes 400, 413 and 500 reachable here.
+    assert.equal((await genuineThrow(undefined)).status, 500, 'the error handler reaches the page with 500');
+    assert.equal((await genuineThrow(418)).status, 418, 'and with a middleware status when one is attached');
 });
 
 test('the statuses with NO caller stay unreachable, and the reason is recorded', async () => {

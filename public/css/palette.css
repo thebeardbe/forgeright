@@ -505,11 +505,14 @@
  * FOLLOW SYSTEM. The dark pair is the base value, so an unsupported browser still
  * gets a usable theme; the media query then overrides it for a light preference.
  *
- * The ids are Catppuccin and Catppuccin Latte: the same palette in the two modes,
- * so the OS preference chooses between two looks that were designed together.
+ * The ids are SYSTEM_DARK and SYSTEM_LIGHT from lib/palettes.js, and the two are
+ * NOT the same palette in two modes any more - the owner chose Matte Black for
+ * dark and Catppuccin Latte for light. They are still written as a pair here
+ * because every palette exposes the same semantic roles, so the application
+ * never has to agree with the choice.
  *
- * This is the same result the inline script in views/partials/theme.ejs produces,
- * so a browser without scripting still gets the system's preference.
+ * This is the same result the inline script in views/partials/theme-head.ejs
+ * produces, so a browser without scripting still gets the system's preference.
  */
 @media (prefers-color-scheme: light) {
     [data-theme="system"] {
@@ -536,21 +539,21 @@
 
 [data-theme="system"] {
     --o-mode: dark;
-    --o-bg: #1e1e2e;
-    --o-bg-dark: #161622;
-    --o-bg-darker: #101019;
-    --o-bg-light: #313244;
-    --o-fg: #cdd6f4;
-    --o-fg-dim: #6c7086;
-    --o-fg-light: #bac2de;
-    --o-fg-bright: #cdd6f4;
-    --o-accent: #89b4fa;
-    --o-selection: #45475a;
-    --o-red: #f38ba8;
-    --o-yellow: #f9e2af;
-    --o-orange: #f6b6ab;
-    --o-green: #a6e3a1;
-    --o-cyan: #94e2d5;
-    --o-blue: #89b4fa;
-    --o-magenta: #f5c2e7;
+    --o-bg: #121212;
+    --o-bg-dark: #0d0d0d;
+    --o-bg-darker: #090909;
+    --o-bg-light: #1e1e1e;
+    --o-fg: #bebebe;
+    --o-fg-dim: #555555;
+    --o-fg-light: #8a8a8d;
+    --o-fg-bright: #bebebe;
+    --o-accent: #e68e0d;
+    --o-selection: #2a2a2a;
+    --o-red: #d35f5f;
+    --o-yellow: #b91c1c;
+    --o-orange: #c63d3d;
+    --o-green: #ffc107;
+    --o-cyan: #bebebe;
+    --o-blue: #e68e0d;
+    --o-magenta: #d35f5f;
 }
