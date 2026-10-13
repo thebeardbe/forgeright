@@ -32,9 +32,19 @@
             <p class="eyebrow">forgeright</p>
             <h1><%= heading %></h1>
         </div>
-        <div class="switchers">
-            <%- include('partials/theme-picker') %>
-        </div>
+        <%#
+            THE PICKER IS ABSENT ON THE 421, because it cannot work there: the page is served
+            for a host this installation refuses, so `/settings/theme` is refused too and
+            submitting the form would do nothing. `hideThemePicker` comes from lib/error-page.js
+            rather than being decided here, because whether a status makes a control unusable is
+            knowledge about the status. MEASURED before hiding: the picker rendered, listed all
+            23 options, and the POST target answered 421.
+        %>
+        <% if (!hideThemePicker) { %>
+            <div class="switchers">
+                <%- include('partials/theme-picker') %>
+            </div>
+        <% } %>
     </header>
 
     <div class="problem"><%= message %></div>

@@ -352,7 +352,20 @@ app.use((err, req, res, next) => {
     // error in the log.
     if (res.headersSent) return next(err);
 
-    return sendError(req, res, 500);
+    // AN ERROR THAT KNOWS ITS OWN STATUS KEEPS IT, because the page's wording depends on whose
+    // fault it is. Express's body parsers attach one - MEASURED: malformed JSON gives
+    // `err.status = 400` with `type = entity.parse.failed`, and a body over the limit gives
+    // `413` with `entity.too.large`. Answering 500 to those told the sender "this is a fault on
+    // our side, not yours" about a request THEY malformed, which is precisely the distinction
+    // these pages exist to make. The wrong status also hides the problem from a monitor, since a
+    // 400 storm would read as a healthy server.
+    //
+    // `Number(err.status) || 500` RATHER THAN `err.status || 500`, so anything unrecognised - a
+    // thrown Error with no status at all, or a non-numeric value from some future middleware -
+    // falls back to 500 and reads as a server fault. That is the safe direction: claiming a
+    // client error for something we threw would send the sender looking for a mistake they did
+    // not make.
+    return sendError(req, res, Number(err.status) || 500);
 });
 
 const server = app.listen(PORT, HOST, () => {
