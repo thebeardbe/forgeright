@@ -509,102 +509,218 @@ test('a NEWLY NAMED process ALONE is kept - the case that killed the reverted fi
 });
 
 // ===========================================================================
-// 3c. THE REAL PAYLOADS - read from disk, not hand-built
+// 3c. THE REAL PAYLOADS, AGAINST THE CURRENT CONTRACT
 // ===========================================================================
 //
-// THIS CHAIN HAS PRODUCED FIVE DEFECTS AND FOUR WERE FOUND BY FIXTURES THAT DID NOT MATCH THE
-// ARTEFACT. So the two payloads that exposed this one are read from the host rather than re-created
-// from a description. They live OUTSIDE the repo, so the tests skip with a clear message when they
-// are absent rather than failing on a machine that does not have them.
+// READ THIS BEFORE TRUSTING A NUMBER BELOW. The contract changed WHILE THESE TESTS WERE BEING
+// WRITTEN: the by-absence arm was REMOVED from `public/js/audit.js` (see the comment on
+// `reconcileWorkflowIdentity`). It folded an entry carrying nothing into a richer sibling, and it
+// was found to SILENTLY DISCARD A PROCESS THE PARTICIPANT HAD JUST NAMED - the builder measured
+// that no discriminator separates the two cases, because a stale carry-forward beside its own
+// process and a newly named process beside an unrelated one are the SAME SHAPE, and task overlap
+// does not tell them apart.
+//
+// SO ONLY THE POSITIVE ARM REMAINS: an exactly equal step name, which the participant actually
+// said twice. The consequence for the artefacts below is that the two step-less cases are NO
+// LONGER FOLDED - `fuelcard.json` and `onerow.json` stay as they arrive. That is the intended
+// behaviour now, not a regression, and these tests assert it so that re-adding the arm turns them
+// red on purpose.
+//
+// ASSERT THE OUTCOME, NOT THE WARNING'S WORDING. An earlier version matched
+// `/described ONE process twice/` on the log line and broke when a second arm with a different
+// cause existed. Pinning a log line's wording is the same class of mistake as the source-text
+// match that hid the dead-rule defect: it tests the phrasing rather than the result.
 
-/** Reads the phone-bills reply, a bare JSON array of workflows. Returns null when absent. */
-function readBills() {
+/** Reads one of the host artefacts, a bare JSON array of workflows. Returns null when absent. */
+function readArtefact(file) {
     try {
-        return JSON.parse(fs.readFileSync('/tmp/bills.json', 'utf8'));
+        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
+        return Array.isArray(parsed) ? parsed : null;
     } catch {
         return null;
     }
 }
 
-/**
- * Reads the fuel-card round, a bare JSON array of workflows. Returns null when absent.
- *
- * PINNED AS A FILE RATHER THAN READ FROM THE DATABASE, and that is a correction. The first
- * version opened a COPY of the round's store, which was right about not writing beside the
- * original and wrong about stability: the store is live while a container holds it, and a
- * read taken during a checkpoint saw a re-seeded state, so the case skipped on a host that
- * still had the payload. A response payload does not change once the round is closed, so
- * extracting it is the stable form - and it is the same form `readBills` already uses.
- *
- * @returns {Array<object>|null}
- */
-function readFuelCard() {
-    try {
-        return JSON.parse(fs.readFileSync('/tmp/fuelcard.json', 'utf8'));
-    } catch {
-        return null;
-    }
+const ARTEFACTS = {
+    bills: { file: '/tmp/bills.json', inSize: 2, keptKeys: 19, keptSteps: 5 },
+    fuelcard: { file: '/tmp/fuelcard.json', inSize: 2, keptKeys: 19, keptSteps: 7 },
+    onerow: { file: '/tmp/onerow.json', inSize: 3, keptKeys: 8, keptSteps: 5 }
+};
+
+/** Whether ANY fold warning fired, whichever arm caused it. */
+const foldedAnything = (warnings) => warnings.some((w) => /described ONE process twice|earlier wording forward with no steps/.test(w));
+
+/** Drives one payload through the client and returns the workflows that were saved. */
+async function savedWorkflows(workflows) {
+    const client = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows } }] });
+    await client.send('go');
+    return { saved: client.posts.at(-1).data.workflows, warnings: client.warnings };
 }
 
-test('the REAL phone-bills reply folds to ONE entry, keeping the richer one and its content', async (t) => {
-    const workflows = readBills();
-    if (workflows === null) { t.skip('/tmp/bills.json is not present on this host'); return; }
+/** Sorts by id, so an assertion does not depend on the order the fold happened to emit. */
+const idsOf = (workflows) => workflows.map((w) => w.id).sort();
 
-    // THE PAYLOAD: 2 entries, both 5 steps, 3 shared step names, one without `minutesPerInstance`.
+test('the REAL phone-bills reply folds to ONE entry on its three shared step names', async (t) => {
+    const workflows = readArtefact(ARTEFACTS.bills.file);
+    if (workflows === null) { t.skip(`${ARTEFACTS.bills.file} is not present on this host`); return; }
+
+    // THE PAYLOAD: 2 entries, both 5 steps, 3 SHARED step names, one without `minutesPerInstance`.
+    // This is the POSITIVE arm's case - the entries agree on steps the participant actually named.
     assert.equal(workflows.length, 2, 'the artefact holds two entries');
     assert.equal(workflows.filter((w) => w.minutesPerInstance === undefined).length, 1,
         'and one of them lacks minutesPerInstance - the richer/sparser pair');
 
-    const client = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows } }] });
-    await client.send('go');
+    const { saved, warnings } = await savedWorkflows(workflows);
 
-    const saved = client.posts.at(-1).data.workflows;
     assert.equal(saved.length, 1, 'the two entries fold to ONE');
     // BOTH THE ID AND THE CONTENT, because checking the id alone passes on a wrong result.
     assert.equal(saved[0].id, 'checking-the-company-mobile-phone-bills-against-the-handset',
         'and the RICHER entry\'s id is kept');
-    assert.equal(saved[0].minutesPerInstance, 240, 'with its content, not a step-less stub');
+    assert.equal(saved[0].minutesPerInstance, 240, 'with its content, not the sparser entry');
     assert.equal(saved[0].steps.length, 5, 'and its five steps');
-    assert.match(client.warnings.join(' '), /described ONE process twice/, 'and the fold is announced');
+    assert.equal(foldedAnything(warnings), true, 'and a fold was announced, not silent');
 });
 
-test('the REAL fuel-card round folds a step-less entry into the 7-step one', async (t) => {
-    const workflows = readFuelCard();
-    if (workflows === null) { t.skip('/tmp/fuelcard.json is not present on this host'); return; }
+test('the REAL fuel-card reply is LEFT ALONE - its stub carries no steps to co-test on', async (t) => {
+    const workflows = readArtefact(ARTEFACTS.fuelcard.file);
+    if (workflows === null) { t.skip(`${ARTEFACTS.fuelcard.file} is not present on this host`); return; }
 
-    // THE PAYLOAD: a 4-key step-less entry beside a 19-key 7-step one - the BY-ABSENCE case.
+    // THE PAYLOAD: a 4-key step-less entry beside a 19-key 7-step one. It USED to fold (the
+    // removed by-absence arm), and it does NOT now, deliberately: with no steps on the stub there
+    // is no positive evidence, and the arm that inferred from absence destroyed a newly named
+    // process. An extra "not measured" row is cosmetic; a discarded process is silent data loss.
     assert.equal(workflows.length, 2, 'the artefact holds two entries');
     assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 1,
         'and exactly one carries no steps');
 
-    const client = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows } }] });
-    await client.send('go');
+    const { saved, warnings } = await savedWorkflows(workflows);
 
-    const saved = client.posts.at(-1).data.workflows;
-    assert.equal(saved.length, 1, 'the step-less entry is folded away');
-    assert.equal(saved[0].steps.length, 7, 'keeping the entry WITH the steps');
-    assert.equal(Object.keys(saved[0]).length, 19, 'and its full set of fields, not the 4-key stub');
-    assert.match(client.warnings.join(' '), /described ONE process twice/, 'and it is announced, not silent');
+    assert.equal(saved.length, 2, 'the stub is NOT discarded - absence is not evidence');
+    assert.equal(saved.filter((w) => (w.steps || []).length === 7).length, 1, 'the rich entry is untouched');
+    assert.equal(saved.filter((w) => (w.steps || []).length === 0).length, 1, 'and the stub survives');
+    assert.equal(foldedAnything(warnings), false, 'nothing is folded, so nothing is announced');
 });
 
-test('the by-absence fold, on the SHAPE the fuel-card round had: a step-less entry beside a rich one', async () => {
-    // THE SAME CASE AS THE ARTEFACT, built here because the host file is mutable (see above). A
-    // step-less 4-key entry beside a 19-key 7-step one, which is what the fuel-card round held.
-    const stepLess = { id: 'stale-wording', title: 'Stale', task: 'Reconciling fuel-card statements', trigger: 'the statements arrive' };
-    const rich = {
-        id: 'fuel-card-full', title: 'Reconciling fuel-card statements', task: 'Reconciling fuel-card statements', trigger: 'the statements arrive',
-        steps: Array.from({ length: 7 }, (_, i) => STEP(`Fuel step ${i}`)), frequencyPerWeek: 5, timePerPeriod: { hours: 2, period: 'week' },
-        minutesPerInstance: 20, peopleAffected: 2, handoffTo: ['Finance']
+test('the NEW artefact: TWO step-less stubs beside one rich entry are ALL KEPT', async (t) => {
+    const workflows = readArtefact(ARTEFACTS.onerow.file);
+    if (workflows === null) { t.skip(`${ARTEFACTS.onerow.file} is not present on this host`); return; }
+
+    // THE CASE THAT ONCE PRODUCED 3 -> 1 VIA THE BY-ABSENCE ARM, and now stays 3. It is the same
+    // shape as the fuel-card case with one more stub, and it is asserted because the shape is what
+    // the removed arm used to fold - so if that arm is ever restored, this fails and says so.
+    assert.equal(workflows.length, 3, 'the artefact holds three entries');
+    assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 2,
+        'two of them carry no steps');
+
+    const { saved, warnings } = await savedWorkflows(workflows);
+
+    assert.equal(saved.length, 3, 'all three survive: nothing is inferred from absence');
+    assert.equal(idsOf(saved).length, 3, 'three distinct entries');
+    assert.equal(saved.filter((w) => (w.steps || []).length === 5).length, 1, 'the rich entry is among them');
+    assert.equal(foldedAnything(warnings), false, 'and nothing was folded');
+});
+
+test('EVERY PERMUTATION of each artefact gives the same result', async (t) => {
+    // THE MODEL DOES NOT SEND ENTRIES IN A FIXED ORDER, so the result must not depend on it. For
+    // the positive case that means the same single winner in every order; for the two step-less
+    // artefacts it means the same count, since nothing folds them.
+    const permutations = (items) => {
+        if (items.length <= 1) return [items];
+        const out = [];
+        items.forEach((item, i) => {
+            permutations([...items.slice(0, i), ...items.slice(i + 1)]).forEach((rest) => out.push([item, ...rest]));
+        });
+        return out;
     };
 
-    const client = await loadClient({ replies: [{ status: 'complete', content: 'x', audit: { workflows: [stepLess, rich] } }] });
-    await client.send('go');
+    const expectedOut = { bills: 1, fuelcard: 2, onerow: 3 };
+    for (const [name, spec] of Object.entries(ARTEFACTS)) {
+        const workflows = readArtefact(spec.file);
+        if (workflows === null) { t.skip(`${spec.file} is not present on this host`); continue; }
 
-    const saved = client.posts.at(-1).data.workflows;
-    assert.equal(saved.length, 1, 'the step-less entry folds into the rich one');
-    assert.equal(saved[0].steps.length, 7, 'the entry WITH the steps is kept');
-    assert.equal(saved[0].minutesPerInstance, 20, 'and its content, not the step-less stub');
-    assert.match(client.warnings.join(' '), /described ONE process twice/, 'and the fold is announced');
+        for (const order of permutations(workflows)) {
+            const { saved } = await savedWorkflows(order);
+            const label = `${name} in order [${order.map((w) => String(w.id).slice(0, 10)).join('|')}]`;
+            assert.equal(saved.length, expectedOut[name], `${label}: the same number of entries out`);
+            if (expectedOut[name] === 1) {
+                assert.equal(saved[0].steps.length, spec.keptSteps, `${label}: the same winner`);
+                assert.equal(Object.keys(saved[0]).length, spec.keptKeys, `${label}: with the same content`);
+            } else {
+                assert.deepEqual(idsOf(saved), idsOf(workflows), `${label}: the same entries, order-independent`);
+            }
+        }
+    }
+});
+
+test('the CHAIN case: a~b and b~c, in EVERY order - pass 2 is a SINGLE pass, not a fixed point', async () => {
+    // `a` shares S with `b`, `c` shares T with `b`, and `a` and `c` share nothing - so the three are
+    // one process and the order should not matter. The pass-2 COMMENT claims it is "repeated to a
+    // fixed point"; the body is a single `for` loop, so it is not, and the orders that place the
+    // bridge entry LAST leave two entries standing.
+    //
+    // ASSERTED AS MEASURED, so a real fixed point turns this red on purpose rather than passing.
+    const a = { id: 'a', title: 'a', steps: [STEP('S')] };
+    const b = { id: 'b', title: 'b', steps: [STEP('S'), STEP('T')] };
+    const c = { id: 'c', title: 'c', steps: [STEP('T')] };
+    const orders = [[a, b, c], [a, c, b], [b, a, c], [b, c, a], [c, a, b], [c, b, a]];
+    const lateBridge = ['a,c,b', 'c,a,b'];
+
+    for (const order of orders) {
+        const { saved } = await savedWorkflows(order);
+        const label = `order [${order.map((w) => w.id).join(',')}]`;
+        const expected = lateBridge.includes(order.map((w) => w.id).join(',')) ? 2 : 1;
+        assert.equal(saved.length, expected,
+            `${label}: ${expected} entr${expected === 1 ? 'y' : 'ies'} out`);
+        // The richest entry is `b`, the one carrying both steps, in every order.
+        assert.equal(saved.find((w) => w.steps.length === 2).id, 'b', `${label}: the 2-step entry is kept`);
+    }
+});
+
+test('FINDING: the chain is NOT collapsed in every order - pass 2 is not repeated to a fixed point', async () => {
+    // A REAL DEFECT, ASSERTED AS TODAY'S BEHAVIOUR. The comment above pass 2 says it is "repeated to
+    // a fixed point, because a later entry can match an entry that was itself folded into an
+    // earlier one" - but the body is a single pass and nothing re-runs it.
+    //
+    // MEASURED: the chain collapses only when the BRIDGE ENTRY COMES EARLY. With `a~b` (step S) and
+    // `b~c` (step T), order [a, c, b] folds `b` into `a` and never re-compares `c`, so TWO remain.
+    // A true fixed point would give ONE in all six orders, as the comment promises.
+    const a = { id: 'a', title: 'a', steps: [STEP('S')] };
+    const b = { id: 'b', title: 'b', steps: [STEP('S'), STEP('T')] };
+    const c = { id: 'c', title: 'c', steps: [STEP('T')] };
+
+    const earlyBridge = await savedWorkflows([a, b, c]);
+    const lateBridge = await savedWorkflows([a, c, b]);
+
+    assert.equal(earlyBridge.saved.length, 1, 'with the bridge early, the chain folds to one');
+    assert.equal(lateBridge.saved.length, 2,
+        'FINDING: with the bridge last it stays two - the pass is not repeated to a fixed point');
+    assert.deepEqual(lateBridge.saved.map((w) => w.id).sort(), ['b', 'c'],
+        'FINDING: the second entry survives because nothing re-compared it');
+});
+
+test('TWO EMPTY ENTRIES ALONE are BOTH KEPT - the case that must not change', async () => {
+    // DELIBERATE: folding them would infer identity from PURE ABSENCE, and two visible rows for two
+    // stubs is the honest reading. Now doubly guaranteed, because the arm that would have folded
+    // them no longer exists.
+    const e1 = { id: 'e1', title: '1', task: 'a process the participant just named', trigger: 'the phone rings' };
+    const e2 = { id: 'e2', title: '2', task: 'another name', trigger: 'a mail arrives' };
+
+    const { saved, warnings } = await savedWorkflows([e1, e2]);
+    assert.equal(saved.length, 2, 'two empty entries alone stay two');
+    assert.deepEqual(saved.map((w) => w.id), ['e1', 'e2'], 'in the order they arrived');
+    assert.equal(foldedAnything(warnings), false, 'and NOTHING was folded');
+});
+
+test('a NEWLY NAMED process beside a finished one is KEPT - the bug that killed the arm', async () => {
+    // THE CASE THE REMOVED ARM GOT WRONG, and it is now the reason the arm is gone: a participant
+    // names a second process, the prompt starts "a fresh matrix from its `task` and `trigger`
+    // onward" so it arrives step-less, and the old arm folded it into the finished sibling - the
+    // new process gone, silently and unrecoverably. It must be KEPT.
+    const finished = { id: 'finished', title: 'Finished', steps: [STEP('Open the invoice')], frequencyPerWeek: 5 };
+    const newlyNamed = { id: 'newly-named', title: 'Onboarding a new supplier', task: 'Onboarding a new supplier', trigger: 'a supplier is agreed' };
+
+    const { saved } = await savedWorkflows([finished, newlyNamed]);
+    assert.deepEqual(idsOf(saved), ['finished', 'newly-named'], 'both survive - the new process is NOT discarded');
 });
 
 // ===========================================================================
