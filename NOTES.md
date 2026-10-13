@@ -594,3 +594,84 @@ the only record of why the code is shaped as it is. The value to keep is the
 *why* and the evidence; the value to cut is the restatement of what the next line
 plainly does, and the history of how the code got here, which belongs in the
 commit message.
+
+## The interview could not finish, and the total was an artifact
+
+Found 2026-10-13 by running a complete interview through the browser against the
+real provider. **Four defects in one chain, and the first hides the rest.**
+
+### 1. The scorer required fields the interview never produced
+
+`/api/score` validates with `validateWorkflows`, which needs an `id` and a `title`
+on every entry. The interview path never made either: the prompt asks the model
+for `processes` (task, trigger, steps, ...), `workflowsFrom` prefers it, and the
+client wraps it as `{ workflows: processes }` unchanged.
+
+So every real interview ended with **"The analysis could not be computed"**, and
+**the server logged nothing** - the rejection returned before the `catch` that
+held the only `console.error`. That missing log is why this took so long to find:
+the participant saw a message, the browser console held a 400, and the operator
+saw a clean server log.
+
+Fixed by generating a stable `id`/`title` (`ai/workflow-identity.js`). **Do not
+relax the validator instead** - `lib/scoring.js` keys a union-find on `w.id`, and
+three id-less workflows collapse into **one** group.
+
+### 2. The generated id made duplicates, because the model renames itself
+
+The id was derived from the process's `task`. **A model rewrites its own task
+between turns**, so each rewording produced a new id, which read as a new
+process, and nothing merged them:
+
+```
+one interview, one process -> THE PAYLOAD HELD THREE WORKFLOWS
+  [0] 0 steps   "Going through customer complaints that came in overnight..."
+  [1] 4 steps   "Going through overnight customer complaints..."
+  [2] 5 steps   "Triaging overnight customer complaints..."
+```
+
+**This is why the owner reported 385 h/wk from one run and 25.5 h/wk from
+another.** Both were the sum of however many times the model reworded itself.
+Neither number described the participant's work.
+
+Fixed with a **step-name co-test**: same process when two workflows share at
+least one exactly equal step name. **A similarity threshold was measured and
+rejected** - the scores separated cleanly (0.813/0.633 for the same process,
+0.045/0.075 for different ones) but variant [0] carries no steps at all, and no
+single number covers evidence that is partly absent.
+
+**The rule errs toward SPLITTING, not merging**, deliberately: a split leaves a
+visible extra process and fires a warning, while a merge silently fuses two
+different processes and discards one. A rewording that renames every step will
+still duplicate; only real use will show how often.
+
+`mergeForwardDroppedProcesses` cannot catch this on its own. Its comment says it
+compares by `id`, *"the only stable name a reply carries"* - which is true only
+while the task is stable.
+
+### 3. The visible total was computed from the wrong object
+
+The `exhausted` and `isComplete` branches scored `payload` (the raw reply) rather
+than `toSave` (which carries forward dropped processes). So the participant's
+total **included the duplicate and excluded the carried-forward process**. This
+is the number the owner queried.
+
+### 4. The carry-forward was dead on the exhausted path
+
+`state.roundProcesses` is populated only at the end of the normal path, and the
+`exhausted` branch returns before it. On an exhausted round the map was always
+empty, `dropped` was always empty, and **the warning never fired** - answers
+could be saved away with no trace. Fixed by moving the recording above both
+returns.
+
+### What a live interview actually looks like
+
+```
+/api/chat is STATELESS; the round history lives only in the browser.
+The model never sees its own prior `processes`, so it cannot reuse an id.
+An assistant turn is stored as role + content only (audit-core.js:219,
+audit.js:187) - the payload is not in its own history.
+```
+
+That is why the reconciliation is in the client and cannot be a prompt
+instruction.
