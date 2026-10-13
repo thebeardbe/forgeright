@@ -455,75 +455,203 @@
         return mine.some((name) => theirs.has(name));
     }
 
+    /** The measurable fields, in one place, for "which of these two entries is the richer one". */
+    function measurableCount(workflow) {
+        const fields = ['frequencyPerWeek', 'timePerPeriod', 'minutesPerInstance', 'peopleAffected'];
+        const filled = fields.filter((f) => workflow[f] !== undefined && workflow[f] !== null).length;
+        const steps = Array.isArray(workflow.steps) ? workflow.steps.length : 0;
+        // STEP COUNT DOMINATES, because the steps are what the merge and the score read: an entry
+        // with seven steps and a frequency is the process, and one with four fields and no steps
+        // is the fragment of it. Weighting them equally would let two counts of fields beat steps.
+        return steps * 100 + filled;
+    }
+
     /**
-     * Gives a process the identity the round already gave it, when the evidence says it is the
-     * same process under a new name.
+     * Whether a workflow carries nothing the analysis can use.
+     *
+     * NOT A DROP PREDICATE, which is what this was in an earlier attempt and why that attempt was
+     * reverted. The prompt tells the model that a newly named process "STARTS THE CONVERSATION
+     * AGAIN... as a fresh matrix from its `task` and `trigger` onward"
+     * (`data/prompts/cartiere_audit/prompt_en.md` line 511), so a process the participant has just
+     * named arrives EXACTLY like an empty entry. Used at the payload boundary, this predicate
+     * discarded that process and could hand `/api/score` an empty array. It is safe HERE because
+     * it is only ever asked about an entry sitting BESIDE a richer one in the same reply, never
+     * about an entry on its own.
+     */
+    function carriesNothing(workflow) {
+        if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) return false;
+        if (Array.isArray(workflow.steps) && workflow.steps.length > 0) return false;
+        const fields = ['frequencyPerWeek', 'timePerPeriod', 'minutesPerInstance', 'peopleAffected'];
+        return fields.every((f) => workflow[f] === undefined || workflow[f] === null);
+    }
+
+    /**
+     * Gives each process in this reply the identity the round already gave it, and collapses a
+     * reply that describes the SAME process twice.
      *
      * THE DEFECT, measured on a real interview. The server derives a process `id` from its `task`,
-     * and THE MODEL REWORDS THE TASK BETWEEN TURNS. One participant describing ONE process
-     * produced THREE workflows in the final payload: the task became "Going through customer
-     * complaints that came in overnight...", then "Going through overnight customer complaints...",
-     * then "Triaging overnight customer complaints...". Each rewording made a new id, each variant
-     * read as a NEW process, none was matched, and they accumulated. The score came from the
-     * fullest one (25.5 h/wk) while the stubs scored 0, and two runs of the same interview gave
-     * 385 h/wk and 25.5 h/wk depending on how many times the model reworded itself.
+     * and THE MODEL REWORDS THE TASK BETWEEN TURNS. One participant describing one process produced
+     * the same work under several ids, each reading as a NEW process, none matched, and they
+     * accumulated: a score built from one variant while the others scored 0. Two runs of one
+     * interview gave 385 h/wk and 25.5 h/wk depending on how many times the model reworded itself.
      *
-     * WHY NOT A SIMILARITY THRESHOLD. Comparing reworded text means choosing a number, and the
-     * number would be a guess about how the model will phrase itself next. Measured on this
-     * payload, the same process reworded scored 0.813 on task tokens while two genuinely
-     * different processes scored 0.045 - but a third variant of the SAME process carried no steps
-     * at all, so no single threshold covers the cases this has to cover.
+     * THE CONTRACT THIS USED TO HAVE WAS UNREACHABLE, which is why four rounds of verification
+     * missed it. It began `if (workflows.length !== 1) return workflows` - "exactly one workflow in
+     * the reply" - and a real reply carries TWO for one process: the stale carry-forward beside the
+     * current one. Measured: one entry in the reply merged correctly, two entries were returned
+     * untouched, EVERY turn. The rule was dead code on every live interview, and the tests passed
+     * because they were written to the guard's shape.
      *
-     * THE RULE IS AN EXACT CO-TEST WITH NO NUMBER IN IT: the incoming workflow and the process the
-     * round holds are the same process when they SHARE AT LEAST ONE STEP NAME, compared exactly
-     * after trimming and case-folding. Nothing is scored, weighted or thresholded, so there is no
-     * value to tune and no behaviour that changes with the length of a sentence.
+     * THE CONTRACT NOW: EVERY workflow in the reply is matched against EVERY process the round
+     * holds, on the exact step-name co-test below, and takes the id of the process it matches. The
+     * number of entries on either side is not part of the contract, because it was never a property
+     * of a real reply.
      *
-     * WHY STEP NAMES AND NOT THE TASK: the task is the field the model rewrites, which is what
-     * broke the id in the first place. Step names survive rewordings that the task does not - on
-     * this payload "Open the inbox and read each complaint" is identical across both variants that
-     * carry steps, while the task changed in both. A step is a named thing the participant
-     * described, so it is the most stable name in the payload.
+     * A REPLY THAT DESCRIBES ONE PROCESS TWICE IS COLLAPSED, and this is the part that actually
+     * removes the duplicate. Identity alone cannot do it: in the reported case BOTH entries share
+     * the round's process, so both would take its id and the reply would still carry two entries
+     * with the same id. So when two or more entries resolve to the SAME id, they are one process
+     * and the RICHER one survives - the stale copy is a subset of the current one by construction,
+     * since it is the same work with less filled in.
      *
-     * IT ERRS TOWARD DECLINING, WHICH ERRS TOWARD SPLITTING, and that is the deliberate choice.
-     * It matches only on a positive, verbatim agreement. A rewording that renames every step, or a
-     * variant that carries no steps yet, is left alone and can still duplicate. A merge, by
-     * contrast, silently fuses two genuinely different processes and DISCARDS ONE OF THEM - the
-     * exact harm the carry-forward in `mergeForwardDroppedProcesses` exists to prevent. A split
-     * leaves a visible extra process and the console.warn below reports it; a merge loses a
-     * participant's answers with nothing to show for it. Splitting is the smaller harm because
-     * the data survives and somebody can see it.
+     * THE HARM DIRECTION IS UNCHANGED, and it is why the matching is per-entry rather than
+     * all-or-nothing:
      *
-     * THE HELD ENTRY IS THE ONLY CANDIDATE, so this cannot chain two wrong matches together. It
-     * applies when the round holds exactly one process - a round IS the work of one process at a
-     * time, see `ai/response-shape.js` - because with several held, position and step sharing are
-     * not evidence enough to say WHICH one is being reworded.
+     *   two genuinely different processes, each matching a DIFFERENT held process
+     *     -> each keeps its own id, the reply still carries two. This is the case that would break
+     *        if the rule assumed "one on each side".
+     *   two entries matching the SAME held process
+     *     -> one process under two wordings, collapsed, and the console.warn below reports it.
+     *   an entry matching nothing
+     *     -> keeps its own id and is left alone, so a NEW process is never fused into an old one.
+     *
+     * A FALSE MERGE NEEDS A POSITIVE, VERBATIM AGREEMENT: two entries sharing an exactly equal step
+     * name, both matching one held process. Nothing is inferred from the ABSENCE of evidence, which
+     * is what makes this different from the boundary filter that was built and reverted - that one
+     * could not tell a stale carry-forward from a process the participant had just named, because at
+     * the boundary the round's history is not available. Here it is.
+     *
+     * WHY STEP NAMES AND NOT THE TASK: the task is the field the model rewrites, which is what broke
+     * the id in the first place. A step is a named thing the participant described, so it is the most
+     * stable name in the payload. The test is an EXACT comparison after trimming and case-folding -
+     * no similarity, no threshold, no number to tune.
      *
      * @param {Array<object>} workflows The workflows from this reply.
      * @param {Map<string, object>} held The processes the round already has, by id.
-     * @returns {Array<object>} The workflows, with the held identity reattached where it applies.
+     * @returns {Array<object>} The workflows, each carrying a held id where one matched, with a
+     *   process described twice collapsed to its richest single entry.
      */
     function reconcileWorkflowIdentity(workflows, held) {
-        if (!Array.isArray(workflows) || workflows.length !== 1) return workflows;
-        if (held.size !== 1) return workflows;
+        if (!Array.isArray(workflows) || workflows.length === 0) return workflows;
+        // NO EARLY RETURN ON AN EMPTY `held`. It looks like a cheap short-circuit and it is a bug:
+        // the fold below compares entries WITHIN THIS REPLY and needs no round history at all, so
+        // returning here would leave the duplicate on the very first turn it appears - which is
+        // exactly when the stale copy is not yet in `held` and nothing else can catch it.
 
-        const [heldId, heldWorkflow] = held.entries().next().value;
-        const only = workflows[0];
-        if (!only || typeof only !== 'object' || Array.isArray(only)) return workflows;
+        // EACH ENTRY IS MATCHED ON ITS OWN, so a reply carrying several processes, several
+        // wordings of one process, or both, is handled by the same pass.
+        const resolved = workflows.map((workflow) => {
+            if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) return workflow;
 
-        // A reply that already names the round's process matched on its own; leave it alone.
-        if (typeof only.id === 'string' && only.id === heldId) return workflows;
+            // An entry already naming a process the round holds has matched on its own.
+            if (typeof workflow.id === 'string' && held.has(workflow.id)) return workflow;
 
-        // THE DECISION, on one exact shared step name. Anything else is left as the model sent it.
-        if (!sharesAStepName(only, heldWorkflow)) return workflows;
+            for (const [heldId, heldWorkflow] of held) {
+                if (!sharesAStepName(workflow, heldWorkflow)) continue;
+                console.warn(
+                    'the model reworded the process it was describing (id was "' + String(workflow.id) +
+                    '", the round knows it as "' + heldId + '"); keeping the round\'s id so the same ' +
+                    'answers are not counted twice'
+                );
+                // REPLACED rather than mutated, so the reply's own object is left alone.
+                return { ...workflow, id: heldId };
+            }
 
-        console.warn(
-            'the model reworded the process it was describing (id was "' + String(only.id) +
-            '", the round knows it as "' + heldId + '"); keeping the round\'s id so the same ' +
-            'answers are not counted twice'
-        );
-        // The entry is REPLACED rather than mutated, so the reply's own object is left alone.
-        return [{ ...only, id: heldId }];
+            return workflow;
+        });
+
+        // ONE ENTRY PER PROCESS, and this is the part that actually removes a duplicate.
+        //
+        // TWO ENTRIES IN ONE REPLY CAN BE THE SAME PROCESS, and rule 1's own sentence says so:
+        // it treats an exact shared step name as proof of identity, so two entries that share one
+        // ARE one process by that rule. Resolving against `held` alone cannot see this, because on
+        // the first turn both entries are new and neither is held - measured on the reported
+        // payload, which came out as two entries with three identical step names between them.
+        //
+        // THE SAME CLAIM IS MADE IN TWO WAYS HERE, and they are deliberately one pass rather than
+        // two rules, because they answer one question - "are these two entries the same process?"
+        // - and differ only in what counts as evidence:
+        //
+        //   POSITIVE: they share an exactly equal step name. The evidence is present and verbatim.
+        //   BY ABSENCE: one carries nothing at all - no steps and no measurable field - while a
+        //     sibling in the same reply carries something. That is the model's own earlier wording
+        //     carried forward without its content, which the prompt forbids (`prompt_en.md` line
+        //     515: "`processes` holds the process you are working on NOW"). The evidence is the
+        //     absence itself, which is why it needs the sibling's presence to mean anything.
+        //
+        // THE SECOND FORM CANNOT DISCARD A PROCESS THE PARTICIPANT JUST NAMED, and that is the
+        // condition that matters. A newly named process "STARTS THE CONVERSATION AGAIN... as a
+        // fresh matrix from its `task` and `trigger` onward" (line 511), so it arrives empty - but
+        // it arrives ALONE, as the only thing that turn produced, and this only fires beside a
+        // sibling that carries content. That is why this belongs here and not at the payload
+        // boundary, where the same predicate was tried and reverted.
+        //
+        // THE RICHER ENTRY WINS, by `measurableCount` (steps first, then filled fields). In the
+        // stale case the loser is a subset of the winner by construction - the same work with less
+        // filled in - so nothing is lost. In the reported case both entries carry five steps and
+        // only one carries `minutesPerInstance`, so the winner is the one that would score. The
+        // other order would keep the entry the analysis cannot use.
+        //
+        // IT CANNOT FUSE TWO DIFFERENT PROCESSES: they share no step name and neither is empty, so
+        // neither form of the claim applies and both are kept. Nothing here infers identity from
+        // similarity, and no threshold is involved.
+        //
+        // A merge is REPORTED, because removing a participant's entry is the kind of change that
+        // must be visible in a log rather than inferred from a missing row.
+        const merged = [];
+        for (const workflow of resolved) {
+            // Which entry already standing this one is the same process as, if any.
+            let match = -1;
+            for (let at = 0; at < merged.length; at += 1) {
+                const standing = merged[at];
+                if (sharesAStepName(standing, workflow)) {
+                    match = at;
+                    break;
+                }
+                // THE BY-ABSENCE FORM. Judged against a sibling that DOES carry something, so an
+                // empty entry on its own is never touched.
+                if (carriesNothing(workflow) && !carriesNothing(standing)) {
+                    match = at;
+                    break;
+                }
+                if (carriesNothing(standing) && !carriesNothing(workflow)) {
+                    match = at;
+                    break;
+                }
+            }
+
+            if (match === -1) {
+                merged.push(workflow);
+                continue;
+            }
+
+            // KEEP THE RICHER, and move it to the position the pair has been occupying so the
+            // reply's own ordering survives the merge.
+            const standing = merged[match];
+            const winner = measurableCount(standing) >= measurableCount(workflow) ? standing : workflow;
+            const loser = winner === standing ? workflow : standing;
+            console.warn(
+                'the reply described ONE process twice (ids "' + String(standing.id) + '" and "' +
+                String(workflow.id) + '"); keeping the fuller entry (steps ' +
+                (Array.isArray(winner.steps) ? winner.steps.length : 0) + ', ' +
+                measurableCount(winner) % 100 + ' measurable field(s)) and discarding the sparser ' +
+                'one (steps ' + (Array.isArray(loser.steps) ? loser.steps.length : 0) + '), so the ' +
+                'same work is not counted twice'
+            );
+            merged[match] = winner;
+        }
+
+        return merged;
     }
 
     function mergeForwardDroppedProcesses(payload, held) {
