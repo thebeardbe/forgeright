@@ -360,12 +360,32 @@ app.use((err, req, res, next) => {
     // these pages exist to make. The wrong status also hides the problem from a monitor, since a
     // 400 storm would read as a healthy server.
     //
-    // `Number(err.status) || 500` RATHER THAN `err.status || 500`, so anything unrecognised - a
-    // thrown Error with no status at all, or a non-numeric value from some future middleware -
-    // falls back to 500 and reads as a server fault. That is the safe direction: claiming a
-    // client error for something we threw would send the sender looking for a mistake they did
-    // not make.
-    return sendError(req, res, Number(err.status) || 500);
+    // THE STATUS IS VALIDATED RATHER THAN MERELY CONVERTED, and that is a fix for a fault in this
+    // handler's own last resort. `Number(err.status) || 500` passes any truthy number through,
+    // and `res.status()` accepts only 100-599 - so a middleware attaching -1 or 99999 made
+    // `res.status()` THROW from inside the error handler. The response then came from Express's
+    // default, which puts a stack trace in the body: the exact outcome this handler exists to
+    // eliminate, arrived at by the handler itself. MEASURED: `err.status = -1` produced
+    // `RangeError [ERR_HTTP_INVALID_STATUS_CODE]` in the response body.
+    //
+    // THE BOUNDS ARE 400 TO 599, AND THE FLOOR IS DELIBERATELY NOT 100. Everything reaching this
+    // middleware is an error, so a status below 400 is either nonsense or a bug in whatever
+    // attached it - and rendering an error PAGE with a 2xx or a 3xx would be worse than the
+    // stack trace it replaced: a monitor would count a failure as a success, and a client
+    // following a redirect from an error page would end up somewhere unrelated. An error status
+    // is the only honest answer once an error has been thrown, so anything outside the band
+    // becomes 500, which reads as a server fault rather than as a client mistake.
+    //
+    // `Number.isInteger` RATHER THAN A RANGE TEST ALONE, so `NaN`, `Infinity` and a numeric
+    // string like "418" behave predictably: NaN and Infinity fail the test and become 500, while
+    // "418" is coerced by `Number` and passes. Verified against every real case: 400 for a
+    // malformed body, 413 for an oversized one, 418 for a teapot, 400 from the string "400".
+    const rawStatus = Number(err.status);
+    const status = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus <= 599
+        ? rawStatus
+        : 500;
+
+    return sendError(req, res, status);
 });
 
 const server = app.listen(PORT, HOST, () => {
