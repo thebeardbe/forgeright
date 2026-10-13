@@ -35,6 +35,22 @@
         </div>
     </header>
 
+    <%#
+        THE LEAD. The console had none: it opened straight into an "Organisation" card and two
+        tables, so a visitor arriving from the demo link met three controls with no statement of
+        what the product is for. The sentence is worded IDENTICALLY in the demo banner above and
+        in the roadmap's lead, because a reader who sees two of them should recognise it as one
+        description rather than two claims.
+
+        `.intro` COMES FROM app.css, WHICH theme-head LOADS ON EVERY PAGE, so this needs no
+        addition to `pageStyles` and no new rule. The same class carries the roadmap's lead, so
+        the two paragraphs share one style rather than drifting.
+    %>
+    <p class="intro">
+        forgeright interviews your team about the work they do by hand, then ranks
+        what it finds by what is worth automating first.
+    </p>
+
     <div class="card">
         <h2 class="eyebrow">Organisation</h2>
         <form method="post" action="<%= basePath %>/admin/organisation/name" class="row">
@@ -44,7 +60,14 @@
             </div>
             <button type="submit"<%= readOnly ? ' disabled' : '' %>>Save</button>
         </form>
-        <p class="meta">Created <%= shortInstant(organisation.created_at) %>. The name starts as a placeholder until it is set here.</p>
+        <%#
+            THE SECOND SENTENCE IS GONE. It read "The name starts as a placeholder until it is set
+            here", which is an instruction to whoever built this aimed at a demo visitor - the
+            owner's complaint was that a visitor cannot tell what the application is for, and a
+            note about the seed's placeholder is the same class of thing. The creation date is
+            kept: it is a fact about the organisation rather than a note to a reader.
+        %>
+        <p class="meta">Created <%= shortInstant(organisation.created_at) %></p>
     </div>
 
     <div class="card">

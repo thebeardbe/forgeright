@@ -29,11 +29,34 @@
 
     <%- include('partials/console-notice', { subject: 'The process' }) %>
 
+    <%#
+        TWO PARAGRAPHS, DELIBERATELY: the first says what the page is for, the second says how to
+        use it. The single paragraph they replace tried to do both, and the result was a run of
+        clauses a client had to unpick to find the point.
+
+        "DESCRIBED" RATHER THAN "FOUND", because employees described these processes - the tool
+        did not discover them. Saying "found" would claim credit for the interviews and would
+        misread what the ranking is based on.
+
+        THE FIRST SENTENCE IS THE SAME ONE as the demo banner's and the console's, worded
+        identically, so a reader recognises it as one description of the product rather than a
+        second one.
+    %>
     <p class="intro">
-        Every process, highest score first, because early results compound. Open one to
-        see its steps with the reasoning marked, the paragraph explaining the score, and
-        the answers behind it. A process that was grouped badly sits lower down, and can
-        be rejudged where you find it.
+        forgeright interviews your team about the work they do by hand, then ranks
+        what it finds by what is worth automating first.
+    </p>
+
+    <p class="intro">
+        These are the processes your team described, ranked by what is worth
+        automating first. The ones that recur cost you every day, so clearing one
+        early pays back for as long as it runs.
+    </p>
+
+    <p class="intro">
+        Open one to see its steps with the reasoning marked, the paragraph explaining
+        the score, and the answers behind it. A process that was grouped badly sits
+        lower down, and can be rejudged where you find it.
     </p>
 
     <% if (processes.length === 0) { %>
@@ -157,7 +180,7 @@
                 </p>
 
                 <% if (process.score) { %>
-                    <h3>Why it got this weight</h3>
+                    <h3>Why it scored this</h3>
                     <p class="paragraph"><%= process.score.reasoning %></p>
 
                     <h3>The terms behind it</h3>
