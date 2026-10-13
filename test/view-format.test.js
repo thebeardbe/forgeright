@@ -99,21 +99,86 @@ test('a malformed entry inside `workflows` is skipped for a usable one', () => {
     assert.equal(responseWorkflow(data).task, 'The real one');
 });
 
-test('the resolver is READ AT ALL THREE SITES, not re-implemented at each', () => {
-    // The point of one resolver: both views call it rather than reaching into a payload shape.
-    // A view that reads `.data.task` again would render every interview as untitled, which is the
-    // defect, so the direct read is asserted ABSENT.
+test('the resolver is READ AT EVERY SITE THAT RENDERS A FIELD, not re-implemented at each', () => {
+    // The point of one resolver: a view calls it rather than reaching into a payload shape. A view
+    // that reads `.data.task` again would render every interview as untitled, which is the defect,
+    // so the direct read is asserted ABSENT.
+    //
+    // THE ROADMAP IS NO LONGER A FIELD SITE (commit a46e9fa): it renders a LINK to each answer
+    // rather than the participant's fields, so it no longer calls the resolver and asserting that
+    // it does would pin a layout that was deliberately removed. The sites are now the two in the
+    // answers view - the title, and the fields partial - which are both asserted.
     const answers = view('admin-answers.ejs');
     const roadmap = view('admin-roadmap.ejs');
 
     assert.match(answers, /responseTitle\(response\.data\)/, 'the answers title uses the resolver');
     assert.match(answers, /responseWorkflow\(response\.data\)/, 'and the fields partial gets the resolved workflow');
-    assert.match(roadmap, /responseWorkflow\(response\.data\)/, 'the roadmap card too');
     // No direct read of the raw payload shape survives IN CODE. Comments that DESCRIBE the old
-    // read are stripped first, because the view documents the defect it fixes.
+    // read are stripped first, because the views document the defect they fix.
     const stripComments = (text) => text.replace(/<%#[\s\S]*?%>/g, '').replace(/<!--[\s\S]*?-->/g, '');
     assert.equal(/\.data\.task/.test(stripComments(answers)), false, 'no direct `.data.task` read in the answers view');
     assert.equal(/\.data\.task/.test(stripComments(roadmap)), false, 'nor in the roadmap view');
+});
+
+test('the roadmap LINKS to each answer instead of copying its fields', () => {
+    // THE CHANGE THE ESCAPING AND RESOLVER TESTS HAD TO FOLLOW. The roadmap used to render every
+    // participant field inline - seven `words` rows per response - and now links to the answer, so
+    // the fields appear in one place rather than two. Both halves of that are asserted, because
+    // the link must reach the right answer.
+    const roadmap = view('admin-roadmap.ejs');
+
+    // A link, built from the response id, to the answers view.
+    assert.match(roadmap, /\/admin\/answers\?open=/,
+        'the roadmap links to the answers view with the open parameter');
+    assert.match(roadmap, /#response-/, 'and carries the fragment that scrolls to the answer');
+    // The fields partial is NOT included on the roadmap any more.
+    assert.equal(/response-fields/.test(roadmap), false,
+        'the roadmap no longer includes the fields partial - the fields live on the answers view');
+    // What the reader still sees belongs to the grouping: who, and what they contributed.
+    assert.match(roadmap, /response\.contributed/, 'the contributed list still renders on the roadmap');
+    assert.match(roadmap, /response\.department/, 'and the department');
+});
+
+test('`includeFields` defaults TRUE, so the roadmap would get fields if it asked for them', () => {
+    // The partial gained an `includeFields` flag with the roadmap change. Its default is the one
+    // that matters: absent means fields are rendered, so a caller that does not pass it (the
+    // roadmap did not, before the change) gets the full field list rather than silence.
+    const partial = view('partials/response-fields.ejs');
+    assert.match(partial, /typeof includeFields === 'undefined' \|\| includeFields/,
+        'an absent includeFields renders the fields');
+
+    // And the answers view passes `includeFields: false` for its SUMMARY copy, so a reader sees
+    // the fields once in full rather than twice.
+    const answers = view('admin-answers.ejs');
+    assert.match(answers, /includeFields: false/, 'the summary copy omits fields');
+});
+
+test('a valid `open` id opens that answer SERVER-SIDE, and a stale one opens nothing', async () => {
+    // THE PROPERTY THE LINK DEPENDS ON. `?open=<id>` is read by the route and marks one `<details>`
+    // open, so the reader lands on the answer the roadmap linked to. A stale id must open nothing
+    // rather than everything or an error - an id from a deleted response is a link that must fail
+    // quietly.
+    const consoleViews = fs.readFileSync(path.join(PROJECT_ROOT, 'lib', 'auth', 'console-views.js'), 'utf8');
+    assert.match(consoleViews, /openResponseId: typeof req\.query\.open === 'string' \? req\.query\.open : null/,
+        'the route reads the open parameter');
+
+    const answersView = view('admin-answers.ejs');
+    assert.match(answersView, /openResponseId === response\.id \? ' open' : ''/,
+        'the view opens exactly the matching detail element');
+});
+
+test('the placeholder contrast is asserted against the CSS, not a hex', () => {
+    // Commit a46e9fa changed the placeholder colour because it matched entered text. A hex would
+    // be an assertion about a value rather than about the rule, so what is pinned is that a
+    // placeholder rule EXISTS and sets a colour distinctly from the input text. The exact value
+    // is a design choice and stays in the stylesheet.
+    const css = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'css', 'app.css'), 'utf8');
+    assert.match(css, /::placeholder/, 'there is a placeholder rule');
+    // And it sets a colour rather than relying on the browser default (which is what matched the
+    // entered text and started this).
+    const rule = css.match(/::placeholder[^{]*\{[^}]*\}/s);
+    assert.notEqual(rule, null, 'the placeholder rule has a body');
+    assert.match(rule[0], /color:/, 'and it sets a colour explicitly');
 });
 
 // ===========================================================================

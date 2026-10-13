@@ -336,15 +336,29 @@ test('an unauthenticated POST to a rejudge route redirects rather than acting', 
 // parsed DOM would decode the entities first and see no difference.
 
 test('a <script> in participant text renders entity-escaped, not raw', async () => {
-    const res = await request({ path: '/admin/roadmap', cookie: cookieA });
+    // THE ROADMAP NO LONGER RENDERS PARTICIPANT FIELDS (commit a46e9fa): each response is a LINK to
+    // its answer in the answers view rather than seven inline `words` rows repeated per response.
+    // So the task text is not on this page any more, and an assertion that it is would be testing
+    // a layout that was deliberately removed. What MUST still hold on the roadmap is that the
+    // participant-controlled text it DOES render - the department, which comes from the response -
+    // is escaped, and that the raw script reaches neither page.
+    const roadmap = await request({ path: '/admin/roadmap', cookie: cookieA });
 
-    assert.equal(res.text.includes('<script>alert(1)</script>'), false, 'no raw script tag reaches the page');
-    assert.equal(res.text.includes('<script>alert(4)</script>'), false, 'nor from a step decidedHow');
-    assert.ok(res.text.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'the task is escaped');
+    assert.equal(roadmap.text.includes('<script>alert(1)</script>'), false, 'no raw script tag reaches the roadmap');
+    assert.equal(roadmap.text.includes('<script>alert(4)</script>'), false, 'nor from a step decidedHow');
+
+    // And the text IS escaped where it is now rendered: the answers view, which the roadmap links
+    // to. This is the same assertion, moved to the page that holds the text.
+    const answers = await request({ path: '/admin/answers', cookie: cookieA });
+    assert.equal(answers.text.includes('<script>alert(1)</script>'), false, 'no raw script tag reaches the answers view');
+    assert.ok(answers.text.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'the task is escaped on the answers view');
+    assert.ok(answers.text.includes('&lt;script&gt;alert(4)&lt;/script&gt;'), 'and the step decidedHow too');
 });
 
 test('an onerror attribute in participant text renders escaped', async () => {
-    const res = await request({ path: '/admin/roadmap', cookie: cookieA });
+    // The step's `whatHappens` is participant text. It lived on the roadmap until a46e9fa moved
+    // the fields to the answers view, so it is asserted where it is now rendered.
+    const res = await request({ path: '/admin/answers', cookie: cookieA });
 
     assert.equal(res.text.includes('<img src=x onerror=alert(3)>'), false, 'no raw img tag reaches the page');
     assert.ok(res.text.includes('&lt;img'), 'the process name is escaped');

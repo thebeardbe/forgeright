@@ -442,6 +442,27 @@ test('an error status is served as itself WITHIN 400-599, and folded to 500 outs
     }
 });
 
+test('a FRACTIONAL status folds to 500 - the case that catches a missing integer test', async () => {
+    // THE GAP A MUTATION FOUND. Removing `Number.isInteger` from the resolution was NOT caught by
+    // this file, because a fractional status like 418.5 passes a bare range check and DOES NOT
+    // throw - measured from the sources rather than by starting a server:
+    //
+    //   - `express/lib/response.js`: `res.status(418.5)` warns via `deprecate` and assigns the
+    //     fractional value unchanged; it does not validate.
+    //   - Node's `ServerResponse.prototype.writeHead` does `statusCode |= 0`, which TRUNCATES 418.5
+    //     to 418, then checks 100-999 - so a fractional status is silently truncated on the wire.
+    //
+    // SO THE INTEGER TEST IS NOT ABOUT PREVENTING A CRASH, and saying so is the honest reading:
+    // without it the response is 418 rather than 500, which is a WRONG STATUS served silently
+    // rather than a thrown one. That is the same class as the 200 case - an error answered with a
+    // status the resolution did not choose - so it belongs with it.
+    for (const fractional of [400.5, 418.5, 499.99]) {
+        const res = await genuineThrow(fractional);
+        assert.equal(res.status, 500,
+            `err.status ${fractional} must fold to 500, not be truncated to a status nobody chose`);
+    }
+});
+
 test('err.status 200 does NOT serve an error page with a SUCCESS status - the worst invisible failure', async () => {
     // THE CASE THAT MATTERS MOST, and the one neither the reviewer nor the builder had emphasised:
     // an error page served with a 2xx is a monitor counting a server fault AS A SUCCESS. It is
