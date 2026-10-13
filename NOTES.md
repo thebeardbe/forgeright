@@ -557,3 +557,40 @@ now. squising bugs to get to a working PoC with demodata."*
 So the priority order is: **a working proof of concept with demo data, deployed.**
 Anything that is not a bug blocking that is deferred by decision, not by oversight.
 The open sign-up spending the provider key is a known, accepted cost for now.
+
+## TODO: cull the comments
+
+**The owner's instruction, 2026-10-13:** *"Write down as a todo that we need to
+cull the comments as there are way too much."*
+
+Measured, so the size of the job is known rather than guessed:
+
+```
+tracked source   39,285 lines
+comment lines    13,307   (34%)
+```
+
+The densest files, excluding tests and generated output:
+
+```
+85%   ai/format-commitment.js        65 lines
+78%   lib/auth/demo-readonly.js     174
+71%   ai/period.js                   76
+70%   data/store/schema.sql         367
+69%   lib/store/connection-guard.js  52
+69%   lib/view-format.js            132
+68%   lib/palettes.js                91
+66%   ai/field-shapes.js            509
+66%   lib/auth/require-secure.js    253
+```
+
+**`public/css/palette.css` reads 87%, but it is GENERATED** by
+`scripts/build-palette-css.js`. Culling it by hand would be undone by the next
+run, so the source of any wording there is `lib/palettes.js`.
+
+**Not a small job and not a mechanical one.** Much of the commentary here exists
+because a fix was found by a live run rather than by a test, and the reasoning is
+the only record of why the code is shaped as it is. The value to keep is the
+*why* and the evidence; the value to cut is the restatement of what the next line
+plainly does, and the history of how the code got here, which belongs in the
+commit message.
