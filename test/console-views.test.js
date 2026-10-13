@@ -67,7 +67,14 @@ function spawnedEnv(port) {
         SESSION_SECRET: 'a'.repeat(64),
         STORE_DIR,
         AI_PROVIDER: 'mock',
-        MAIL_SENDER: 'console'
+        MAIL_SENDER: 'console',
+        // NEUTRALISED SO THE SUITE DOES NOT DEPEND ON THE UNTRACKED .env. server.js does
+        // `import 'dotenv/config'` and dotenv fills only ABSENT keys, so a developer's .env with
+        // DEMO_LOGIN=1 was inherited by every spawned server. An empty string is PRESENT and is
+        // therefore left alone, which holds the demo gate closed. See test/demo-login.test.js.
+        DEMO_LOGIN: '',
+        DEMO_LOGIN_ORG: '',
+        DEMO_LOGIN_TOKEN: ''
     };
 }
 
@@ -392,12 +399,26 @@ test('the roadmap escapes the SCORE PARAGRAPH, which the model controls', async 
 test('the roadmap shows the score, the terms and the paragraph once weighed', async () => {
     const res = await request({ path: '/admin/roadmap', cookie: cookieA });
 
-    assert.ok(res.text.includes('Why it got this weight'), 'the paragraph section is rendered');
+    // THE HEADING AND ITS PARAGRAPH TOGETHER, not the heading alone. The string "Why it scored
+    // this" on its own would pass if the heading rendered with the paragraph missing, or with an
+    // unrelated paragraph under it - so the assertion is the PAIR, in order: the heading, then the
+    // paragraph element that carries the reasoning. The template renders
+    // `<h3>Why it scored this</h3>` immediately before `<p class="paragraph">`, and the pairing is
+    // what says the reasoning is shown UNDER its heading rather than somewhere on the page.
+    assert.match(res.text, /<h3>Why it scored this<\/h3>\s*<p class="paragraph">/,
+        'the reasoning paragraph renders under its heading, as a pair');
+
     assert.ok(res.text.includes('The terms behind it'), 'the terms section is rendered');
     for (const term of weighing.TERMS) {
         assert.ok(res.text.includes(term), `the term ${term} is shown`);
     }
     assert.ok(res.text.includes('(high is worse)'), 'cost terms are marked');
+
+    // THE OLD HEADING IS GONE, so a stale copy cannot linger beside the new one.
+    assert.equal(res.text.includes('Why it got this weight'), false, 'the old heading no longer appears');
+    // AND `weight` IS STILL THE LABEL next to the number: the owner kept that name on purpose, so
+    // the heading was renamed without renaming the metric a reader compares against.
+    assert.match(res.text, /<div class="weight-label">weight<\/div>/, 'the `weight` label is unchanged beside the number');
 });
 
 // ===========================================================================

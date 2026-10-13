@@ -74,7 +74,14 @@ function spawnedEnv(port) {
         SESSION_SECRET: 'a'.repeat(64),
         STORE_DIR,
         AI_PROVIDER: 'mock',
-        MAIL_SENDER: 'console'
+        MAIL_SENDER: 'console',
+        // NEUTRALISED SO THE SUITE DOES NOT DEPEND ON THE UNTRACKED .env. server.js does
+        // `import 'dotenv/config'` and dotenv fills only ABSENT keys, so a developer's .env with
+        // DEMO_LOGIN=1 was inherited by every spawned server. An empty string is PRESENT and is
+        // therefore left alone, which holds the demo gate closed. See test/demo-login.test.js.
+        DEMO_LOGIN: '',
+        DEMO_LOGIN_ORG: '',
+        DEMO_LOGIN_TOKEN: ''
     };
 }
 

@@ -106,6 +106,23 @@ async function startServer(demoEnv = {}) {
             STORE_DIR,
             AI_PROVIDER: 'mock',
             MAIL_SENDER: 'console',
+            // THE DEMO KEYS ARE SET TO EMPTY STRINGS RATHER THAN OMITTED, and that is what makes
+            // this suite REPRODUCIBLE. `server.js` does `import 'dotenv/config'`, and `dotenv`
+            // fills only ABSENT keys - so a developer's untracked `.env` containing
+            // `DEMO_LOGIN=1` and `DEMO_LOGIN_ORG=...` was being inherited by every spawned server,
+            // and the three tests below that assert the flag is OFF failed with "DEMO_LOGIN_ORG
+            // names no organisation in this store", because their temp STORE_DIR has no such
+            // organisation. The failure was in this file, unrelated to whatever change was being
+            // tested, and the message pointed at the code rather than at the `.env`.
+            //
+            // AN EMPTY STRING DEFEATS IT: measured against dotenv directly, a key that IS PRESENT
+            // (even as '') is left alone, while an absent one is filled. So `DEMO_LOGIN: ''` holds
+            // the gate `process.env.DEMO_LOGIN !== '1'` closed however the developer's `.env` reads.
+            // `...demoEnv` below still overrides these for the tests that ENABLE the flag.
+            DEMO_LOGIN: '',
+            DEMO_LOGIN_ORG: '',
+            DEMO_LOGIN_TOKEN: '',
+            DEMO_LOGIN_DAYS: '',
             ...demoEnv
         },
         stdio: ['ignore', 'pipe', 'pipe']
@@ -596,4 +613,164 @@ test('there is no third role: the demo flag rides on the session scope', () => {
     assert.match(roles[1], /ADMIN:\s*'admin'/, 'admin exists');
     assert.match(roles[1], /USER:\s*'user'/, 'user exists');
     assert.equal(/demo/i.test(roles[1]), false, 'no demo role was added');
+});
+
+// ===========================================================================
+// 6. THE COPY, COUNTED - the product sentence and the pages that carry it
+// ===========================================================================
+//
+// The owner asked for a sentence saying WHAT the application is rather than only how to
+// navigate it. It now appears on the console lead, the roadmap lead, and the demo banner -
+// and the banner is DELIBERATELY not centralised, so the sentence appears TWICE on a demo
+// session: once in the banner and once in the page lead, because the banner's job is to
+// explain the demo's safety while the leads explain the product.
+//
+// THE COUNT IS ASSERTED so a future reader does not add a de-duplication "fix": two
+// occurrences on a demo session is the design, not repetition.
+
+/** The product sentence, as it appears in the leads and the banner.
+ *
+ * WHITESPACE-TOLERANT because the SOURCE line-breaks differ between the three places: the
+ * banner wraps after "about the" while the console lead wraps after "do by hand". A regex
+ * matching one wrapping would count the other as absent - which is how the first version of
+ * this test reported one occurrence on a demo page that renders two.
+ */
+const PRODUCT_SENTENCE = /forgeright interviews your team about the\s+work they do by hand, then ranks\s+what it finds by what is worth automating first/g;
+
+const countOf = (text, pattern) => (text.match(pattern) ?? []).length;
+
+test('the product sentence appears ONCE on an ordinary console and roadmap page', async () => {
+    const server = await startServer();
+    try {
+        const admin = await signInAdmin(server, 'real@admin.test');
+
+        const consolePage = await request(server.port, { path: '/admin', cookie: admin });
+        assert.equal(consolePage.status, 200);
+        assert.equal(countOf(consolePage.text, PRODUCT_SENTENCE), 1,
+            'the console carries the product sentence exactly once');
+
+        const roadmap = await request(server.port, { path: '/admin/roadmap', cookie: admin });
+        assert.equal(roadmap.status, 200);
+        assert.equal(countOf(roadmap.text, PRODUCT_SENTENCE), 1,
+            'the roadmap carries it exactly once');
+    } finally {
+        await server.stop();
+    }
+});
+
+test('the product sentence appears TWICE on a demo session - the banner AND the lead, by design', async () => {
+    // THE DELIBERATE DOUBLE. A de-duplication "fix" that removed one would be a change to the
+    // design, so the count is asserted rather than left implicit.
+    const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
+    try {
+        const demo = await openDemo(server);
+        const page = await request(server.port, { path: '/admin', cookie: demo });
+
+        assert.equal(page.status, 200);
+        assert.equal(countOf(page.text, PRODUCT_SENTENCE), 2,
+            'a demo session sees it twice: the banner and the page lead');
+        // Both halves are named, so a failure says which one went missing.
+        assert.match(page.text, /read-only demo/i, 'the banner is one occurrence');
+    } finally {
+        await server.stop();
+    }
+});
+
+test('the roadmap renders TWO lead paragraphs, and the console has a lead where it had none', async () => {
+    // The roadmap's lead is two paragraphs now (what forgeright is, then what the page shows).
+    // The console gained a lead paragraph it did not have, so its own copy is not bare.
+    const server = await startServer();
+    try {
+        const admin = await signInAdmin(server, 'real@admin.test');
+        const roadmap = await request(server.port, { path: '/admin/roadmap', cookie: admin });
+        const consolePage = await request(server.port, { path: '/admin', cookie: admin });
+
+        // The roadmap lead paragraphs, counted on the rendered page.
+        const roadmapLeads = countOf(roadmap.text, /<p class="intro">/g);
+        assert.ok(roadmapLeads >= 2, `the roadmap renders at least two lead paragraphs (found ${roadmapLeads})`);
+        assert.match(roadmap.text, /These are the processes your team described/,
+            'the second lead says what the page shows');
+
+        // The console has a lead paragraph now.
+        assert.match(consolePage.text, /<p class="intro">/,
+            'the console has a lead paragraph where it had none');
+    } finally {
+        await server.stop();
+    }
+});
+
+test('the OLD copy appears nowhere, and the removed developer sentence is gone', async () => {
+    // The heading was renamed and the roadmap lead replaced. Neither old string may linger, so a
+    // stale copy cannot sit beside the new one.
+    const server = await startServer();
+    try {
+        const admin = await signInAdmin(server, 'real@admin.test');
+        const pages = await Promise.all([
+            request(server.port, { path: '/admin', cookie: admin }),
+            request(server.port, { path: '/admin/roadmap', cookie: admin }),
+            request(server.port, { path: '/admin/answers', cookie: admin })
+        ]);
+
+        for (const page of pages) {
+            assert.equal(page.text.includes('Why it got this weight'), false, 'the old heading is gone');
+            // The developer sentence that named the placeholder naming rule was removed.
+            assert.equal(page.text.includes('The name starts as a placeholder until it is set here'), false,
+                'the removed developer sentence is not rendered');
+        }
+    } finally {
+        await server.stop();
+    }
+});
+
+test('`weight` is STILL the label beside the number - the metric was not renamed with the heading', async () => {
+    // The owner kept this name on purpose, so the rename of the heading must not have taken it.
+    const server = await startServer();
+    try {
+        const admin = await signInAdmin(server, 'real@admin.test');
+        const roadmap = await request(server.port, { path: '/admin/roadmap', cookie: admin });
+
+        assert.match(roadmap.text, /<div class="weight-label">weight<\/div>/,
+            'the metric is still called `weight` beside its number');
+    } finally {
+        await server.stop();
+    }
+});
+
+test('the console creation date still renders formatted, and is escaped', async () => {
+    // The removal of the developer sentence must not have taken the date with it. `shortInstant`
+    // renders `YYYY-MM-DD HH:MM UTC`, and the value is escaped by the template.
+    const server = await startServer();
+    try {
+        const admin = await signInAdmin(server, 'real@admin.test');
+        const page = await request(server.port, { path: '/admin', cookie: admin });
+
+        assert.match(page.text, /Created \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/,
+            'the creation date renders through shortInstant');
+        // Escaped: a raw `<` from the date would be a markup fault, so the entity form is expected
+        // wherever a value could carry one. Asserted on the presence of the formatted value only;
+        // the escaping is covered by the injection tests in console-views.test.js.
+    } finally {
+        await server.stop();
+    }
+});
+
+test('no em dash (U+2014) appears on any rendered console page', async () => {
+    // House style: no em dash in user-facing copy. En-dash ranges are allowed, so only U+2014 is
+    // refused. Asserted on the rendered pages rather than the sources, since the copy is what a
+    // reader sees.
+    const server = await startServer();
+    try {
+        const admin = await signInAdmin(server, 'real@admin.test');
+        const pages = await Promise.all([
+            request(server.port, { path: '/admin', cookie: admin }),
+            request(server.port, { path: '/admin/roadmap', cookie: admin }),
+            request(server.port, { path: '/admin/answers', cookie: admin })
+        ]);
+
+        for (const page of pages) {
+            assert.equal(page.text.includes('\u2014'), false, 'no em dash is rendered');
+        }
+    } finally {
+        await server.stop();
+    }
 });
