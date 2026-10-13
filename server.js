@@ -25,6 +25,7 @@ import { assertMailSenderUsable, mailReadinessProblems } from './lib/mail/index.
 import { closeAll } from './lib/store/index.js';
 import { BASE_PATH, PUBLIC_PATH, describeMount, describePublicPath } from './lib/base-path.js';
 import { resolveTrustProxy, hostnameFromHeader } from './lib/trust-proxy.js';
+import { sendError } from './lib/error-page.js';
 import { router as participantRouter } from './lib/auth/participant-routes.js';
 import { router as landingRouter } from './lib/landing.js';
 import { registerThemeRoute } from './lib/theme-route.js';
@@ -193,7 +194,12 @@ app.use((req, res, next) => {
         `[host] rejected request for host "${host}" ` +
         `(allowed: ${ALLOWED_HOSTS.join(', ')})`
     );
-    res.status(421).send('Misdirected request.');
+
+    // THE LOG NAMES THE HOST AND THE LIST; THE PAGE NAMES NEITHER. An operator reads the log
+    // and can fix this in a minute; a visitor reading the allowed list would be handed this
+    // installation's configuration, and would not know what to do with it anyway. See
+    // lib/error-page.js for the wording, which says it is a deployment matter.
+    return sendError(req, res, 421);
 });
 
 // The admin routes need cookies; this reads the header into req.cookies for the
@@ -298,7 +304,7 @@ appInternal.use('/', landingRouter);
 appInternal.use('/', apiRouter);
 
 appInternal.use((req, res) => {
-    res.status(404).send('Not found.');
+    sendError(req, res, 404);
 });
 
 /**
@@ -321,7 +327,32 @@ app.use(BASE_PATH, appInternal);
  * that missed the prefix cannot accidentally reach a route.
  */
 app.use((req, res) => {
-    res.status(404).send('Not found.');
+    sendError(req, res, 404);
+});
+
+/**
+ * THE LAST HANDLER, AND IT DID NOT EXIST. An uncaught throw anywhere in a route reached
+ * Express's default, which answers with the stack trace in the body when NODE_ENV is not
+ * production - so a fault mid-interview would show a participant a file path and a line number.
+ *
+ * IT LOGS THE ERROR AND RENDERS A PAGE, and the two carry different amounts of information on
+ * purpose. The log gets the message and the stack, because that is what an operator needs and
+ * the log is not public. The PAGE gets neither, in any environment: see lib/error-page.js for
+ * why the development exception is not worth making.
+ *
+ * IT MUST TAKE FOUR ARGUMENTS. That is how Express recognises error middleware, and a handler
+ * declared with three would be mounted as an ordinary route and never called.
+ */
+app.use((err, req, res, next) => {
+    console.error(`[server] unhandled error on ${req.method} ${req.originalUrl}:`, err);
+
+    // A RESPONSE ALREADY UNDER WAY CANNOT BE REPLACED. A route that sent headers and then threw
+    // would make `res.status(...)` throw in turn, hiding the original fault behind a second one,
+    // so the default handler is handed this case - which closes the connection and leaves the
+    // error in the log.
+    if (res.headersSent) return next(err);
+
+    return sendError(req, res, 500);
 });
 
 const server = app.listen(PORT, HOST, () => {

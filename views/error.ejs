@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="<%= theme.followingSystem ? 'system' : theme.id %>">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= title %> - forgeright</title>
+    <%- include('partials/theme-head') %>
+</head>
+<body>
+<%#
+    ONE VIEW FOR EVERY STATUS, and the chrome is a FLAG rather than a second file.
+
+    WHY ONE AND NOT TWO. A 421 fires for a request whose Host this installation does not
+    answer for, and at that moment the server has not read the cookie or resolved the theme -
+    see the note in server.js. A second view would need the same fallback work in both places,
+    and the two would drift the first time a status was added to one. The differences between
+    the console's page and the visitor's are small: a line of context, and where the one link
+    goes. A flag says that in the markup, where it can be read.
+
+    WHY `title` AND `heading` ARE SEPARATE. The tab title is what somebody scanning several
+    open tabs sees, so it names the status plainly ("Not found"); the heading is the sentence
+    they read once they are on the page, which can say what to do about it.
+
+    WHY THERE IS NO STACK, PATH OR CONFIG HERE. Every value on this page is a literal in the
+    view or a status we chose; nothing is interpolated from the request beyond the status
+    itself. An error page is the last place to leak a file path or a variable name, because it
+    is the one page a stranger is most likely to reach on purpose.
+%>
+<div class="wrap narrow">
+    <header>
+        <div>
+            <p class="eyebrow">forgeright</p>
+            <h1><%= heading %></h1>
+        </div>
+        <div class="switchers">
+            <%- include('partials/theme-picker') %>
+        </div>
+    </header>
+
+    <div class="problem"><%= message %></div>
+
+    <% if (typeof detail !== 'undefined' && detail) { %>
+        <p class="meta"><%= detail %></p>
+    <% } %>
+
+    <p><a href="<%= basePath %><%= backPath %>"><%= backLabel %></a></p>
+</div>
+</body>
+</html>
