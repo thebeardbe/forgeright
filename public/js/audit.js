@@ -298,19 +298,55 @@
             // COMPARED BY PROCESS `id`, which is the only stable name a reply carries. A
             // process the round already had and the new payload no longer mentions is
             // carried forward from the saved round, so what was collected stays.
-            const narrowed = mergeForwardDroppedProcesses(payload, state.roundProcesses);
+            // THE IDENTITY IS SETTLED FIRST, so everything below - the carry-forward, the
+            // record of what the round holds, and the payload that is scored - agrees on how
+            // many processes there are. See reconcileWorkflowIdentity for why this is here and
+            // not on the server.
+            const reconciled = payload && Array.isArray(payload.workflows)
+                ? { ...payload, workflows: reconcileWorkflowIdentity(payload.workflows, state.roundProcesses) }
+                : payload;
+            const narrowed = mergeForwardDroppedProcesses(reconciled, state.roundProcesses);
             if (narrowed.dropped.length > 0) {
                 console.warn(
                     'a completion claim dropped ' + narrowed.dropped.length + ' process(es) the round ' +
                     'already had; carrying them forward so the answers are not lost: ' + narrowed.dropped.join(', ')
                 );
             }
-            const toSave = isComplete ? narrowed.payload : payload;
+            // THE CARRY-FORWARD APPLIES TO EVERY TURN THAT SAVES, NOT ONLY A COMPLETION.
+            //
+            // This was `isComplete ? narrowed.payload : reconciled`, and the gating was
+            // WRONG for the case the carry-forward exists to serve. An exhausted round - the
+            // evidence cap - arrives with `status: 'asking'` and `exhausted: true`, so
+            // `isComplete` is false and the carried-forward payload was DISCARDED: the reply
+            // that dropped a process was saved and scored on its own, losing what the round
+            // had already collected, with the warning above firing and being ignored.
+            //
+            // Measured both ways on one drop: complete yields ['proc-full','proc-stub'],
+            // exhausted yielded ['proc-stub'] alone.
+            //
+            // A TURN THAT SAVES IS A TURN WHOSE DROP IS RECORDED, and the three callers below
+            // already decide the round's fate. Gating on `isComplete` conflated "do not lose
+            // the answers" with "the round is over", which are different questions.
+            const toSave = narrowed.payload;
             // `complete: true` FORCES THE ROUND CLOSED even though the status is not
             // `complete`: `submitted_at` is the store's only way to say a round is finished,
             // and leaving it open is the trap. The STATUS is what says it ended with nothing
             // in it, and that lives in the reply the console already reads.
             await saveResponse(toSave, isComplete || nothingAnswered || exhausted);
+
+            // THE RECORD OF WHAT THE ROUND HOLDS IS UPDATED FROM WHAT WAS SAVED, BEFORE ANY
+            // RETURN BELOW. This block used to sit after the `exhausted` return, so an exhausted
+            // round closed without ever recording its processes: the map stayed empty as it
+            // started (`new Map()` at the top of this file), so the carry-forward on any later
+            // turn had nothing to carry, and a round that had collected a full process could be
+            // saved away beside a three-field stub with no warning at all. THAT IS THE ORDER THIS
+            // IS IN NOW, and the order is the fix rather than a tidy-up.
+            if (toSave && Array.isArray(toSave.workflows)) {
+                for (const workflow of toSave.workflows) {
+                    const id = workflow && typeof workflow.id === 'string' ? workflow.id : '';
+                    if (id !== '') state.roundProcesses.set(id, workflow);
+                }
+            }
 
             if (nothingAnswered) {
                 $('input-area').classList.add('hidden');
@@ -319,27 +355,22 @@
             if (exhausted) {
                 // The round ends, and it is scored on what was supplied - unlike the
                 // nothing-answered case, where there would be nothing to score.
+                //
+                // `toSave` RATHER THAN `payload`, and this matters: `payload` is the raw reply,
+                // while `toSave` carries the reconciled identity and any process carried forward
+                // from the round. Scoring the raw reply showed the participant a total built
+                // from a stub while the full process sat unread beside it in the same round.
                 $('input-area').classList.add('hidden');
-                if (payload) {
-                    state.audit = payload;
+                if (toSave) {
+                    state.audit = toSave;
                     await runScoring();
                 }
                 return;
             }
 
-            // THE RECORD OF WHAT THE ROUND HOLDS IS UPDATED FROM WHAT WAS SAVED, not
-            // from what the reply said. Updating it from the reply would let a reply that
-            // dropped a process also erase the memory of it, and the next completion
-            // claim would then have nothing to carry forward.
-            if (toSave && Array.isArray(toSave.workflows)) {
-                for (const workflow of toSave.workflows) {
-                    const id = workflow && typeof workflow.id === 'string' ? workflow.id : '';
-                    if (id !== '') state.roundProcesses.set(id, workflow);
-                }
-            }
-
-            if (isComplete && payload) {
-                state.audit = payload;
+            if (isComplete && toSave) {
+                // `toSave` for the same reason as the exhausted branch above.
+                state.audit = toSave;
                 // THE INPUT STAYS OPEN, because the closing question is answerable.
                 // Hiding it here is what made the second process unreachable: the
                 // model asks "is there another process you would like to improve?"
@@ -408,6 +439,93 @@
      * @param {Map<string, object>} held The processes the round already has, by id.
      * @returns {{ payload: object|null, dropped: string[] }}
      */
+    /** The step names of a workflow, trimmed and case-folded, for an EXACT comparison. */
+    function stepNamesOf(workflow) {
+        if (!workflow || !Array.isArray(workflow.steps)) return [];
+        return workflow.steps
+            .map((step) => (step && typeof step.name === 'string' ? step.name.trim().toLowerCase() : ''))
+            .filter((name) => name !== '');
+    }
+
+    /** Whether two workflows share at least one EXACTLY equal step name. */
+    function sharesAStepName(a, b) {
+        const mine = stepNamesOf(a);
+        if (mine.length === 0) return false;
+        const theirs = new Set(stepNamesOf(b));
+        return mine.some((name) => theirs.has(name));
+    }
+
+    /**
+     * Gives a process the identity the round already gave it, when the evidence says it is the
+     * same process under a new name.
+     *
+     * THE DEFECT, measured on a real interview. The server derives a process `id` from its `task`,
+     * and THE MODEL REWORDS THE TASK BETWEEN TURNS. One participant describing ONE process
+     * produced THREE workflows in the final payload: the task became "Going through customer
+     * complaints that came in overnight...", then "Going through overnight customer complaints...",
+     * then "Triaging overnight customer complaints...". Each rewording made a new id, each variant
+     * read as a NEW process, none was matched, and they accumulated. The score came from the
+     * fullest one (25.5 h/wk) while the stubs scored 0, and two runs of the same interview gave
+     * 385 h/wk and 25.5 h/wk depending on how many times the model reworded itself.
+     *
+     * WHY NOT A SIMILARITY THRESHOLD. Comparing reworded text means choosing a number, and the
+     * number would be a guess about how the model will phrase itself next. Measured on this
+     * payload, the same process reworded scored 0.813 on task tokens while two genuinely
+     * different processes scored 0.045 - but a third variant of the SAME process carried no steps
+     * at all, so no single threshold covers the cases this has to cover.
+     *
+     * THE RULE IS AN EXACT CO-TEST WITH NO NUMBER IN IT: the incoming workflow and the process the
+     * round holds are the same process when they SHARE AT LEAST ONE STEP NAME, compared exactly
+     * after trimming and case-folding. Nothing is scored, weighted or thresholded, so there is no
+     * value to tune and no behaviour that changes with the length of a sentence.
+     *
+     * WHY STEP NAMES AND NOT THE TASK: the task is the field the model rewrites, which is what
+     * broke the id in the first place. Step names survive rewordings that the task does not - on
+     * this payload "Open the inbox and read each complaint" is identical across both variants that
+     * carry steps, while the task changed in both. A step is a named thing the participant
+     * described, so it is the most stable name in the payload.
+     *
+     * IT ERRS TOWARD DECLINING, WHICH ERRS TOWARD SPLITTING, and that is the deliberate choice.
+     * It matches only on a positive, verbatim agreement. A rewording that renames every step, or a
+     * variant that carries no steps yet, is left alone and can still duplicate. A merge, by
+     * contrast, silently fuses two genuinely different processes and DISCARDS ONE OF THEM - the
+     * exact harm the carry-forward in `mergeForwardDroppedProcesses` exists to prevent. A split
+     * leaves a visible extra process and the console.warn below reports it; a merge loses a
+     * participant's answers with nothing to show for it. Splitting is the smaller harm because
+     * the data survives and somebody can see it.
+     *
+     * THE HELD ENTRY IS THE ONLY CANDIDATE, so this cannot chain two wrong matches together. It
+     * applies when the round holds exactly one process - a round IS the work of one process at a
+     * time, see `ai/response-shape.js` - because with several held, position and step sharing are
+     * not evidence enough to say WHICH one is being reworded.
+     *
+     * @param {Array<object>} workflows The workflows from this reply.
+     * @param {Map<string, object>} held The processes the round already has, by id.
+     * @returns {Array<object>} The workflows, with the held identity reattached where it applies.
+     */
+    function reconcileWorkflowIdentity(workflows, held) {
+        if (!Array.isArray(workflows) || workflows.length !== 1) return workflows;
+        if (held.size !== 1) return workflows;
+
+        const [heldId, heldWorkflow] = held.entries().next().value;
+        const only = workflows[0];
+        if (!only || typeof only !== 'object' || Array.isArray(only)) return workflows;
+
+        // A reply that already names the round's process matched on its own; leave it alone.
+        if (typeof only.id === 'string' && only.id === heldId) return workflows;
+
+        // THE DECISION, on one exact shared step name. Anything else is left as the model sent it.
+        if (!sharesAStepName(only, heldWorkflow)) return workflows;
+
+        console.warn(
+            'the model reworded the process it was describing (id was "' + String(only.id) +
+            '", the round knows it as "' + heldId + '"); keeping the round\'s id so the same ' +
+            'answers are not counted twice'
+        );
+        // The entry is REPLACED rather than mutated, so the reply's own object is left alone.
+        return [{ ...only, id: heldId }];
+    }
+
     function mergeForwardDroppedProcesses(payload, held) {
         if (!payload || !Array.isArray(payload.workflows) || payload.workflows.length === 0) {
             return { payload, dropped: [] };

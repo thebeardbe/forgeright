@@ -729,10 +729,20 @@ test('the client FINALISES the round and DOES NOT SCORE it', () => {
     // FINALISES: `nothingAnswered` is one of the conditions passed to saveResponse.
     assert.match(client, /await saveResponse\(toSave, [^)]*nothingAnswered[^)]*\)/,
         'and finalises the round when it arrives');
-    // DOES NOT SCORE: the scoring call is gated on the reply being complete with a payload, and
-    // the nothing_answered branch returns BEFORE it, so the empty round cannot reach `runScoring`.
-    assert.match(client, /if \(isComplete && payload\) \{\s*\n\s*state\.audit = payload;/,
-        'scoring runs only when the round IS complete with a payload');
+    // DOES NOT SCORE: the nothing_answered branch RETURNS before the scoring call, so an empty
+    // round cannot reach `runScoring`. This is asserted as ORDER rather than as the text of the
+    // scoring line: the source-text pattern that used to be here pinned `payload` and went stale
+    // when the line changed to `toSave`, which proves nothing about the intent. What the intent
+    // needs is that the `return` precedes scoring, in the branch that handles the empty round.
+    const nothingBranch = client.slice(client.indexOf('if (nothingAnswered) {'), client.indexOf('if (exhausted) {'));
+    assert.notEqual(nothingBranch, '', 'the nothingAnswered branch exists');
+    assert.match(nothingBranch, /return;/, 'and it RETURNS');
+    assert.equal(/runScoring/.test(nothingBranch), false,
+        'without calling runScoring, so the empty round cannot be scored');
+    // And the scoring call that DOES exist is reached only for a complete or exhausted round.
+    assert.match(client, /if \(isComplete && toSave\) \{/, 'scoring is gated on a completed round');
+    assert.match(client, /if \(toSave\) \{\s*\n\s*state\.audit = toSave;\s*\n\s*await runScoring\(\);\s*\n\s*\}/,
+        'and the exhausted branch scores `toSave`, not the raw payload');
     assert.match(client, /if \(nothingAnswered\) \{\s*\n\s*\$\('input-area'\)\.classList\.add\('hidden'\);\s*\n\s*return;/,
         'the nothing_answered branch returns immediately, without scoring');
     // The input is hidden, so the participant is not left able to answer a closed round.

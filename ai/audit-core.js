@@ -25,6 +25,7 @@ import { sanitizeInput, checkPromptInjection } from './security.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
 import { ALL_PROCESS_FIELD_NAMES, reconcileMatrix, stepGapsFor } from './matrix.js';
+import { withWorkflowIdentity } from './workflow-identity.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
@@ -1389,7 +1390,13 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
  * @returns {object}
  */
 function normaliseProcessesPayload(parsed, workflows) {
-    const payload = { workflows };
+    // THE ONE PLACE THE INTERVIEW PAYLOAD IS BUILT, so this is the one place the `id` and `title`
+    // the scorer requires are supplied. `workflowsFrom` resolves the payload from `parsed.processes`
+    // on a live interview, and the prompt's `processes` example carries NEITHER field, so without
+    // this the participant's own answers reached `/api/score` without them and were refused with a
+    // 400 and "The analysis could not be computed." See `ai/workflow-identity.js` for why the
+    // fields are generated rather than the validator relaxed, and for how stability is guaranteed.
+    const payload = { workflows: withWorkflowIdentity(workflows) };
 
     const envelope = parsed && typeof parsed.audit === 'object' && parsed.audit !== null ? parsed.audit : {};
 
