@@ -759,3 +759,62 @@ scored, and would touch the wrong objects. The honest place is the **prompt** (t
 model is violating a stated rule) or **`recordIdentification`**, where the match
 decision is already made. Fix what a live round actually shows, not what is
 predicted.
+
+## The extra roadmap row: the information to fold it is not in the payload
+
+A reply can describe one process twice. Three shapes were observed in live rounds:
+
+```
+shape A   a step-less entry beside the process it came from
+          -> the model carried its earlier wording forward without its content
+shape B   two FULL entries, both with steps, sharing exact step names
+          -> the model rewrote its own entry and emitted both
+shape C   several step-less entries beside the rich one
+```
+
+**B is folded, and safely**: two entries sharing an exact step name are one process by the
+rule's own statement. `/tmp/bills.json` is the artefact.
+
+**A and C are NOT folded, and the row is left visible.** It renders as `not measured`,
+scores zero, and does not touch the total.
+
+### Why the by-absence fold was removed, after being built twice
+
+It folded an entry carrying nothing into a sibling that carried something. **That is the
+same shape as a newly named process sitting beside a finished one**, and the prompt creates
+that: line 521 says hold the completed process until the participant confirms, line 511
+says a new process begins as a fresh matrix from `task` and `trigger` with no steps. A turn
+where the participant names a second process therefore legitimately produces
+`[rich, empty]`, and the fold **silently discarded the new process** - persisted before
+scoring, and never asked for again.
+
+**No discriminator over the payload separates the two, and this was measured rather than
+argued.** The obvious candidate was the `task`, since a stale carry-forward repeats its own
+process's wording:
+
+```
+must fold    /tmp/onerow.json, stub vs rich sibling   4 shared significant words
+must decline "Onboarding a new supplier"              1
+must decline same-domain second process               2
+             ("Matching supplier invoices to purchase orders" beside
+              "Reconciling supplier invoices at month end")
+```
+
+**Any overlap rule low enough to fold at four also folds at two**, and the second case is
+the participant's own second process. Four against two is noise.
+
+**The asymmetry decides it: an extra row is cosmetic, a discarded process is silent loss.**
+
+### If the rows ever justify a fix, it is not another client-side heuristic
+
+The information needed is **not in the payload** - neither empty entry has steps to co-test
+on, and both arrive with `task` and `trigger` only. Putting it there means either
+
+- **replaying the round's prior `processes` to the model**, which `/api/chat` does not do
+  today (it is stateless, and `audit-core.js:219` rebuilds an assistant turn as `role` and
+  `content` only, so the model never sees its own earlier payload); or
+- **sending the held set with `/api/chat`**, so the server can resolve identity where the
+  round's history actually is.
+
+Both are design changes with their own tests, not a predicate. **This arm has been built,
+reverted, rebuilt and removed once; a fifth client-side attempt should be refused.**
