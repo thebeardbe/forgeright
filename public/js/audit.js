@@ -54,21 +54,13 @@
     /**
      * The round this participant left open, if any.
      *
-     * RESUMING, which the page has been handed data for all along and never used. The
-     * server sends every response for this invitation; before this, the page ignored
-     * them and a returning participant started from the greeting, having to answer
-     * everything again.
+     * ONLY AN OPEN ROUND IS RESUMED: `submitted_at === null` means unfinished, while a timestamp
+     * means that process was concluded - replaying it would ask the participant to redo work the
+     * system already has. If none is open this is a fresh participant.
      *
-     * ONLY AN OPEN ROUND IS RESUMED. `submitted_at === null` means unfinished; a
-     * timestamp means that process was concluded, and its work is done and recorded -
-     * replaying it would ask the participant to redo a process the system already has.
-     * So the newest unfinished round is the one to continue, and if there is none this
-     * is a fresh participant and nothing changes.
-     *
-     * THE TRANSCRIPT IS REPLAYED, NOT THE EXTRACTED FIELDS. The participant sees the
-     * conversation they actually had, which is what makes it recognisable as their own
-     * work rather than a form that happens to be pre-filled. The extracted data lives in
-     * the next payload the server upserts, so it needs no separate restoring here.
+     * THE TRANSCRIPT IS REPLAYED, NOT THE EXTRACTED FIELDS, so the participant sees the
+     * conversation they actually had rather than a pre-filled form. The data needs no restoring
+     * here, because the next payload the server upserts carries it.
      */
     const existing = Array.isArray(cfg.existingResponses) ? cfg.existingResponses : [];
     const openRound = existing
@@ -117,26 +109,18 @@
 
     // THERE IS NO start() HERE ANY MORE, and its absence is deliberate.
     //
-    // It was the access-code step: it read the code from #pass, posted it as `pass` with the
-    // first turn, then hid #unlock and revealed #conversation. The access code is gone (see
-    // mayUseQuestionnaire in lib/routes-api.js) and so are #pass, #unlock and #start-btn,
-    // which leaves nothing for this function to read, send, or hide.
+    // It was the access-code step, reading the code from #pass and hiding #unlock. The access code
+    // is gone (see mayUseQuestionnaire in lib/routes-api.js) and so are #pass, #unlock and
+    // #start-btn, which leaves nothing for it to read, send or hide.
     //
-    // IT WAS ALSO A CRASH WAITING TO HAPPEN. It called $('unlock').classList.add(...) on an
-    // element that no longer exists, which is a TypeError on null. It did not fire, because
-    // both of the things that called it were the missing controls:
+    // IT WAS A CRASH WAITING TO HAPPEN: it called $('unlock').classList.add(...) on an element that
+    // no longer exists, a TypeError on null. It never fired, because the only two things that called
+    // it were the missing controls - MEASURED in a browser against a real invitation link:
+    // {"startBtn":false,"pass":false,"unlock":false}, and a direct call threw.
     //
-    //   if ($('start-btn')) ...   // #start-btn is not rendered, so this never bound
-    //   if ($('pass')) { ... }    // #pass is not rendered, so this never bound either
-    //
-    // Measured in a browser against a real invitation link, before this removal:
-    //   elements start() depends on: {"startBtn":false,"pass":false,"unlock":false}
-    //   if line 113 executed now -> TypeError: Cannot read properties of null
-    // and the page was working, because nothing reached it.
-    //
-    // SO DELETING IS THE HONEST FIX rather than adding a third existence check to a function
-    // that cannot be reached. A guard would preserve the shape of a flow that no longer
-    // exists, leaving the next reader to work out why a control that is never rendered is
+    // DELETING IS THE HONEST FIX rather than a third existence check on an unreachable function: a
+    // guard would preserve the shape of a flow that no longer exists, leaving the next reader to
+    // work out why a control that is never rendered is
     // being defended. The token is the only credential, and beginWithToken() below is the
     // only way in.
 
@@ -206,23 +190,15 @@
                 evidenced: Array.isArray(data.evidenced) ? data.evidenced : []
             });
 
-            // THE PAYLOAD ARRIVES AS `audit`, NORMALISED BY THE SERVER, whatever
-            // shape the model used: an interview reply carries `processes` and the
-            // server wraps it, so the client does not have to know both shapes.
+            // THE SERVER NORMALISES THE PAYLOAD, so the client does not have to know both shapes - but
+            // it still reads `processes` directly, because a client that understood only one shape is
+            // how this defect happened one layer up: the parser demanded `audit` while the prompt had
+            // moved to `processes`.
             //
-            // It still falls back to `processes` directly, because a client that
-            // only understood one shape is how this defect happened one layer up:
-            // the parser demanded `audit` while the prompt had moved to
-            // `processes`. Reading both here means a future change to the
-            // server's normalisation cannot silently break the page.
-            //
-            // USABILITY, NOT TRUTHINESS. This was `data.audit || ...`, which
-            // short-circuits on a truthy-but-unusable `audit`: an empty object or
-            // an empty `workflows` array is truthy, so a perfectly good `processes`
-            // array BESIDE it was discarded, the interview closed, an empty payload
-            // was saved and scoring ran against nothing. The fallback exists to
-            // survive a server that changes shape; a truthiness test survives
-            // nothing, and it stopped anyone looking because it read as defence.
+            // USABILITY, NOT TRUTHINESS. This was `data.audit || ...`, which short-circuits on a
+            // truthy-but-unusable `audit`: an empty object or empty `workflows` array is truthy, so a
+            // good `processes` array BESIDE it was discarded, the interview closed and scoring ran
+            // against nothing. A truthiness test reads as defence and survives nothing.
             const usable = (candidate) => (
                 candidate && Array.isArray(candidate.workflows) && candidate.workflows.length > 0
                     ? candidate
@@ -243,24 +219,15 @@
                 })
                 || null;
 
-            // EVERY TURN IS SAVED, PARTIAL OR NOT.
+            // EVERY TURN IS SAVED, PARTIAL OR NOT. Saving only on completion meant an abandoned
+            // interview was never stored at all - no answers, no transcript, an empty console - and
+            // that is the COMMON case, not the edge one.
             //
-            // This used to save ONLY on completion, so an interview the participant
-            // abandoned was never stored at all: no answers, no transcript, and an
-            // empty console. That is the common case rather than the edge one - a
-            // real participant stopped mid-interview and lost everything - and it is
-            // the failure progressive saving exists to close. A turn that is not
-            // saved is a turn that a closed tab destroys.
+            // `complete` COMES FROM THE SERVER'S OWN STATUS, computed by the matrix, so "this
+            // process is finished" is never the page's opinion.
             //
-            // `complete` IS SENT FROM THE SERVER'S OWN STATUS, not from anything
-            // decided here. `data.status === 'complete'` is computed by the matrix on
-            // the server, so "this process is finished" is never the page's opinion.
-            // The server uses it to finalise the round; see recordTurn.
-            //
-            // A PAYLOAD IS NOT REQUIRED TO SAVE. An early turn has no usable payload
-            // yet - the matrix is still filling - and skipping the save would lose
-            // exactly the first answers a participant gives. Only the transcript is
-            // essential, and the server stores whatever `data` it is given.
+            // A PAYLOAD IS NOT REQUIRED: an early turn has none worth having, and skipping the save
+            // would lose exactly the first answers a participant gives.
             const isComplete = data.status === 'complete';
 
             // NOTHING WAS ANSWERED: THE ROUND ENDS, AND THE INTERVIEW ENDS WITH IT.
@@ -290,26 +257,18 @@
             // completion and is scored like one, because the fields that were given are real.
             const exhausted = data.exhausted === true;
 
-            // A COMPLETION CLAIM MUST NOT NARROW THE PAYLOAD.
-            //
-            // The matrix gate already refuses to FINISH a process with fields missing.
-            // This is the same rule one step over: a reply claiming completion must not
-            // carry FEWER processes than the round already holds, because dropping one
-            // is how its answers stop being recorded and the participant is asked for all
+            // A COMPLETION CLAIM MUST NOT NARROW THE PAYLOAD. The matrix gate refuses to FINISH a
+            // process with fields missing; this is the same rule one step over, because dropping a
+            // process is how its answers stop being recorded and the participant is asked for all
             // of it again.
             //
-            // It happens for a mundane reason - the model asked "is there another
-            // process?" before the matrix was satisfied, believed a process had ended,
-            // and started a fresh matrix for what it took to be the next one. On a real
-            // deepseek run the payload went from 15 fields to 3 that way. The prompt now
-            // tells it not to (see "drop the finished process only when the participant
-            // has confirmed"), BUT THIS IS THE HALF THAT DOES NOT DEPEND ON THE MODEL
-            // OBEYING: a wrong belief about completion costs the participant nothing,
-            // whatever the model does.
+            // IT HAPPENS MUNDANELY: the model asked "is there another process?" before the matrix
+            // was satisfied and started a fresh matrix for what it took to be the next one. MEASURED
+            // on a real deepseek run, the payload went from 15 fields to 3 that way. The prompt now
+            // forbids it, BUT THIS IS THE HALF THAT DOES NOT DEPEND ON THE MODEL OBEYING.
             //
-            // COMPARED BY PROCESS `id`, which is the only stable name a reply carries. A
-            // process the round already had and the new payload no longer mentions is
-            // carried forward from the saved round, so what was collected stays.
+            // COMPARED BY PROCESS `id`, the only stable name a reply carries, so what was collected
+            // stays.
             // THE IDENTITY IS SETTLED FIRST, so everything below - the carry-forward, the
             // record of what the round holds, and the payload that is scored - agrees on how
             // many processes there are. See reconcileWorkflowIdentity for why this is here and
@@ -401,56 +360,6 @@
         $('send-btn').disabled = false;
     }
 
-    /**
-     * Stores one turn of answers, WITH the conversation that produced them.
-     *
-     * EVERY TURN, NOT ONLY THE LAST. It is called after each reply, and it upserts the
-     * round the participant is currently in. A turn that is not saved is a turn a
-     * closed tab destroys, and the interview is long enough that abandoning it is
-     * ordinary rather than exceptional.
-     *
-     * `complete` FINALISES THE ROUND, and it comes from the server's own `status`: the
-     * page only passes that answer back. Null `submitted_at` means partial, a timestamp
-     * means the process is done.
-     *
-     * THE TRANSCRIPT GOES WITH THE PAYLOAD because the raw data has to exist. An
-     * answer is only meaningful against its question: "eight minutes" means one
-     * thing asked about duration and another asked about the invoice count, so
-     * storing the extracted fields alone gives text with no referent, and the
-     * questions -- where the interview's quality lives -- are lost with the tab.
-     *
-     * The conversation is already here in `state.conversation`, so this passes
-     * what exists rather than building anything new. It GROWS with every turn, and
-     * the server rewrites the stored copy from it on each save - so the row always
-     * holds the conversation as it stands, not as it stood at the first save.
-     *
-     * Only when the page was reached from an invitation link, since that is what
-     * identifies the participant. A failure is logged rather than shown: the
-     * participant has their analysis on screen, and an error box would suggest
-     * their answers were lost when they were not.
-     */
-    /**
-     * Carries forward any process a completion reply left out.
-     *
-     * WHY A PROCESS `id` AND NOT AN INDEX. The payload is a list, and the model may
-     * reorder it as its understanding changes; an index would match the wrong process
-     * and substitute one process's fields for another's, which is worse than losing
-     * them. `id` is the name the prompt gives each process, and it is what the reply
-     * itself uses to say which process it means.
-     *
-     * WHY NOTHING IS EVICTED. A process that is genuinely finished and superseded stays
-     * in the round, because a round IS the work of one process: discarding a finished
-     * process's fields is the failure this function exists to prevent. The next round
-     * starts empty, which is where a finished process legitimately stops being recorded.
-     *
-     * THE WORKFLOWS ARRAY IS WHAT IS MERGED, because that is what the server stores and
-     * what scoring reads. A reply with no usable payload comes back unchanged - there is
-     * nothing to merge and nothing to guard against.
-     *
-     * @param {object|null} payload The payload from this reply, if any.
-     * @param {Map<string, object>} held The processes the round already has, by id.
-     * @returns {{ payload: object|null, dropped: string[] }}
-     */
     /** The step names of a workflow, trimmed and case-folded, for an EXACT comparison. */
     function stepNamesOf(workflow) {
         if (!workflow || !Array.isArray(workflow.steps)) return [];
@@ -478,61 +387,48 @@
         return steps * 100 + filled;
     }
 
-    /**
+        /**
      * Gives each process in this reply the identity the round already gave it, and collapses a
      * reply that describes the SAME process twice.
      *
-     * THE DEFECT, measured on a real interview. The server derives a process `id` from its `task`,
+     * THE DEFECT, MEASURED on a real interview: the server derives a process `id` from its `task`,
      * and THE MODEL REWORDS THE TASK BETWEEN TURNS. One participant describing one process produced
-     * the same work under several ids, each reading as a NEW process, none matched, and they
-     * accumulated: a score built from one variant while the others scored 0. Two runs of one
-     * interview gave 385 h/wk and 25.5 h/wk depending on how many times the model reworded itself.
+     * the same work under several ids, each reading as a NEW process, so they accumulated and the
+     * score came from one variant while the others scored 0. Two runs of one interview gave 385 h/wk
+     * and 25.5 h/wk depending on how often the model reworded itself.
      *
-     * THE CONTRACT THIS USED TO HAVE WAS UNREACHABLE, which is why four rounds of verification
-     * missed it. It began `if (workflows.length !== 1) return workflows` - "exactly one workflow in
-     * the reply" - and a real reply carries TWO for one process: the stale carry-forward beside the
-     * current one. Measured: one entry in the reply merged correctly, two entries were returned
-     * untouched, EVERY turn. The rule was dead code on every live interview, and the tests passed
-     * because they were written to the guard's shape.
+     * THE OLD CONTRACT WAS UNREACHABLE, which is why four rounds of verification missed it: it began
+     * `if (workflows.length !== 1) return workflows`, and a real reply carries TWO entries for one
+     * process - the stale carry-forward beside the current one. MEASURED: one entry merged
+     * correctly, two were returned untouched, EVERY turn. The tests passed because they were written
+     * to the guard's shape.
      *
-     * THE CONTRACT NOW: EVERY workflow in the reply is matched against EVERY process the round
+     * THE CONTRACT NOW: every workflow in the reply is matched against every process the round
      * holds, on the exact step-name co-test below, and takes the id of the process it matches. The
-     * number of entries on either side is not part of the contract, because it was never a property
-     * of a real reply.
+     * number of entries on either side is not part of the contract.
      *
-     * A REPLY THAT DESCRIBES ONE PROCESS TWICE IS COLLAPSED, and this is the part that actually
-     * removes the duplicate. Identity alone cannot do it: in the reported case BOTH entries share
-     * the round's process, so both would take its id and the reply would still carry two entries
-     * with the same id. So two entries that SHARE AN EXACT STEP NAME are one process, and the
-     * RICHER one survives - the same work with less filled in and differently worded, not a copy
-     * holding identical values.
+     * A REPLY DESCRIBING ONE PROCESS TWICE IS COLLAPSED, which is what actually removes the
+     * duplicate: identity alone cannot, because in the reported case BOTH entries share the round's
+     * process and would both take its id. Two entries that SHARE AN EXACT STEP NAME are one process,
+     * and the RICHER survives.
      *
-     * NOTHING IS FOLDED ON ABSENCE. An arm that discarded an entry carrying no steps, whenever
-     * another entry in the reply carried something, was built and removed: a process the
-     * participant had just NAMED arrives exactly that way (prompt line 511), so that arm discarded
-     * a live answer. See the note where the fold is, for the measurement that settled it.
+     * NOTHING IS FOLDED ON ABSENCE. An arm doing that was built and removed, because a process the
+     * participant had just NAMED arrives the same way - see the note where the fold is.
      *
-     * THE HARM DIRECTION IS UNCHANGED, and it is why the matching is per-entry rather than
-     * all-or-nothing:
+     * THE HARM DIRECTION, which is why the matching is per-entry: two genuinely different processes
+     * each matching a DIFFERENT held process keep both ids and both entries, which is the case that
+     * would break if the rule assumed "one on each side". Two entries matching the SAME held process
+     * collapse, and the `console.warn` below reports it. An entry matching nothing keeps its own id,
+     * so a NEW process is never fused into an old one.
      *
-     *   two genuinely different processes, each matching a DIFFERENT held process
-     *     -> each keeps its own id, the reply still carries two. This is the case that would break
-     *        if the rule assumed "one on each side".
-     *   two entries matching the SAME held process
-     *     -> one process under two wordings, collapsed, and the console.warn below reports it.
-     *   an entry matching nothing
-     *     -> keeps its own id and is left alone, so a NEW process is never fused into an old one.
-     *
-     * A FALSE MERGE NEEDS A POSITIVE, VERBATIM AGREEMENT: two entries sharing an exactly equal step
-     * name, both matching one held process. Nothing is inferred from the ABSENCE of evidence, which
-     * is what makes this different from the boundary filter that was built and reverted - that one
-     * could not tell a stale carry-forward from a process the participant had just named, because at
-     * the boundary the round's history is not available. Here it is.
+     * A FALSE MERGE NEEDS A POSITIVE, VERBATIM AGREEMENT: an exactly equal step name. Nothing is
+     * inferred from absence, which is what separates this from the boundary filter that was reverted
+     * - that one could not tell a stale carry-forward from a just-named process, because at the
+     * boundary the round's history is not available. Here it is.
      *
      * WHY STEP NAMES AND NOT THE TASK: the task is the field the model rewrites, which is what broke
-     * the id in the first place. A step is a named thing the participant described, so it is the most
-     * stable name in the payload. The test is an EXACT comparison after trimming and case-folding -
-     * no similarity, no threshold, no number to tune.
+     * the id. A step is a named thing the participant described. The test is an EXACT comparison
+     * after trimming and case-folding - no similarity, no threshold, no number to tune.
      *
      * @param {Array<object>} workflows The workflows from this reply.
      * @param {Map<string, object>} held The processes the round already has, by id.
@@ -568,70 +464,36 @@
             return workflow;
         });
 
-        // ONE ENTRY PER PROCESS, and this is the part that actually removes a duplicate.
+        // ONE ENTRY PER PROCESS, which is the part that actually removes a duplicate.
         //
-        // TWO ENTRIES IN ONE REPLY CAN BE THE SAME PROCESS, and rule 1's own sentence says so:
-        // it treats an exact shared step name as proof of identity, so two entries that share one
-        // ARE one process by that rule. Resolving against `held` alone cannot see this, because on
-        // the first turn both entries are new and neither is held - measured on the reported
-        // payload, which came out as two entries with three identical step names between them.
+        // TWO ENTRIES IN ONE REPLY CAN BE THE SAME PROCESS: rule 1 treats an exact shared step name
+        // as proof of identity, so two entries sharing one ARE one process. Resolving against `held`
+        // alone cannot see this, because on the first turn both entries are new and neither is held
+        // - MEASURED on the reported payload, which came out as two entries with three identical
+        // step names between them.
         //
-        // THE ONLY CLAIM MADE HERE IS THE POSITIVE ONE: two entries are the same process when they
-        // share an exactly equal step name, which is what rule 1 above says a shared step name
-        // means. The evidence is present and verbatim, so there is nothing to weigh and no number
-        // to tune.
+        // THE ONLY CLAIM IS THE POSITIVE ONE, whose evidence is present and verbatim, so there is
+        // nothing to weigh and no number to tune. The by-absence claim was removed; see the note
+        // beginning "THERE IS NO BY-ABSENCE ARM" below.
         //
-        // THERE WAS A SECOND CLAIM, "BY ABSENCE" - that an entry carrying no steps and no
-        // measurable field, beside a sibling that carried something, was the model's own earlier
-        // wording and could be folded away. IT WAS REMOVED BECAUSE IT WAS UNSAFE. It is the same
-        // shape as a process the participant has just NAMED, which the prompt produces
-        // deliberately (line 521 holds the completed process, line 511 starts the new one as a
-        // fresh matrix with no steps), and it discarded that process. The measurement, and why no
-        // discriminator rescues it, are recorded where the fold is - see the note beginning "THERE
-        // IS NO BY-ABSENCE ARM" below. Nothing at all is folded on absence now.
-        //
-        // A merge is REPORTED, because removing a participant's entry is the kind of change that
-        // must be visible in a log rather than inferred from a missing row.
-        //
-        // PASS 1 IS ABOVE: every entry was resolved against `held`, so an entry the round knows
-        // takes the round's identity.
+        // A MERGE IS REPORTED, because removing a participant's entry must be visible in a log
+        // rather than inferred from a missing row. PASS 1 IS ABOVE.
 
         // PASS 2 — THE POSITIVE TEST, PAIRWISE: two entries sharing an exactly equal step name are
-        // one process, because that is what rule 1 says a shared step name means.
+        // one process, which is what rule 1 says a shared step name means.
         //
-        // A SINGLE FORWARD PASS, which is NOT a fixed point. An entry is folded into whatever
-        // already stands, so an entry arriving EARLY is never re-examined against a bridge that
-        // arrives later. Where the chain's bridge sits decides whether one pass is enough:
+        // A SINGLE FORWARD PASS, AND NOT A FIXED POINT: an entry arriving EARLY is never re-examined
+        // against a bridge arriving later. Where the bridge sits decides whether one pass is enough -
+        // MEASURED on the real function across [a,b,c], [b,a,c] and [a,c,b]: 1, 1, 2 entries. LEFT
+        // UNFIXED DELIBERATELY, because the case it would rescue needs a bridge sharing a step name
+        // with two others, which no live run has produced. What survives either way is an extra row
+        // reading "not measured", never a lost answer.
         //
-        //   [a, b, c]  bridge in the MIDDLE -> 1 entry   b folds into a, then c shares a step
-        //                                               with the ALREADY-MERGED entry and folds too
-        //   [b, a, c]  bridge FIRST         -> 1 entry
-        //   [a, c, b]  bridge LAST          -> 2 entries c was pushed before b arrived and is
-        //                                               never looked at again
-        //
-        // Measured on the real function: 1, 1, 2 across those three orders.
-        //
-        // LEFT UNFIXED DELIBERATELY. Turning this into a real fixed point means repeating the pass
-        // until nothing changes, and the case it would rescue needs a bridge entry sharing a step
-        // name with two others - which no live run and no artefact has produced. The outcome is
-        // safe either way: what survives is an extra row reading "not measured", never a lost
-        // answer, because nothing here folds on absence. The test pins the measured sizes, so
-        // making this a real fixed point is a conscious change rather than a silent one.
-        //
-        // THE RICHER ENTRY WINS, by `measurableCount` (steps first, then filled fields).
-        //
-        // WHAT THE LOSER ACTUALLY IS, stated precisely because "it is a subset" would invite a
-        // reader to expect identical text and it is not. Measured on the artefacts: every key the
-        // loser carried is present in the winner, so nothing is DROPPED - but the shared keys do
-        // not always hold the same VALUE. Nine of them hold different wording, and some of the
-        // loser's phrases read fuller ("the monthly bill arrives by email" against "the bill
-        // arrives from email"). So the loser is the same work, LESS FILLED IN AND DIFFERENTLY
-        // WORDED, and what survives is one account of one process rather than two.
-        //
-        // WHAT THAT COSTS, measured rather than assumed: the steps survive, and the score reads
-        // the same apart from one `needsReasoning` flip, which is model noise rather than a lost
-        // answer. The alternative - keeping both - is what produced the duplicate row this exists
-        // to remove, and the score built from a stub while the real process sat beside it.
+        // THE RICHER ENTRY WINS, by `measurableCount` (steps first, then filled fields). THE LOSER IS
+        // NOT A SUBSET VERBATIM - every key it carried is present in the winner, so nothing is
+        // dropped, but nine shared keys hold DIFFERENT WORDING and some loser phrases read fuller.
+        // The loser is the same work, less filled in AND differently worded. MEASURED COST: the steps
+        // survive and the score reads the same apart from one `needsReasoning` flip.
         let merged = [];
         for (const workflow of resolved) {
             const at = merged.findIndex((standing) => sharesAStepName(standing, workflow));
@@ -654,48 +516,45 @@
             merged[at] = winner;
         }
 
-        // THERE IS NO BY-ABSENCE ARM, AND ITS ABSENCE IS A DELIBERATE DECISION RATHER THAN AN
-        // OVERSIGHT. The arm existed to fold an entry with no steps and no measurable field into a
-        // richer sibling, reading it as the model's own earlier wording carried forward - which
-        // `prompt_en.md` line 515 forbids ("`processes` holds the process you are working on NOW").
+        // THERE IS NO BY-ABSENCE ARM, AND ITS ABSENCE IS DELIBERATE. An arm folding an entry with
+        // no steps and no measurable field into a richer sibling WAS BUILT AND REMOVED, because it
+        // silently discarded a process the participant had just NAMED: MEASURED through this
+        // function, a finished process beside "Onboarding a new supplier" (`task` and `trigger` only)
+        // came out as ONE entry, the new process gone.
         //
-        // IT WAS REMOVED BECAUSE IT SILENTLY DISCARDED A PROCESS THE PARTICIPANT HAD JUST NAMED.
-        // Measured through this function: a finished process with steps, sitting beside a process
-        // the participant had just named ("Onboarding a new supplier", `task` and `trigger` only),
-        // came out as ONE entry - the new process gone.
+        // THE TWO SITUATIONS ARE THE SAME SHAPE, which is why no rule separates them - a stale
+        // carry-forward beside its own process, and a newly named process beside an unrelated one,
+        // are both an empty entry beside a rich sibling, and the prompt creates BOTH (line 521 holds
+        // the completed process, line 511 starts the new one with no steps).
         //
-        // THE TWO SITUATIONS ARE THE SAME SHAPE, and that is why no rule can separate them:
+        // THE OBVIOUS DISCRIMINATOR WAS TESTED AND DOES NOT WORK. MEASURED on the artefacts: the case
+        // the arm was built for shares only FOUR words with its rich sibling, while a newly named
+        // process in the same domain shares TWO. Any overlap rule low enough to fold the first
+        // destroys the second, and naming a second process in a domain already described is the
+        // ordinary case. There is no separating value, so there is no rule to write.
         //
-        //   a stale carry-forward BESIDE ITS OWN PROCESS   -> an empty entry beside a rich sibling
-        //   a NEWLY NAMED PROCESS beside an UNRELATED ONE  -> an empty entry beside a rich sibling
-        //
-        // Neither empty entry has steps to co-test on, both arrive with `task` and `trigger` only,
-        // and the prompt creates BOTH: line 521 says keep holding the completed process until the
-        // participant confirms, line 511 says a newly named process starts as a fresh matrix with
-        // no steps. So `[rich, empty]` is a legitimate turn for two completely different reasons.
-        //
-        // I TESTED THE OBVIOUS DISCRIMINATOR - comparing the empty entry's task against its
-        // sibling's - AND IT DOES NOT WORK. Measured on the artefacts: the case the arm was built
-        // for (`/tmp/onerow.json`) shares only FOUR words with its rich sibling and one of its
-        // stubs has NO TRIGGER AT ALL, while a newly named process in the same domain shares TWO.
-        // Any overlap rule low enough to fold the first also destroys the second, and a participant
-        // naming a second process in a domain they have already described is the ordinary case
-        // rather than a corner one. There is no separating value, so there is no rule to write.
-        //
-        // THE ASYMMETRY DECIDES IT. An extra row is cosmetic: it renders as a second process
-        // reading "not measured", which a reader sees and can ignore. A discarded process is SILENT
-        // DATA LOSS, and it is unrecoverable - the participant is never asked again, because the
-        // matrix reset from the new process's `task` onward and the next turn simply continues.
-        // The cost of removing the arm is the extra rows it would have removed; the cost of keeping
-        // it is somebody's answer disappearing with nothing to show for it.
-        //
-        // WHAT IS LEFT FOLDS ONLY ON POSITIVE, VERBATIM EVIDENCE: an exactly equal step name, which
-        // the participant actually said twice. Nothing here is inferred from the ABSENCE of
-        // evidence, so nothing can be discarded merely for being new.
-
+        // THE ASYMMETRY DECIDES IT: an extra row is cosmetic - a second process reading "not
+        // measured" - while a discarded process is SILENT DATA LOSS the participant is never asked
+        // about again.
         return merged;
     }
 
+    /**
+     * Carries forward any process a completion reply left out.
+     *
+     * WHY A PROCESS `id` AND NOT AN INDEX: the payload is a list and the model may reorder it, so an
+     * index would substitute one process's fields for another's. `id` is what the reply itself uses
+     * to say which process it means.
+     *
+     * WHY NOTHING IS EVICTED: a round IS the work of one process, so discarding a finished
+     * process's fields is the failure this exists to prevent.
+     *
+     * A reply with no usable payload comes back unchanged - there is nothing to merge.
+     *
+     * @param {object|null} payload The payload from this reply, if any.
+     * @param {Map<string, object>} held The processes the round already has, by id.
+     * @returns {{ payload: object|null, dropped: string[] }}
+     */
     function mergeForwardDroppedProcesses(payload, held) {
         if (!payload || !Array.isArray(payload.workflows) || payload.workflows.length === 0) {
             return { payload, dropped: [] };
@@ -723,6 +582,25 @@
         };
     }
 
+    /**
+     * Stores one turn of answers, WITH the conversation that produced them.
+     *
+     * EVERY TURN, NOT ONLY THE LAST: it upserts the round the participant is in, and a turn that is
+     * not saved is a turn a closed tab destroys - the interview is long enough that abandoning it is
+     * ordinary. `complete` FINALISES the round and comes from the server's own `status`; the page
+     * only passes that answer back.
+     *
+     * THE TRANSCRIPT GOES WITH THE PAYLOAD because an answer is only meaningful against its
+     * question: "eight minutes" means one thing asked about duration and another asked about the
+     * invoice count, so the extracted fields alone are text with no referent and the questions -
+     * where the interview's quality lives - are lost with the tab. It is already in
+     * `state.conversation`, so this passes what exists, and the server rewrites its stored copy from
+     * it on each save.
+     *
+     * ONLY WHEN THE PAGE CAME FROM AN INVITATION LINK, which is what identifies the participant. A
+     * failure is LOGGED RATHER THAN SHOWN: the analysis is on screen, and an error box would suggest
+     * their answers were lost when they were not.
+     */
     async function saveResponse(audit, complete) {
         if (!hasToken) return;
         try {
@@ -823,15 +701,6 @@
     }
 
     /**
-     * Renders one bucket.
-     *
-     * `mode` decides the number shown and its label. For "do first" the score
-     * is recoverable time and is summed into the total. For the other two
-     * buckets the score is NOT counted, so showing it as "recoverable" would
-     * claim hours this analysis is explicitly saying cannot be recovered. Those
-     * buckets show the raw weekly effort instead.
-     */
-    /**
      * The four states a stored field can be in, and what each one READS as.
      *
      * THIS IS THE BUG THE OWNER SAW: a field answered in words rendered as `[object Object]`
@@ -847,15 +716,12 @@
      * the interview stops asking about something the participant has genuinely answered. This
      * only decides how it LOOKS.
      *
-     * THE SHAPE IS COPIED FROM `views/partials/response-fields.ejs`, whose `show()` already
-     * renders these correctly and whose comment names this exact failure: "`[object Object]` is
-     * worse than an empty line: it reads as corruption rather than as an answer that was not
-     * given." It is restated rather than imported because a browser script cannot reach a view's
-     * locals - the same reason that partial restates the markers itself.
+     * THE SHAPE IS COPIED FROM `views/partials/response-fields.ejs`, whose `show()` already renders
+     * these correctly. It is restated rather than imported because a browser script cannot reach a
+     * view's locals - the same reason that partial restates the markers itself.
      *
-     * AN OBJECT THAT IS NEITHER MARKER IS NOT PRINTED. A marker added later must degrade to "not
-     * measured" rather than to `[object Object]`, so the fallthrough is deliberate rather than
-     * `String(value)`.
+     * AN OBJECT THAT IS NEITHER MARKER IS NOT PRINTED: a marker added later must degrade to "not
+     * measured" rather than `[object Object]`, so the fallthrough is deliberate.
      */
     function isProse(value) {
         return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -917,6 +783,14 @@
         return unknown ? text : text + suffix;
     }
 
+    /**
+     * Renders one bucket.
+     *
+     * `mode` DECIDES THE NUMBER AND ITS LABEL. For "do first" the score is recoverable time and is
+     * summed into the total. The other two buckets do NOT count it, so showing it as "recoverable"
+     * would claim hours this analysis is explicitly saying cannot be recovered - they show the raw
+     * weekly effort instead.
+     */
     function bucketHtml(cssClass, title, items, mode) {
         if (!items || !items.length) return '';
         let html = '<div class="bucket ' + cssClass + '"><h3>' + escapeHtml(title) + '</h3>';

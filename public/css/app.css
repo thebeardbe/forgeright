@@ -1,19 +1,14 @@
 /*
  * Semantic roles, then the components. One stylesheet for every page.
  *
- * TWO LAYERS, and the order matters:
+ * TWO LAYERS, and the order matters: `--o-*` is the palette (public/css/palette.css),
+ * byte-for-byte theme colours, and the named roles (--bg, --card, --accent) are what
+ * components actually use.
  *
- *   --o-*   the palette (public/css/palette.css), byte-for-byte theme colours
- *   --bg, --card, --accent, ...   the roles the components actually use
- *
- * A COMPONENT NEVER NAMES A PALETTE COLOUR. It uses --bg or --accent, which this
- * file derives from the palette, so adding or changing a theme cannot break a
- * component and a component cannot end up hard-coded to one theme.
- *
- * The derivation uses color-mix, so a role is a proportion of the theme's own
- * foreground over its own background. That is what makes a card readable in all
- * 22 palettes without 22 rules: the value tracks the palette rather than being
- * chosen for one of them.
+ * A COMPONENT NEVER NAMES A PALETTE COLOUR. The roles are derived with `color-mix` - a
+ * proportion of the theme's own foreground over its own background - so a card is
+ * readable in all 22 palettes without 22 rules, and changing a theme cannot break a
+ * component.
  */
 
 /* ─── Roles ───────────────────────────────────────────────────────────────── */

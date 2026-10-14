@@ -1,22 +1,18 @@
 /*
  * The questionnaire and the analysis: styles for views/audit.ejs only.
  *
- * SPLIT FROM app.css so both files stay readable. app.css carries the semantic
- * roles and the components every page shares; this carries the conversation and
- * the ranked output, which appear on exactly one page.
- *
- * It still names no palette colour: every value is a role from app.css or an
- * --o-* variable, so it reads the same in all 22 themes.
+ * SPLIT FROM app.css so both stay readable - that file carries the shared roles and
+ * components, this carries the conversation and the ranked output. IT NAMES NO PALETTE
+ * COLOUR: every value is a role from app.css, so it reads the same in all 22 themes.
  */
 
 /* ─── The questionnaire ───────────────────────────────────────────────────── */
 
 .history {
     /* THE NOTICE'S HEIGHT IS GIVEN UP HERE, so the answer input ends ABOVE the fixed banner
-       instead of behind it. Measured at 390px before this: the input row sat 56px from the
-       viewport bottom and the 177px banner covered it at arrival, so the participant's first
-       sight of the page was a covered input. `.history` is the only flexible-height element
-       on the page, so shrinking it by exactly that much is what moves the input up.
+       instead of behind it. MEASURED at 390px before this: the input row sat 56px from the
+       viewport bottom and the 177px banner covered it at arrival. `.history` is the only
+       flexible-height element on the page, so shrinking it is what moves the input up.
        `--cookie-notice-height` is written by the partial's script from the banner's own
        measured height, and it is UNSET when the banner is dismissed or absent - the fallback
        is 0, so the page is exactly as it was and no space is reserved for nothing. The floor

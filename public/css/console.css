@@ -17,26 +17,18 @@
 
 /* ─── THE CONSOLE IS WIDER THAN A PAGE OF PROSE ───────────────────────────────
  *
- * MEASURED BEFORE: `.wrap` is 620px at every viewport, which is 48% of a 1280px screen
- * and left 322px of margin on each side. 620px is the right measure for a column of
- * text - the landing page and the questionnaire keep it - and the WRONG one for a
+ * MEASURED BEFORE: `.wrap` is 620px at every viewport - 48% of a 1280px screen, 322px
+ * of margin each side. That is the right measure for prose, and the WRONG one for a
  * console whose main objects are a five-column table and an answers list.
  *
- * SCOPED BY THE STYLESHEET, NOT BY A NEW CLASS. This file is loaded by the three
- * console views and by nothing else - `theme-head` takes `pageStyles`, and the
- * questionnaire asks for `questionnaire` instead - so a rule here reaches the console,
- * the answers view and the roadmap together and cannot leak onto the prose pages. A
- * `.wrap.wide` class would have needed the same three views edited and would silently
- * do nothing if a fourth forgot it.
+ * SCOPED BY THE STYLESHEET, NOT BY A NEW CLASS: this file is loaded by the three console
+ * views and nothing else, so a rule here cannot leak onto the prose pages. A
+ * `.wrap.wide` class would need the same three views edited and would silently do
+ * nothing if a fourth forgot it.
  *
- * 1080px RATHER THAN A PERCENTAGE OR `none`. The console is an operator's tool and its
- * widest object is a table of addresses and timestamps, so it gains nothing from a
- * full 2560px window - the eye has to travel and the table's columns drift apart.
- * 1080px is wide enough for the table plus the header controls beside it, and it keeps
- * a comfortable measure for the paragraphs inside a process card.
- *
- * IT IS STILL A MAXIMUM, so below 1080px the console behaves exactly as before. The
- * only change is on the screens that were wasting half their width.
+ * 1080px RATHER THAN A PERCENTAGE OR `none`: the widest object is a table of addresses
+ * and timestamps, which gains nothing from a 2560px window - the eye travels and the
+ * columns drift apart. IT IS STILL A MAXIMUM, so below 1080px nothing changes.
  */
 .wrap {
     max-width: 1080px;
@@ -302,13 +294,9 @@ button[disabled] { opacity: 0.5; cursor: not-allowed; }
    cells rather than scrolling, and an address wraps to one character per line. */
 /* ─── A LINK TO ONE ANSWER, FROM THE ROADMAP ──────────────────────────────────
  *
- * `.answer-links` replaced a list of every participant field, so the styles here are what a
- * reader sees INSTEAD of those fields - the department and what the answer contributed have to
- * carry the section on their own.
- *
- * A PLAIN LIST, not a table: one answer per line, the department as the link and the
- * contribution as quiet meta beside it. `tabular-nums` is not needed because nothing here is a
- * column of figures.
+ * `.answer-links` replaced a list of every participant field, so these styles are what a
+ * reader sees INSTEAD: the department and the contribution carry the section on their own.
+ * A PLAIN LIST, not a table - nothing here is a column of figures.
  */
 .answer-links { list-style: none; margin: 0; padding: 0; }
 .answer-links li {
@@ -324,17 +312,13 @@ button[disabled] { opacity: 0.5; cursor: not-allowed; }
 
 /* THE STICKY NAV WOULD OTHERWISE COVER THE ANSWER A LINK SCROLLS TO.
  *
- * MEASURED: the nav is `position: sticky; top: 0` and stands 58px tall on a desktop viewport,
- * 97px once the theme picker wraps to a second line on a phone. A fragment scroll puts the
- * target's top edge at the viewport's top edge, so the first 58-97px of the answer would sit
- * UNDERNEATH the nav - the summary line, which is the part naming the answer.
+ * MEASURED: the nav stands 58px on a desktop viewport and 97px once the theme picker wraps on
+ * a phone. A fragment scroll puts the target's top edge at the viewport's top edge, so that
+ * much of the answer - including the summary line naming it - would sit UNDERNEATH the nav.
  *
- * `scroll-margin-top` IS THE STANDARD MECHANISM and it is what the fragment scroll respects. 74px
- * clears the desktop nav with room for the row's own padding; the media query below raises it for
- * the wrapped phone nav, which is the taller of the two and therefore the one that decides.
- *
- * IF THE NAV IS EVER RESIZED, THIS MUST MOVE WITH IT - which is why the two numbers are stated
- * here rather than the reason being left implicit. */
+ * 74px clears the desktop nav; the media query below raises it for the wrapped phone nav,
+ * which is the taller of the two and therefore the one that decides. IF THE NAV IS EVER
+ * RESIZED, THESE MOVE WITH IT, which is why both numbers are stated here. */
 details.item { scroll-margin-top: 74px; }
 
 @media (max-width: 620px) {
