@@ -53,46 +53,13 @@
     </div>
 </div>
 
-<!--
-    The cookies this site stores, said plainly. TWO now: the session cookie, which
-    is essential, and the theme cookie, which remembers an appearance choice. Both
-    are named, because a banner that says "one cookie" while setting two is not
-    telling the truth.
-
-    Declining is not offered, because neither cookie is optional: the session one
-    keeps you signed in, and the theme one is the only way a stored choice can be
-    applied before the page paints. There is no analytics and no advertising.
--->
-<div id="cookie-banner" class="cookie-banner hidden">
-    <div class="cookie-inner">
-        <strong>This site stores two cookies.</strong>
-        One keeps you signed in to the admin console, and one remembers your theme choice.
-        Both are essential to how the site works, so they are set either way. There are no
-        analytics and no advertising cookies.
-        <div class="cookie-actions">
-            <button id="cookie-ok">Understood</button>
-        </div>
-    </div>
-</div>
-
-<script>
-    // The banner records only that it was seen, in localStorage rather than a
-    // cookie, so acknowledging it does not itself set one. Sign-in does not depend
-    // on this running: the banner is hidden until the script shows it.
-    (function () {
-        var banner = document.getElementById('cookie-banner');
-        try {
-            if (!localStorage.getItem('fr_cookie_notice')) banner.classList.remove('hidden');
-        } catch (err) {
-            // localStorage can be unavailable (private mode, disabled storage). The
-            // safe degradation is to show the notice, not to hide it.
-            banner.classList.remove('hidden');
-        }
-        document.getElementById('cookie-ok').addEventListener('click', function () {
-            try { localStorage.setItem('fr_cookie_notice', '1'); } catch (err) { /* storage unavailable */ }
-            banner.classList.add('hidden');
-        });
-    })();
-</script>
+<%#
+    THE COOKIE NOTICE IS NOT HERE ANY MORE. Its markup and its script were inline in this
+    view, which is why every other page rendered no banner - the owner met that as "not
+    clickable", because there was nothing to click. Both now live in
+    `views/partials/cookie-notice.ejs`, included from `partials/theme-head`, so the notice
+    appears wherever the site does. Nothing here was page-specific: this page sets the same
+    two cookies as every other.
+%>
 </body>
 </html>

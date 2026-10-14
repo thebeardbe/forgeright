@@ -357,3 +357,37 @@ header {
     font-size: 0.8rem;
     background: var(--raised);
 }
+
+/* ─── The cookie notice ──────────────────────────────────────────────────────
+   MOVED HERE FROM questionnaire.css: see views/partials/cookie-notice.ejs for why it is a
+   site component rather than a questionnaire one.
+
+   `.hidden` COMES WITH IT. It is what the banner uses to hide itself, and it lived only in
+   questionnaire.css - so on the other pages the banner would render visible on load and
+   clicking would do nothing, which is the defect this move fixes.
+
+   `--cookie-notice-height` IS WRITTEN BY THE PARTIAL'S SCRIPT from the banner's own measured
+   height, and the body padding reserves exactly that much. Zero until then, so a page without
+   JavaScript keeps today's behaviour rather than reserving a gap for a banner that may not
+   appear. The padding is what stops the fixed banner covering the questionnaire's answer
+   input, which it otherwise does at 390px. */
+.hidden { display: none !important; }
+
+.cookie-banner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    padding: 14px 16px;
+    font-size: 0.85rem;
+    box-shadow: 0 -2px 12px color-mix(in srgb, var(--o-bg-darker) 30%, transparent);
+}
+
+.cookie-inner { max-width: 620px; margin: 0 auto; }
+.cookie-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.cookie-actions button { width: auto; margin: 0; padding: 9px 16px; font-size: 0.85rem; }
+
+body { padding-bottom: var(--cookie-notice-height, 0); }

@@ -15,6 +15,13 @@
          That is what keeps the flash off the screen rather than making it brief.
       3. Nothing here reads localStorage: the cookie is the one source of truth,
          which is why the server could render the right theme in the first place.
+ 
+      THE COOKIE NOTICE IS INCLUDED FROM HERE, at the end, and that is the same reasoning as
+      the picker above: it is site chrome rather than one page's content, and it must appear
+      wherever the site does. It used to be inline in `admin-login.ejs`, so every other page
+      rendered no banner at all - which the owner met as "not clickable", there being nothing
+      to click. Nothing about the notice is page-specific: every page sets the same two
+      cookies through this same include, so every page owes the reader the same notice.
 %>
 <link rel="stylesheet" href="<%= basePath %>/css/palette.css">
 <link rel="stylesheet" href="<%= basePath %>/css/app.css">
@@ -45,3 +52,5 @@
         }
     })();
 </script>
+
+<%- include('cookie-notice') %>
