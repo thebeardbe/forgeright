@@ -788,8 +788,16 @@
             parts.push('<div class="banner">' + escapeHtml(S.illustrativeBanner) + '</div>');
         }
 
+        // THE TOTAL IS A FLOOR WHEN ANY WORKFLOW'S EFFORT COULD NOT BE COMPUTED, and saying so is
+        // the point. The sum is over the workflows whose factors were all figures, so it is
+        // CORRECT as far as it goes - but presenting it bare reads as the whole answer, and the
+        // owner's live run had a workflow that describes real work contributing 0 to it because
+        // one factor was prose. "at least" keeps the figure true without inventing a number for a
+        // sentence. The per-workflow line above says which one is missing and why.
+        const anyUnmeasurable = result.scored.some(effortIsUnmeasurable);
         parts.push(
             '<div class="total">' + escapeHtml(S.totalRecoverable) + ': ' +
+            (anyUnmeasurable ? escapeHtml(S.totalIsFloor) + ' ' : '') +
             '<strong>' + result.totalRecoverableHoursPerWeek + '</strong>' +
             ' <span style="color:var(--muted)">(' + result.workflowCount + ' workflows)</span></div>'
         );
@@ -823,16 +831,90 @@
      * claim hours this analysis is explicitly saying cannot be recovered. Those
      * buckets show the raw weekly effort instead.
      */
-    /** Renders a measurement, or an explicit "not measured" when absent. */
-    function metaPart(value, suffix) {
-        return value === undefined || value === null
-            ? '<em>' + escapeHtml(S.notMeasured) + '</em>'
-            : escapeHtml(String(value)) + escapeHtml(suffix);
+    /**
+     * The four states a stored field can be in, and what each one READS as.
+     *
+     * THIS IS THE BUG THE OWNER SAW: a field answered in words rendered as `[object Object]`
+     * people, because `metaPart` handled absent and assumed everything else was printable.
+     *
+     *   absent     -> not measured
+     *   prose      -> THE PARTICIPANT'S OWN WORDS, `{ said: "..." }`
+     *   declined   -> their refusal, or a plain statement that they did not say
+     *   typed      -> the value, with its unit
+     *
+     * THE MARKER IS DELIBERATE AND ITS MEANING IS NOT CHANGED HERE. `{ said: "..." }` is how a
+     * field records an answer that will not fit its declared type, and it counts as SUPPLIED so
+     * the interview stops asking about something the participant has genuinely answered. This
+     * only decides how it LOOKS.
+     *
+     * THE SHAPE IS COPIED FROM `views/partials/response-fields.ejs`, whose `show()` already
+     * renders these correctly and whose comment names this exact failure: "`[object Object]` is
+     * worse than an empty line: it reads as corruption rather than as an answer that was not
+     * given." It is restated rather than imported because a browser script cannot reach a view's
+     * locals - the same reason that partial restates the markers itself.
+     *
+     * AN OBJECT THAT IS NEITHER MARKER IS NOT PRINTED. A marker added later must degrade to "not
+     * measured" rather than to `[object Object]`, so the fallthrough is deliberate rather than
+     * `String(value)`.
+     */
+    function isProse(value) {
+        return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+            && typeof value.said === 'string' && value.said.trim() !== '';
     }
 
-    /** Same idea for the Markdown export. */
+    function isDeclined(value) {
+        return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+            && (value.declined === true || typeof value.declined === 'string');
+    }
+
+    /** The text for one field, in the four states above. ONE formatter for both renderers. */
+    function fieldText(value) {
+        if (value === undefined || value === null) return S.notMeasured;
+        if (isProse(value)) return value.said;
+        if (isDeclined(value)) {
+            return typeof value.declined === 'string' && value.declined.trim() !== ''
+                ? value.declined
+                : S.notMeasured;
+        }
+        if (Array.isArray(value)) return value.join(', ');
+        if (typeof value === 'object') return S.notMeasured;
+        return String(value);
+    }
+
+    /**
+     * Whether a factor was answered in words, so no figure exists to multiply.
+     *
+     * THE THREE FACTORS OF THE EFFORT FORMULA, and `timePerPeriod` may hold the either/or
+     * alternative to minutes. Prose in any of them means the product CANNOT be computed - which
+     * is a different statement from a product of zero, and the card was making the second one.
+     */
+    function effortIsUnmeasurable(workflow) {
+        const factors = [workflow.frequencyPerWeek, workflow.minutesPerInstance, workflow.peopleAffected];
+        if (workflow.timePerPeriod !== undefined && workflow.timePerPeriod !== null) {
+            factors.push(workflow.timePerPeriod);
+            if (isProse(workflow.timePerPeriod) || isDeclined(workflow.timePerPeriod)) return true;
+            if (workflow.timePerPeriod.hours !== undefined) factors.push(workflow.timePerPeriod.hours);
+        }
+        return factors.some((f) => isProse(f) || isDeclined(f));
+    }
+
+    /** Renders a measurement in HTML, or the reason there is none. */
+    function metaPart(value, suffix) {
+        const text = fieldText(value);
+        const unknown = value === undefined || value === null || isProse(value) || isDeclined(value)
+            || (typeof value === 'object' && !Array.isArray(value));
+        // A value in words carries no unit, so it is shown as words rather than "56 servers/wk".
+        return unknown
+            ? '<em>' + escapeHtml(text) + '</em>'
+            : escapeHtml(text) + escapeHtml(suffix);
+    }
+
+    /** Same idea for the Markdown export, through the same formatter so the two cannot drift. */
     function markdownValue(value, suffix) {
-        return value === undefined || value === null ? S.notMeasured : value + suffix;
+        const text = fieldText(value);
+        const unknown = value === undefined || value === null || isProse(value) || isDeclined(value)
+            || (typeof value === 'object' && !Array.isArray(value));
+        return unknown ? text : text + suffix;
     }
 
     function bucketHtml(cssClass, title, items, mode) {
@@ -841,11 +923,22 @@
         for (const wf of items) {
             const value = mode === 'recoverable' ? wf.recoverableHoursPerWeek : wf.effortHoursPerWeek;
             const unit = mode === 'recoverable' ? 'h/wk recoverable' : 'h/wk effort';
+            // A ZERO THAT MEANS "NOT COMPUTABLE" MUST NOT BE SHOWN AS A ZERO. The effort formula
+            // multiplies three factors, and the prose marker makes any of them unreadable as a
+            // number, so the product is 0. Printing `0 h/wk effort` says the work takes no time,
+            // which is false and is the damaging half of this defect - the participant described
+            // a daily check of 56 servers. The SCORE is unchanged: it cannot multiply a sentence,
+            // and turning one into a figure is the guess the marker exists to prevent. Only the
+            // label changes, to say what the zero actually means.
+            const unmeasurable = effortIsUnmeasurable(wf);
+            const scoreText = mode === 'effort' && unmeasurable
+                ? '<em>' + escapeHtml(S.effortNotMeasured) + '</em>'
+                : escapeHtml(String(value)) + ' ' + escapeHtml(unit);
             html +=
                 '<div class="wf">' +
                 '<div class="wf-top">' +
                 '<span class="wf-title">' + escapeHtml(wf.title) + '</span>' +
-                '<span class="wf-score">' + escapeHtml(String(value)) + ' ' + escapeHtml(unit) + '</span>' +
+                '<span class="wf-score">' + scoreText + '</span>' +
                 '</div>' +
                 '<div class="wf-meta">' +
                 // An absent field means nobody gave a usable value. Show that,
@@ -878,7 +971,11 @@
             lines.push('> ' + note, '');
         }
 
-        lines.push('**' + S.totalRecoverable + ': ' + result.totalRecoverableHoursPerWeek +
+        // Same floor rule as the card, from the same predicate, so the exported document cannot
+        // claim a total the card hedges.
+        const anyUnmeasurableMd = result.scored.some(effortIsUnmeasurable);
+        lines.push('**' + S.totalRecoverable + ': ' +
+            (anyUnmeasurableMd ? S.totalIsFloor + ' ' : '') + result.totalRecoverableHoursPerWeek +
             '** (' + result.workflowCount + ' workflows)', '');
 
         if (result.conflicts && result.conflicts.length) {
@@ -900,8 +997,14 @@
             for (const wf of items) {
                 const value = mode === 'recoverable' ? wf.recoverableHoursPerWeek : wf.effortHoursPerWeek;
                 const unit = mode === 'recoverable' ? ' h/wk recoverable' : ' h/wk effort';
+                // A zero that means "not computable" is labelled as such here too, or the exported
+                // document - which is handed to a client with nobody to explain it - repeats the
+                // claim that the work takes no time.
+                const scoreLabel = mode === 'effort' && effortIsUnmeasurable(wf)
+                    ? S.effortNotMeasured
+                    : value + unit;
                 lines.push(
-                    '### ' + wf.title + ' - ' + value + unit, '',
+                    '### ' + wf.title + ' - ' + scoreLabel, '',
                     '- How often: ' + markdownValue(wf.frequencyPerWeek, ' per week'),
                     '- Time for one instance: ' + markdownValue(wf.minutesPerInstance, ' minutes'),
                     '- People involved: ' + markdownValue(wf.peopleAffected, ''),
