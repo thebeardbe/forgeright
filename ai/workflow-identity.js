@@ -1,37 +1,18 @@
 /**
  * The `id` and `title` a workflow gets when the interview path has not supplied them.
  *
- * WHY THIS EXISTS, and it is a reproduced defect rather than a tidy-up. A live interview ends with
- * "The analysis could not be computed." because of these two fields, and it is worth stating the
- * whole chain because every link was individually reasonable:
+ * A REPRODUCED DEFECT. The prompt asks for `id` and `title` in its `audit.workflows` block, but
+ * `workflowsFrom` reads `parsed.processes` - a different block with neither field - so a live
+ * interview reached `/api/score` without them and was refused with a 400: "The analysis could not
+ * be computed."
  *
- *   `ai/audit-core.js` `workflowsFrom` prefers `parsed.processes`, which is what the prompt asks
- *   the model to emit on EVERY turn. The `processes` example in the prompt
- *   (`data/prompts/cartiere_audit/prompt_en.md` line 276) has `task`, `trigger` and `steps` and
- *   NO `id` and NO `title`. The client wraps that array as `{ workflows }` and hands it to
- *   `/api/score` unchanged, and `lib/routes-api.js` validates it with `validateWorkflows`, which
- *   REQUIRES both fields. So the payload a participant's own interview produces can never satisfy
- *   the scorer's validator: `[api/score] refused: 1 entry has no id.` and a 400.
+ * THE FIELDS CANNOT SIMPLY BE UNREQUIRED. `id` is the process's identity: `findConflictGroups`
+ * keys a union-find on it, so entries sharing a key collapse into one process, and the client's
+ * `mergeForwardDroppedProcesses` matches carried-forward processes by it, silently doing nothing
+ * when it is missing.
  *
- * THE PROMPT DOES ASK FOR THEM, in the `audit.workflows` block at lines 338-339. That block is
- * the one `workflowsFrom` puts SECOND, so on the interview path the model is asked for the fields
- * on one shape and its answer is read from another. This module makes the shape the interview
- * actually produces carry what the prompt already documents, rather than relaxing the check.
- *
- * WHY NOT SIMPLY STOP REQUIRING THEM. `id` is not decoration the validator invented: it is the
- * process's identity, and two consumers depend on it being stable and unique.
- *
- *   `lib/scoring.js` keys a union-find on `w.id` (`findConflictGroups`, line 223 onwards), so
- *   entries sharing a key are treated as ONE process. Measured: three workflows with no `id`
- *   return a single group of three, which collapses distinct processes into one another.
- *   `public/js/audit.js` `mergeForwardDroppedProcesses` matches carried-forward processes by
- *   `id`, and only records one in `state.roundProcesses` when `id` is a non-empty string. With no
- *   `id` that map stays empty, the carry-forward silently does nothing, and the `console.warn`
- *   that would have reported the loss never fires.
- *
- * THE DEMO IS UNCHANGED BY DESIGN, and that is the test of this being the right shape: the seed
- * writes `id: "invoice-processing"` and `title: "Invoice intake and processing"` directly, which
- * is the same short-kebab-case convention this generates. After it, both paths agree.
+ * The demo seed writes both directly, in the same short-kebab-case convention this generates, so
+ * after this the two paths agree.
  */
 
 /** The longest slug worth generating. A task is prose and an id is a name, not a paragraph. */
@@ -46,16 +27,12 @@ const MAX_TITLE_LENGTH = 80;
 /**
  * A short kebab-case slug for a process, derived from its own task.
  *
- * PURE AND DETERMINISTIC, which is the whole point: the same task yields the same slug on every
- * turn, with no counter, no clock and no randomness. That is what makes the value STABLE, and
- * stability is the property the client's carry-forward needs. An id regenerated per turn would
- * break the very match it exists to serve, and the failure would look like the participant's
- * answers being dropped.
+ * PURE AND DETERMINISTIC, which is the point: the same task yields the same slug on every turn.
+ * Stability is what the client's carry-forward needs - an id regenerated per turn would break the
+ * match it exists to serve, and the failure would look like dropped answers.
  *
- * ASCII ONLY. A task may be written in any language (the prompt asks the model to write in the
- * participant's), so an accented or non-Latin task is reduced to what survives rather than
- * producing an id that is an encoding of prose. The FALLBACK covers the case where nothing
- * survives, so the caller never receives an empty string that `validateWorkflows` would refuse.
+ * ASCII ONLY, because a task may be in any language; a task that leaves nothing falls back rather
+ * than producing an empty string, which `validateWorkflows` would refuse.
  *
  * @param {unknown} task The process's task, as the model supplied it.
  * @returns {string} A non-empty slug, at most MAX_SLUG_LENGTH characters.
@@ -79,11 +56,9 @@ export function slugForTask(task) {
 /**
  * A human-readable title for a process, taken from its task.
  *
- * THE TASK IS THE TITLE, because on the interview path it is the only name a process has: the
- * participant described the work, and the prompt's `title` field is not produced. This is a
- * heading rather than a summary, so a long task is shortened at a word boundary where one exists
- * and a known-length ellipsis is appended, so a reader can see something was left out instead of
- * finding a sentence that stops mid-word.
+ * The task IS the title on the interview path: the participant described the work and the prompt's
+ * `title` field is never produced. A long task is cut at a word boundary with an ellipsis, so a
+ * reader can see something was left out rather than finding a sentence that stops mid-word.
  *
  * @param {unknown} task The process's task, as the model supplied it.
  * @returns {string} A non-empty title.
@@ -102,22 +77,14 @@ export function titleForTask(task) {
 }
 
 /**
- * Gives every workflow in a payload the `id` and `title` the scorer requires, without touching
- * any that already carries them.
+ * Gives every workflow in a payload the `id` and `title` the scorer requires.
  *
- * EXISTING VALUES WIN, ALWAYS. The demo seed writes its own id and title, `audit.workflows` from
- * the model may carry them, and any reply that supplies them is more informative than a slug
- * derived from the task. Overwriting them here would change what the demo scores, so a present
- * and non-blank value is passed through untouched.
+ * EXISTING VALUES WIN. The demo seed writes its own, the model may supply them, and a present
+ * non-blank value is more informative than a derived slug - overwriting would change what the demo
+ * scores.
  *
- * UNIQUENESS IS ENFORCED WITHIN THE PAYLOAD, and this is not tidiness. `findConflictGroups` keys
- * a union-find on `id`, so two processes deriving the same slug from two similar tasks would be
- * treated as ONE process and merged into a single conflict group. A repeated slug therefore gets
- * `-2`, `-3` in array order, which is stable for a given payload and keeps distinct processes
- * distinct. A workflow with no usable task at all falls back to its position for the same reason.
- *
- * IT DOES NOT MUTATE ITS INPUT: the caller's array and objects are left alone and a new array is
- * returned, so a resolved payload cannot be altered by a later reader of the original.
+ * UNIQUENESS IS NOT TIDINESS: `findConflictGroups` keys a union-find on `id`, so two processes
+ * deriving the same slug would be treated as ONE process. A repeat gets `-2`, `-3` in array order.
  *
  * @param {Array<object>} workflows The workflows as the model supplied them.
  * @returns {Array<object>} A new array, each entry carrying a usable `id` and `title`.
@@ -226,30 +193,19 @@ function filledFields(workflow) {
 /**
  * Whether a process is the same one the round was already working on.
  *
- * THE ROUND IS THE EVIDENCE THE REPLY CANNOT CARRY, and this is the whole reason the decision
- * belongs on the server. The model never sees its own prior `processes` - `ai/audit-core.js`
- * rebuilds an assistant turn as role and content only - so it re-derives its answer from memory
- * each turn and re-words it. The prompt states one process per round ("`processes` holds the
- * process you are working on NOW", `prompt_en.md` line 515) and NOTHING enforced it, so a live
- * interview produced the same process twice: four steps, all four reworded, same order, and
- * `frequencyPerWeek` 56 in one entry against 7 in the other because the model had forgotten it
- * had already recorded 56 servers and re-read "every morning" as weekly.
+ * THE ROUND IS THE EVIDENCE THE REPLY CANNOT CARRY, and that is why this decision belongs on the
+ * server. The model never sees its own prior `processes` - `ai/audit-core.js` rebuilds an
+ * assistant turn as role and content only - so it re-derives and re-words each turn. The prompt
+ * states one process per round and NOTHING enforced it, so a live interview produced the same
+ * process twice: four steps all reworded, and `frequencyPerWeek` 56 in one entry against 7 in the
+ * other because the model had forgotten it recorded 56 and re-read "every morning" as weekly.
  *
- * THE TESTS, in order, and each is a positive statement about the data rather than a score:
+ * THE MATCH IS POSITIVE AND VERBATIM: a shared step name, or the same id. Nothing is inferred from
+ * the ABSENCE of evidence, which is what the removed by-absence arm did.
  *
- *   1. THE ROUND HOLDS EXACTLY ONE PROCESS and the reply carries an entry that is not it. This
- *      is the ordinary case: the round was working on one process, so a reply cannot be starting
- *      a second one unless the participant named one - and naming one is a turn of its own,
- *      which produces an entry with NO shared fields and no steps to share.
- *   2. THE ENTRY CARRIES NOTHING YET. A newly named process begins as a fresh matrix from its
- *      `task` and `trigger` (line 511). But see the test below: emptiness alone is NOT identity,
- *      which is what killed the by-absence arm in the client.
- *   3. OR THE TWO ENTRIES SHARE AN EXACT STEP NAME. Verbatim agreement, no inference.
- *
- * AND THE HARM DIRECTION: it must DECLINE when the reply is a genuinely different process. An
- * entry with content that shares no step name with the held process is a different process, and
- * stays separate. Only the case the round can actually witness - one process, being re-emitted -
- * is folded.
+ * THE HARM DIRECTION: it must DECLINE for a genuinely different process, and it does - such an
+ * entry shares no step name and is not the held id, so it stays separate. Only the case the round
+ * can actually witness - one process, being re-emitted - is folded.
  *
  * @param {Array<object>} replyWorkflows The workflows from this reply.
  * @param {Array<object>} heldWorkflows The processes the round already holds.
@@ -271,19 +227,12 @@ export function reconcileWithHeld(replyWorkflows, heldWorkflows) {
         return { workflows: replyWorkflows, folded: 0 };
     }
 
-    // THE REPLY IS THE ROUND'S PROCESS WHEN IT SHARES A STEP NAME WITH IT, or when it carries
-    // nothing to compare and the round holds the content. Otherwise it is something else and is
-    // left alone.
     const carriesNothing = (w) => !Array.isArray(w.steps) || w.steps.length === 0;
     // POSITIVE, VERBATIM EVIDENCE ONLY: the entry names the round's id, or shares an exactly
-    // equal step name with it.
-    //
-    // THERE IS DELIBERATELY NO EMPTINESS CLAUSE, and leaving it out is the fix for a trap this
-    // codebase has already sprung twice. An entry carrying no steps is NOT evidence of being the
-    // round's process: on a naming turn it is the process the participant has JUST NAMED, which
-    // the prompt says arrives as "a fresh matrix from its `task` and `trigger` onward"
-    // (`prompt_en.md` line 511). Folding on emptiness discards that process - the harm that
-    // killed the client's by-absence arm - and I reintroduced it here before this test caught it.
+    // equal step name with it. THIS FUNCTION HAS NO EMPTINESS CLAUSE, deliberately - an entry with
+    // no steps is NOT evidence of being the round's process, because on a naming turn it is the
+    // process the participant has JUST NAMED. Emptiness is used BELOW, in the opposite direction:
+    // see `foldable`.
     const isRoundsProcess = (w) => sharesAStepName(w, held)
         || (typeof w.id === 'string' && w.id === held.id);
 
@@ -291,15 +240,11 @@ export function reconcileWithHeld(replyWorkflows, heldWorkflows) {
     const matches = replyWorkflows.filter((w) => w && typeof w === 'object' && isRoundsProcess(w));
     if (matches.length === 0) return { workflows: replyWorkflows, folded: 0 };
 
-    // THE ROUND'S OWN ENTRY IS RESTATED, so the reply describes the same process TWICE: once in
-    // the round's wording and once reworded. A reworded copy is recognised by having CONTENT
-    // while the round's process is being restated - see the note above `foldRewording` for why
-    // that, and not emptiness, is the signal.
-    //
-    // A NAMING TURN IS THE OTHER SHAPE AND IS NOT FOLDED: a participant naming a new process
-    // produces `[ the finished process , the new one with NO steps ]`, and the entry with no
-    // content is the NEW one. That is the exact inverse of the by-absence arm that was removed
-    // from the client, and the reason this folds the FULL entry rather than the empty one.
+    // A REWORDED COPY HAS CONTENT while the round's process is being restated, and THAT is the
+    // signal - not emptiness. A NAMING TURN IS THE OTHER SHAPE AND IS NOT FOLDED: naming a new
+    // process produces `[ the finished process , the new one with NO steps ]`, and the entry with
+    // no content is the NEW one. `!carriesNothing` is what keeps that process, which is the
+    // inverse of the by-absence arm removed from the client.
     const restatedSomething = matches.length > 0;
     const contentEntries = replyWorkflows.filter((w) => w && typeof w === 'object' && !carriesNothing(w));
     const foldable = (w) => restatedSomething

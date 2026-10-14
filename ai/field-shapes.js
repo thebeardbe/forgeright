@@ -1,21 +1,16 @@
 /**
- * The field shapes: what a field must look like to count as supplied.
+ * The field shapes: what a value must look like to count as supplied.
  *
- * SPLIT OUT OF `ai/matrix.js`, which had grown past the size budget once the
- * frequency minimum and the optional step quotation were added. The seam is real
- * rather than mechanical: everything here answers "does this value have the shape
- * its field requires", and everything left in `matrix.js` answers "what is still
- * missing, and what band does that give". One is a table of rules about values,
- * the other is arithmetic over a set of fields.
+ * THE SEAM AGAINST `ai/matrix.js` IS REAL: everything here answers "does this value have the shape
+ * its field requires", and matrix.js answers "what is still missing, and what band does that
+ * give" - a table of rules about values against arithmetic over a set of fields.
  *
- * `ai/matrix.js` RE-EXPORTS ALL OF THIS, so `AI/matrix.js` keeps its public surface
- * and nothing that imports from it has to move. That matters because
- * `test/matrix.test.js` imports these names from `../ai/matrix.js`, and a split
- * that quietly changed an import path would be a change to the tests.
+ * `ai/matrix.js` RE-EXPORTS THE FIELD TABLES AND THE SHAPE TESTS, so `test/matrix.test.js` keeps
+ * importing them from that path. The three readers a weighing needs - `proseSaidIn`, `declinedIn`
+ * and `TYPED_MINIMUM_FIELDS` - are imported from here directly instead.
  *
- * THE SHAPE AND THE MINIMUM LIVE WITH THE FIELD, in one table, rather than in a
- * second list of names beside it: two lists are two things to keep in step, and
- * the one that gets forgotten is the one nothing fails on.
+ * THE SHAPE AND THE MINIMUM LIVE WITH THE FIELD, in one table: two lists are two things to keep
+ * in step, and the one that gets forgotten is the one nothing fails on.
  */
 
 /** Fields required per process, in the order the prompt introduces them. */
@@ -51,24 +46,16 @@ export const STEP_FIELDS = Object.freeze(['name', 'whatHappens', 'decidedHow', '
 /**
  * The step field that carries the EVIDENCE for the flag, and it is OPTIONAL.
  *
- * `needsReasoning` is derived by the model and nothing in the code reads
- * `decidedHow`, so a misflagged step is currently invisible: a step reading "I use
- * my judgement" flagged `false` puts a mechanical-looking process at band 5, and
- * one flagged `true` reads judgement as pure rules. `reasoningBasis` is the phrase
- * from `decidedHow` that decided the flag, so a reader can see the two side by
- * side and judge the derivation for themselves.
+ * NOTHING IN THE CODE READS `decidedHow`, so a misflagged step is invisible: a step reading "I use
+ * my judgement" flagged `false` puts a mechanical-looking process at band 5, and one flagged `true`
+ * reads judgement as pure rules. `reasoningBasis` is the phrase that decided the flag, so a reader
+ * sees the two side by side.
  *
- * WHY OPTIONAL RATHER THAN REQUIRED. `STEP_FIELDS` is the gate that keeps an
- * incomplete step in `missing`, which is what makes the interview ask again.
- * Putting `reasoningBasis` there would mean a model that forgot the quotation
- * stalls the interview permanently on a step it has otherwise described
- * completely, and an interview that cannot close is a worse failure than a flag
- * shown without its evidence. So the flag stays load-bearing and the quotation is
- * the reviewable extra: when it is present it is shown, and its absence is visible
- * as absence rather than being papered over.
+ * WHY NOT REQUIRED: `STEP_FIELDS` is the gate that keeps an incomplete step in `missing`, and
+ * putting the quotation there would stall an interview permanently on a step that is otherwise
+ * described completely - worse than a flag shown without its evidence.
  *
- * Not a check. A heuristic over `decidedHow` would be a worse discriminator
- * dressed as a real one; visibility is the honest fix.
+ * NOT A CHECK: a heuristic over `decidedHow` would be a worse discriminator dressed as a real one.
  */
 export const OPTIONAL_STEP_FIELDS = Object.freeze(['reasoningBasis']);
 
@@ -79,14 +66,13 @@ export const OPTIONAL_STEP_FIELDS = Object.freeze(['reasoningBasis']);
  * floor under the completeness guarantee: a model cannot complete an interview by writing
  * prose into every field, because these would still be missing.
  *
- * FIVE NAMES, FOUR REQUIREMENTS: `frequencyPerWeek` and `timePerPeriod` are the either/or
- * effort pair, and EITHER satisfies it. Listing both is what makes each of them refuse
- * prose - the pair rule is applied where the missing list is computed, so the two mechanisms
- * do not need to know about each other.
+ * FIVE NAMES, FOUR REQUIREMENTS: `frequencyPerWeek` and `timePerPeriod` are the either/or effort
+ * pair and either satisfies it, so listing both is what makes each of them refuse prose - the pair
+ * rule is applied where the missing list is computed, so the two mechanisms need not know each
+ * other.
  *
- * `peopleAffected` IS DELIBERATELY ABSENT. "I am alone on this" is a good answer that needs no
- * number, and refusing it would make the interview ask for a figure the participant has no
- * reason to give. See the note on the weighing for the consequence that follows from that.
+ * `peopleAffected` IS DELIBERATELY ABSENT: "I am alone on this" is a good answer needing no number,
+ * and refusing it would make the interview ask for a figure the participant has no reason to give.
  */
 export const TYPED_MINIMUM_FIELDS = Object.freeze([
     'task', 'trigger', 'steps', 'frequencyPerWeek', 'timePerPeriod'
@@ -119,37 +105,23 @@ export function proseSaidIn(value) {
 /**
  * Whether a `{ declined: ... }` marker was given, and the words that came with it.
  *
- * THE FOURTH STATE, and the piece that was missing. The four states of a field are:
+ * THE FOURTH STATE, and the reason the matrix has THREE lists rather than two:
  *
  *   absent     never asked                     -> in `missing`, ask about it
  *   typed      a value of the right shape      -> in `have`, supplied
- *   said       a real answer, in their words   -> in `have`, SUPPLIED (see the note above)
+ *   said       a real answer, in their words   -> in `have`, SUPPLIED
  *   declined   asked, and no answer given      -> NOT missing, NOT supplied
  *
- * `declined` is the shape a refusal takes: *"I have no idea"*, *"use your judgement"*, *"I
- * would rather not say"*, *"I already told you"*. It exists because the two things the old
- * marker conflated are genuinely different, and the consequence of conflating them was
- * measured: a live interview recorded `{"said":"I have no idea"}` against seven fields and
- * COMPLETED, so a fabrication typed honestly reached the audit and then the weighing.
+ * A REFUSAL PULLS IN TWO DIRECTIONS AND MUST SATISFY BOTH: it must stop the interview asking
+ * again, because a participant with nothing to give asked a third time is the loop this system
+ * exists to prevent; and it must NOT count as supplied, or refusing everything would finish an
+ * interview. So `have` means "do not ask again" and `supplied` means "the analysis has something
+ * to work with", and this field is in the first and not the second.
  *
- * WHY IT IS NOT SIMPLY "ANOTHER KIND OF said". A refusal must satisfy two requirements that
- * pull in opposite directions:
- *
- *   - it must stop the interview ASKING AGAIN. The participant has been asked and has nothing
- *     to give; asking a third time is the loop this system exists to prevent, and leaving the
- *     field in `missing` would keep it open forever. So it is NOT in `missing`.
- *   - it must NOT count as supplied, or it becomes a way to finish by refusing everything -
- *     the same hole `said` is kept out of the typed minimum to close. So it does NOT satisfy
- *     the completion gate.
- *
- * THAT IS WHY THE MATRIX HAS THREE LISTS RATHER THAN TWO. `have` means "do not ask again";
- * `supplied` means "the analysis has something to work with". A declined field is in the
- * first and not the second, and the completion gate reads the second.
- *
- * THE PARTICIPANT'S WORDS ARE KEPT, because the roadmap has to report honestly that this was
- * asked and not answered - which is different from a field nobody ever raised.
- *
- * `{ declined: true }` is accepted with no words, since a refusal may come with none.
+ * WHY IT IS NOT "ANOTHER KIND OF said", measured: before the split, a live interview recorded
+ * `{"said":"I have no idea"}` against seven fields and COMPLETED, so a fabrication reached the
+ * audit and the weighing. The words are kept, because the roadmap has to report honestly that
+ * this was asked and not answered. `{ declined: true }` is accepted with no words.
  *
  * @param {*} value
  * @returns {{declined: true, words: string|null}|null}
@@ -174,25 +146,17 @@ export function declinedIn(value) {
 /**
  * The shape each field must have to count as supplied.
  *
- * TYPE IS PART OF THE ANSWER, NOT A DETAIL. Checking only for emptiness let a
- * wrong-typed field pass: `frequencyPerWeek: "forty"` satisfied the matrix, so
- * the interview closed reporting `missing: 0` and then scored the workflow at
- * zero effort. The headline read as "this business has nothing worth automating",
- * which is indistinguishable from a correct empty result. The matrix exists to
- * make a missing field LOUD; a wrong-typed one has to be as loud as an absent one.
+ * TYPE IS PART OF THE ANSWER, NOT A DETAIL, and the reason is measured: checking only for
+ * emptiness let `frequencyPerWeek: "forty"` satisfy the matrix, so the interview closed reporting
+ * `missing: 0` and scored the workflow at zero effort - a headline reading "nothing worth
+ * automating", indistinguishable from a correct empty result. A wrong type therefore counts as
+ * MISSING and the interview keeps asking: one more question rather than a silent zero.
  *
- * So a wrong type counts as MISSING and the interview keeps asking, which is the
- * safe direction: one more question rather than a silent zero.
+ * THE SHAPE LIVES WITH THE FIELD, in one table, rather than in a second list of names beside it.
  *
- * THE SHAPE LIVES WITH THE FIELD, in one table, rather than in a second list of
- * names beside this one. Two lists are two things to keep in step, and the one
- * that gets forgotten is the one nothing fails on.
- *
- * `prose` means a non-empty string: the participant's own words, which is what
- * the field is for. A number there is not prose.
- * `text[]` means a non-empty array of strings.
- * `count` means a finite number. Zero is a real answer ("it never goes wrong"),
- * so it counts as supplied; a negative one is not, since a count cannot be.
+ * `prose` is a non-empty string (the participant's own words). `text[]` is a non-empty array of
+ * strings. `count` is a finite number, and ZERO IS A REAL ANSWER ("it never goes wrong") while a
+ * negative count is not.
  */
 export const FIELD_SHAPES = Object.freeze({
     task: 'prose',
@@ -272,10 +236,9 @@ function hasShape(value, shape, field) {
     // the interview stops asking about a field the participant has genuinely answered, and
     // their words are kept rather than lost.
     //
-    // WHY IT EXISTS. A model could only supply a field by placing a correctly-typed value in
-    // the payload, so an answer that was real but not a number - "it depends on the mail, no
-    // rule I can make" - had NOWHERE TO GO. The field stayed missing, the model asked the only
-    // question it had for it, and a real interview looped on the same question five times
+    // WHY IT EXISTS: a model could only supply a field with a correctly-typed value, so an answer
+    // that was real but not a number - "it depends on the mail, no rule I can make" - had NOWHERE TO
+    // GO. The field stayed missing, and a real interview looped on the same question five times
     // because the participant's answers could never satisfy it.
     //
     // IT IS NOT AN ESCAPE FROM THE GATE. The fields in TYPED_MINIMUM_FIELDS refuse it,
@@ -295,12 +258,9 @@ function hasShape(value, shape, field) {
     const said = proseSaidIn(value);
     if (said !== null) return !TYPED_MINIMUM_FIELDS.includes(field);
 
-    // A LOWER BOUND ONLY, and only for numbers. This is not a general range check:
-    // there is no upper limit, and a value that is not a number falls through to
-    // the shape switch below, which refuses it there. Written this way because the
-    // one rule that exists (`frequencyPerWeek` above zero) is a minimum, and
-    // reading it as a range check would invite an upper bound to be added here
-    // later without the shape being consulted at all.
+    // A LOWER BOUND ONLY, and not a general range check: there is no upper limit, and a
+    // non-number falls through to the shape switch below. Reading it as a range check would invite
+    // an upper bound to be added here without the shape being consulted at all.
     //
     // The comparison is written INVERTED on purpose: `!(value > min)` rather than
     // `value <= min`. They agree for every finite number, and they part company at
@@ -371,24 +331,14 @@ export function fieldsPresentIn(process) {
 }
 
 /**
- * Whether one step carries every field the matrix needs.
- *
- * The step fields are prose and one boolean, so the shapes are written here rather
- * than in FIELD_SHAPES: the step table is small and fixed, and a step's `name` is
- * prose for the same reason a process's `task` is.
- */
-/**
  * Whether a step's basis is a judgement rather than a rule.
  *
- * ONE DEFINITION OF "NEEDS REASONING", because two callers ask it for different
- * figures: `judgementBandFor` below averages a SHARE of flagged steps within one
- * workflow to set the complexity band, and the console counts the MERGED steps
- * that need a person to show a reader the automation boundary. Those numbers are
- * not the same number, but they are the same comparison, and a comparison written
- * twice is a comparison that drifts. Both call this.
+ * ONE DEFINITION, because two callers ask it for different figures: `judgementBandFor` averages a
+ * SHARE of flagged steps within a workflow, and the console counts the merged steps needing a
+ * person. Different numbers, the same comparison - and a comparison written twice drifts.
  *
- * A non-boolean is NOT a flag: an absent or malformed value says nothing rather
- * than saying "false", because only `true` moves the boundary.
+ * A NON-BOOLEAN IS NOT A FLAG: an absent or malformed value says nothing rather than "false",
+ * because only `true` moves the boundary.
  *
  * @param {object} step
  * @returns {boolean}
@@ -418,6 +368,15 @@ function stepFieldIsUsable(step, field) {
     return hasShape(step[field], 'prose');
 }
 
+/**
+ * Whether one step carries every field the matrix needs.
+ *
+ * The shapes are written in `stepFieldIsUsable` rather than in FIELD_SHAPES: the step table is
+ * small and fixed, and a step's `name` is prose for the same reason a process's `task` is.
+ *
+ * @param {object} step
+ * @returns {boolean}
+ */
 export function stepIsComplete(step) {
     if (!step || typeof step !== 'object' || Array.isArray(step)) return false;
 
@@ -438,29 +397,18 @@ export function stepIsComplete(step) {
 /**
  * Which step fields are still missing, so the interviewer knows what to ask NEXT.
  *
- * WHY THIS EXISTS, AND WHY THE SINGLE BIT WAS NOT ENOUGH. `steps` is the only field
- * whose completeness gate sits inside a container: every other field accepts the
- * smallest real answer, while a step counts only when `name`, `whatHappens`,
- * `decidedHow` and `needsReasoning` are ALL present. So a participant who answers the
- * basis question before the step has a label or a description moves nothing: `steps`
- * stays in `missing`, the model is told to ask about a field it has partly answered,
- * and it asks the same question again in different words. That was observed on a real
- * interview, three times in one conversation.
+ * `steps` IS THE ONLY FIELD WHOSE GATE SITS INSIDE A CONTAINER, and a single bit was not enough.
+ * A step counts only when all four of its fields are present, so a participant who answers the
+ * basis question before the step has a label moves nothing: `steps` stays in `missing`, the model
+ * is told to ask about a field it has partly answered, and it re-asks in different words. MEASURED
+ * three times in one interview.
  *
- * THE COMPLETION GATE IS NOT TOUCHED. `stepIsComplete` still decides whether a step
- * is done and still requires all four fields, so an interview cannot close on a
- * partial step. THIS FUNCTION ANSWERS A DIFFERENT QUESTION - what is still needed -
- * and the two are deliberately separate signals from one value.
+ * THE COMPLETION GATE IS UNTOUCHED - `stepIsComplete` still requires all four, so an interview
+ * cannot close on a partial step. This answers a different question: what is still needed.
  *
- * THE UNION ACROSS INCOMPLETE STEPS, NOT A PER-STEP REPORT, because the consumer is
- * ONE question for the whole conversation. The interviewer asks about one thing per
- * turn, so what it needs to know is the set of fields that would move some step
- * forward. A per-step breakdown would name `name` for step 3 while step 1 also needs
- * `needsReasoning`, and choosing between them is a decision this function has no way
- * to make well; the union is what the next question can act on either way.
- *
- * A COMPLETE STEP CONTRIBUTES NOTHING. Once every step is complete this returns an
- * empty array, which is the signal that `steps` is about to leave `missing`.
+ * THE UNION ACROSS INCOMPLETE STEPS, not a per-step report, because the consumer is ONE question
+ * for the whole conversation. A complete step contributes nothing, so an empty array means `steps`
+ * is about to leave `missing`.
  *
  * @param {unknown} steps The process's `steps` value, in whatever shape it arrived.
  * @returns {string[]} The absent fields, in STEP_FIELDS order, deduplicated.

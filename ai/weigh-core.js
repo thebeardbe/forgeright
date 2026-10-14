@@ -1,23 +1,12 @@
 /**
- * Weighing core: workflow 3.
+ * Weighing core: workflow 3 - one process and its steps, producing one number with the terms
+ * behind it and a paragraph explaining it.
  *
- * Takes ONE process with its steps and produces **one number**, with the terms
- * behind it and a paragraph explaining it. A third session, separate from the
- * interview and from identification, whose only job is the number.
- *
- * THE MODEL REASONS, THE CODE DECIDES. The model reports a score, ten term scores
- * and a paragraph; `validateWeighing` in lib/store/weighing.js checks the shape and
- * refuses anything unusable, and the caller stores what survives.
- *
- * THE FORMULA IS PROVISIONAL, AND THE SPLIT IS DELIBERATE: THE MODEL COMPOSES THE
- * TERMS INTO THE NUMBER, THE CODE CHECKS AND STORES THEM. The spec marks the
- * composition provisional and says it is fine-tuned once there are real responses.
- * Putting it in the model means it can be tuned by editing the prompt, with no
- * deploy and no version of the arithmetic to reconcile; putting the TERMS in code
- * means the shape is still enforced, so a model cannot return a number with no
- * breakdown behind it. The cost of that choice is real and worth stating: two
- * models could weight the same terms differently, so the number is comparable
- * within one set of processes and not necessarily between runs.
+ * THE MODEL COMPOSES THE TERMS INTO THE NUMBER; THE CODE CHECKS AND STORES THEM. The composition
+ * is provisional and tunable by editing the prompt, while `validateWeighing` in
+ * lib/store/weighing.js enforces the shape so a model cannot return a number with no breakdown.
+ * THE COST, which is real: two runs can weight the same terms differently, so the number is
+ * comparable within one set of processes and not necessarily between runs.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -118,54 +107,14 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
 }
 
 /**
- * The participant-supplied fields, folded into one view of the process.
- *
- * WHERE SEVERAL PARTICIPANTS DISAGREE, BOTH VALUES ARE KEPT as a list rather than
- * averaged. Averaging would invent a number nobody gave, and the disagreement is
- * itself information the weighing should see: two people who disagree about the
- * frequency may be describing two different steps of the same work.
- *
- * @param {Array<object>} responses Responses with `data` parsed, in EITHER stored
- *   shape: a live interview's `{ workflows: [...] }` or an imported workflow directly.
- *   Resolved through `responseWorkflow` before any field is read, so a caller does not
- *   have to know which shape it holds - and a reader that assumes the flat one would
- *   find no fields at all and weigh the work as unmeasured.
- * @returns {object}
- */
-/**
- * The participant's words, labelled so the weighing model knows they are words.
- *
- * THE LABEL IS THE POINT. Every other value in this payload is a number, a list or a short
- * phrase, so a bare string in a numeric field reads as a figure: `peopleAffected: "just me"`
- * invites the model to score a participant count out of it without being told it was prose.
- * Wrapping it in a sentence that says what it is removes that guess and leaves the JUDGEMENT
- * where it belongs - with the weighing model, which can decide whether the words are usable.
- *
- * A SHAPE RATHER THAN A REWRITE, so the model sees the original wording untouched and the
- * explanation beside it. Do not turn this into `{"just me": true}` or a bare string: both
- * lose the distinction between a quoted answer and a typed one, which is the distinction the
- * whole marker exists to preserve.
- *
- * @param {string} said The participant's words, already validated as non-empty.
- * @returns {{saidInTheirWords: string, note: string}}
- */
-/**
  * A field the participant was asked about and did not answer, labelled for the weighing model.
  *
- * THE WORST CASE FOR AN UNLABELLED VALUE, and that is why this exists. A refusal is the one
- * value whose ENTIRE MEANING is that there is nothing here, so a model reading a raw
- * `{"declined":"I have no idea"}` beside numbers and lists has two ways to be wrong and no way
- * to be right: it can read the refusal as a figure, or ignore the field without knowing why it
- * was empty. Neither is what should happen, and both are silent.
+ * "NOT MEASURED" IS NOT "NOTHING HERE", and the note says so because the two pull apart: a term
+ * that could not be measured is unknown, while a genuinely zero term is a fact. A model reading a
+ * raw `{"declined":"I have no idea"}` beside numbers could read the refusal as a figure or ignore
+ * the field without knowing why it was empty, and both are silent.
  *
- * "NOT MEASURED" IS NOT "NOTHING HERE", and the note says so in those words. That distinction
- * is the same one the weighing prompt draws for a scorable period of zero: a term that could not
- * be measured is unknown, while a term that is genuinely zero is a fact. Scoring an unanswerable
- * field as zero would report "there is nothing to gain here" when the truth is "we do not know".
- *
- * NO NUMBER IS OFFERED AND NONE SHOULD BE INVENTED FROM THE WORDS. The refusal may be quoted,
- * but the model is told plainly that the participant declined, so a phrase like "I would rather
- * not say" cannot be read as a measurement.
+ * NO NUMBER IS OFFERED AND NONE SHOULD BE INVENTED FROM THE WORDS. The refusal may be quoted.
  *
  * @param {string|null} words What the participant said when declining, if anything.
  * @returns {{declinedToAnswer: true, theySaid: string|null, note: string}}
@@ -181,6 +130,18 @@ function declinedForWeighing(words) {
     };
 }
 
+/**
+ * The participant's words, labelled so the weighing model knows they are words.
+ *
+ * THE LABEL IS THE POINT. Every other value in this payload is a number, a list or a short phrase,
+ * so a bare string in a numeric field reads as a figure - `peopleAffected: "just me"` invites the
+ * model to score a count from it without being told it was prose. A SHAPE RATHER THAN A REWRITE,
+ * so the wording is untouched and the explanation sits beside it; collapsing it to a bare string
+ * would lose the distinction between a quoted answer and a typed one.
+ *
+ * @param {string} said The participant's words, already validated as non-empty.
+ * @returns {{saidInTheirWords: string, note: string}}
+ */
 function proseForWeighing(said) {
     return {
         saidInTheirWords: said,
@@ -190,6 +151,20 @@ function proseForWeighing(said) {
     };
 }
 
+/**
+ * The participant-supplied fields, folded into one view of the process.
+ *
+ * WHERE PARTICIPANTS DISAGREE, BOTH VALUES ARE KEPT as a list rather than averaged: averaging
+ * would invent a number nobody gave, and the disagreement is itself information - two people who
+ * differ about the frequency may be describing two different steps of the same work.
+ *
+ * `data` IS IN EITHER STORED SHAPE and is resolved through `responseWorkflow` before any field is
+ * read, so a reader that assumed the flat shape would find no fields and weigh the work as
+ * unmeasured.
+ *
+ * @param {Array<object>} responses Responses with `data` parsed.
+ * @returns {object}
+ */
 function mergeParticipants(responses) {
     const fields = ['task', 'trigger', 'frequencyPerWeek', 'timePerPeriod', 'peopleAffected',
         'handoffTo', 'waitsFor', 'dependsOn', 'systems', 'touchedDepartments',
@@ -251,29 +226,17 @@ function mergeParticipants(responses) {
 /**
  * The steps across every response, MERGED BY NAME into one sequence.
  *
- * THIS USED TO CONCATENATE, AND THAT CHANGED SCORES. Every participant describing
- * the same work lists the same steps, so concatenating sent the model each step
- * once per participant: on the fixture's two accounts of invoice processing, NINE
- * step entries for FIVE distinct steps. The prompt asks the model to return
- * `reasoningSteps` - how many steps need a person - and that term is a COST, so a
- * model shown nine steps where five exist counts nine, and the process scores
- * lower than its own description supports. The inflation grew with the number of
- * people who described the process, which is backwards: more agreement made the
- * work look worse.
+ * CONCATENATING THESE CHANGED SCORES, which is why it does not. Every participant lists the same
+ * steps, so concatenation sent each one per participant - MEASURED on the fixture's two accounts:
+ * nine entries for five distinct steps. `reasoningSteps` is a COST, so a model shown nine where
+ * five exist scores the process lower than its own description supports, and the inflation grew
+ * with the number of people who described it - more agreement made the work look worse.
  *
- * THE SAME MERGE THE ROADMAP DISPLAYS, from `ai/merge-steps.js`, so the list the
- * model weighs and the list a reader sees are one list rather than two
- * derivations of it. It also settles the flags the same way, taking `true` when
- * two accounts disagree, because the automation boundary is where a person is
- * still needed.
+ * THE SAME MERGE THE ROADMAP DISPLAYS, from `ai/merge-steps.js`, so the list the model weighs and
+ * the list a reader sees are one list. NOTHING IS DROPPED: a step only one participant mentioned
+ * survives, because merging by name collapses duplicates rather than intersecting.
  *
- * NOTHING IS DROPPED. A step only one participant mentioned survives: the fixture
- * carries the case deliberately ("Query a mismatch" exists in one account only),
- * and it is a real step somebody does. Merging by name collapses duplicates, it
- * does not intersect.
- *
- * @param {Array<object>} responses Responses with `data` parsed, in either stored
- *   shape. `mergeProcessSteps` resolves it; see the note there.
+ * @param {Array<object>} responses Responses with `data` parsed, in either stored shape.
  * @returns {Array<object>} Steps in first-seen order, one entry per distinct name.
  */
 function collectSteps(responses) {
@@ -341,23 +304,10 @@ export async function runWeighing({
         //
         // A LARGER CAP FIXES IT, AND THE MECHANISM IS NOT UNDERSTOOD.
         //
-        // The measurement, reproduced: at 2048, three runs returned 162, 1348 and
-        // 163 characters, and only the long one parsed. At 4096: 505, 1320, 481,
-        // one parsed. At 8192: 1139, 1101, 1243, all parsed.
-        //
-        // **A failed reply is SHORTER than a good one**, so it is not the output
-        // budget being exhausted - a consumed budget would cut a long reply short,
-        // not produce a 162-character stub. What is measured is that the failure
-        // rate falls as the cap rises, which is all this comment should claim.
-        //
-        // The earlier explanation here - that Gemini counts the request against the
-        // cap - was a guess that the same numbers contradict, so it is removed
-        // rather than left as a plausible story. If this recurs at 8192, diagnose
-        // it properly rather than raising the number again.
-        //
-        // The cost is latency on a longer allowance; the alternative is a
-        // weighing that fails intermittently, which is worse for a step whose
-        // output is the deliverable.
+        // REPRODUCED: at 2048 three runs returned 162, 1348 and 163 characters and only the long one
+        // parsed; at 8192, 1139, 1101 and 1243 all parsed. A FAILED REPLY IS SHORTER than a good
+        // one, so this is not a budget being exhausted - only that the failure rate falls as the
+        // cap rises. If it recurs at 8192, diagnose it rather than raising the number again.
         maxTokens: 8192,
         responseMimeType: 'application/json',
         lang: safeLang

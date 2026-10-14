@@ -1,21 +1,16 @@
 /**
- * The completeness matrix: reconciling what is missing with what the model claims,
- * and reading a process's step flags as a judgement band.
+ * The completeness matrix: reconciling what is missing with what the model claims, and reading a
+ * process's step flags as a judgement band.
  *
- * Workflow 1 asks the model to fill this in from whatever the participant says,
- * and to report which fields it has and which it still needs. The two lists are
- * what make the loop testable by the SCRIPT rather than by trusting the model's
- * prose: `missing` empty is what finishes the interview, not the model's own
- * sense that it is done.
+ * `missing` EMPTY IS WHAT FINISHES THE INTERVIEW, not the model's own sense that it is done. That
+ * is what makes the loop testable by the script rather than by trusting the model's prose.
  *
- * The field tables, the shapes and the per-field minimums live in
- * `ai/field-shapes.js` and are RE-EXPORTED below, so this module's public surface
- * is unchanged and every existing import path still resolves. See that file for
- * why the split was made.
+ * The field tables, shapes and per-field minimums live in `ai/field-shapes.js` and are re-exported
+ * below, so this module's public surface is unchanged.
  */
 
-// Imported for use here, and re-exported so nothing that imports them from this
-// module has to move: `test/matrix.test.js` reads all of these from this path.
+// Re-exported so nothing that imports them from this module has to move:
+// test/matrix.test.js reads all of these from this path.
 import {
     ALL_PROCESS_FIELD_NAMES,
     EFFORT_FIELDS,
@@ -52,25 +47,11 @@ export {
 };
 
 /**
- * The fields a process is still missing, out of the full matrix.
- *
- * THE EITHER/OR PAIR IS ONE REQUIREMENT, applied here as well as in
- * reconcileMatrix: a process with `frequencyPerWeek` satisfies the effort need,
- * and reporting `timePerPeriod` missing alongside it would send the interviewer
- * back to ask a question it already has the answer to. That is the exact failure
- * the matrix exists to prevent, so the rule lives in fieldsPresentIn and both
- * callers read it from there.
- *
- * @param {object} process
- * @returns {string[]}
- */
-/**
  * The fields a process has been asked about and the participant declined to answer.
  *
- * THE FOURTH STATE, and it is not the same as missing. A declined field was asked about: the
- * participant has nothing to give, so the interview must not ask again - that is the loop this
- * system exists to prevent. It is not supplied either, so it cannot satisfy the completion
- * gate. See declinedIn in field-shapes.js for the full argument.
+ * NOT THE SAME AS MISSING. A declined field WAS asked about, so asking again is the loop this
+ * system exists to prevent; and it is not supplied either, so it cannot satisfy the completion
+ * gate. See `declinedIn` in field-shapes.js for the full argument.
  *
  * @param {object} process
  * @returns {string[]}
@@ -85,6 +66,16 @@ export function fieldsDeclinedIn(process) {
     return declined;
 }
 
+/**
+ * The fields a process is still missing, out of the full matrix.
+ *
+ * THE EITHER/OR PAIR IS ONE REQUIREMENT, read from `fieldsPresentIn` so both callers agree: a
+ * process with `frequencyPerWeek` satisfies the effort need, and reporting `timePerPeriod` missing
+ * alongside it would send the interviewer back to ask a question it already has the answer to.
+ *
+ * @param {object} process
+ * @returns {string[]}
+ */
 export function fieldsMissingFrom(process) {
     const present = new Set(fieldsPresentIn(process));
     const declined = new Set(fieldsDeclinedIn(process));
@@ -103,33 +94,24 @@ export function fieldsMissingFrom(process) {
 /**
  * Reconciles the model's reported have/missing against the processes it sent.
  *
- * THE MODEL'S CLAIM AND THE PAYLOAD SAY DIFFERENT THINGS, and both are needed:
+ * THE MODEL'S CLAIM AND THE PAYLOAD SAY DIFFERENT THINGS: `processes` is the partial payload,
+ * which mid-interview is a stub, while `have`/`missing` is the model's statement about the
+ * CONVERSATION, whether or not it has written it down yet.
  *
- *   - `processes` is the partial payload. Mid-interview it is a stub, because the
- *     structured object only takes shape near the end.
- *   - `have`/`missing` is the model's statement about the CONVERSATION: what it
- *     has been told, whether or not it has written it into the payload yet.
- *
- * So the payload is used to SUBTRACT, never to replace. A field the model claims
- * but the payload does not carry is left as claimed: the interview is still going,
- * and refusing to believe the model would make it re-ask questions the
- * participant has already answered, which is the exact failure the matrix exists
- * to prevent.
- *
- * The subtraction is what stops the dangerous direction: a model claiming a field
- * it never wrote down, at the END of the interview, when the payload is supposed
- * to be complete. If `missing` is claimed empty while a process lacks a field,
- * that field is put back.
+ * SO THE PAYLOAD SUBTRACTS, NEVER REPLACES. A field the model claims but the payload lacks is left
+ * as claimed - the interview is still going, and disbelieving it would make it re-ask questions
+ * already answered. The subtraction catches the dangerous direction instead: a claim that
+ * `missing` is empty while a process lacks a field, so the field is put back.
  *
  * @param {object} args
  * @param {Array<object>} args.processes The payload the model sent.
  * @param {string[]|null} args.claimedHave The model's own list, if it sent one.
  * @param {string[]|null} args.claimedMissing The model's own list, if it sent one.
  * @param {boolean} args.closing Whether the model claimed completion.
- * @returns {{ have: string[], missing: string[], supplied: string[], declined: string[] }}
- *   `have` means "do not ask again"; `supplied` means "the analysis has something to work
- *   with". They differ for exactly one state - declined - and the completion gate reads
- *   `supplied`, not `have`.
+ * @returns {{ have: string[], missing: string[], supplied: string[], evidenced: string[],
+ *   declined: string[] }} `have` means "do not ask again"; `supplied` means "the analysis has
+ *   something to work with". They differ for exactly one state - declined - and the completion
+ *   gate reads `supplied`, not `have`. `evidenced` is the payload-only list; see `provable`.
  */
 export function reconcileMatrix({ processes, claimedHave = null, claimedMissing = null, closing = false }) {
     if (!Array.isArray(processes) || processes.length === 0) {
@@ -186,54 +168,34 @@ export function reconcileMatrix({ processes, claimedHave = null, claimedMissing 
         if (!isDeclined && (provable.has(field) || isHad)) supplied.push(field);
     }
 
-    // `evidenced` IS THE PAYLOAD-ONLY LIST, and it exists because `supplied` is NOT monotonic.
+    // THE PAYLOAD-ONLY LIST, and it exists because `supplied` is NOT monotonic. Mid-interview,
+    // `have` and `supplied` both believe the model's CLAIM for a field the payload lacks, so a
+    // model that re-partitions its two lists moves both while nothing is recorded - MEASURED as a
+    // live model stalling for thirty-one identical questions. `evidenced` counts a field only when
+    // the PAYLOAD carries a value of the right shape, the same test `provable` uses at the end.
     //
-    // THE DISTINCTION, which cost a live model thirty-one identical questions to find: while an
-    // interview is in progress, `have` and `supplied` both believe the model's CLAIM for any
-    // field the payload does not carry. A model that re-partitions its `have`/`missing` lists -
-    // claiming nine fields held this turn and two the next, with `have + missing` always fifteen
-    // - therefore moves `missing` and `supplied` together while NOTHING IS RECORDED. Anything
-    // that reads either as "the participant has made progress" is reading a claim, and the
-    // result is a model that stalls with the guard passing every repeat as legitimate.
-    //
-    // `evidenced` is the same test `provable` uses for completion at the end: a field counts
-    // only when THE PAYLOAD ITSELF carries a value of the right shape, rather than being claimed.
-    // `provided` is the earlier name for exactly this idea - see normalizeProcessesPayload - and
-    // it is not reused here because that one is about a single payload's shape rather than the
-    // reconciliation.
-    //
-    // IT CAN SHRINK, WHICH AN EARLIER VERSION OF THIS COMMENT DENIED. It claimed the list "can
-    // only grow as the interview goes on, because a payload that has a field keeps it" - and
-    // live runs falsify that in every one that dipped, because the model REWRITES `processes`
-    // each turn and drops fields it had already filled. One measured series went
-    // 1,5,7,6,2,10,2,12,11,0,0,0,...; another 1,3,3,4,5,6,5,7,9,7,10,...
-    //
-    // SO THE LIST FLUCTUATES, and the cap that reads it counts against a PEAK rather than the
-    // previous turn. That is why a dip can be counted as a plateau: the peak holds its old value
-    // while the current count falls, and the turns-since counter keeps climbing. The behaviour is
-    // correct for a stall and pessimistic for a dip, which is recorded in NOTES.md as M1 rather
-    // than fixed here - the counter is not changed by this comment.
+    // IT CAN SHRINK, because the model rewrites `processes` each turn and drops fields it had
+    // filled: one measured series went 1,5,7,6,2,10,2,12,11,0,0,0. THE DESIGN NOTE ELSEWHERE
+    // CLAIMS a payload that has a field keeps it, WHICH LIVE RUNS FALSIFY - the sentence is pinned
+    // by test/audit-evidence-cap.test.js so the contradiction stays visible. The cap that reads it
+    // therefore counts against a PEAK, which is correct for a stall and pessimistic for a dip -
+    // recorded as M1 in NOTES.md rather than fixed here.
     return { have, missing, supplied, evidenced: [...provable], declined: [...declinedEverywhere] };
 }
 
 /**
  * The process-level judgement band for a workflow, 1 to 5.
  *
- * WHERE THIS BELONGS AND WHY IT IS HERE. Workflow 1 reports judgement per STEP,
- * because a chain can be almost entirely mechanical with one judgement call in
- * the middle, and reading that at process level says "needs a person" and
- * automates nothing. The scorer still works in the 1-5 band, so the conversion
- * sits next to the flags it reads rather than inside the scorer, which workflow 3
- * replaces.
+ * Workflow 1 reports judgement PER STEP, because a chain can be almost entirely mechanical with
+ * one judgement call in the middle, and reading that at process level says "needs a person" and
+ * automates nothing. The scorer works in the 1-5 band, so the conversion sits next to the flags it
+ * reads.
  *
- * THE SCALE IS INVERTED, matching the field it replaces: 1 is pure judgement and
- * 5 is pure rules, so a workflow with NO reasoning steps scores 5. Everything
- * downstream (the rules factor, the conflict labels, the bucket thresholds) is
- * written against that direction, so it is kept rather than reversed.
+ * THE SCALE IS INVERTED: 1 is pure judgement and 5 is pure rules, so a workflow with NO reasoning
+ * steps scores 5. Everything downstream is written against that direction.
  *
- * A workflow carrying neither an explicit `judgementScore` nor steps falls back
- * to 3, the midpoint, which is the honest "not enough information" answer rather
- * than a flattering 5.
+ * Neither an explicit `judgementScore` nor steps falls back to 3, the midpoint - the honest "not
+ * enough information" answer rather than a flattering 5.
  *
  * @param {object} workflow
  * @returns {number} 1 to 5.

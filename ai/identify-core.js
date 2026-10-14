@@ -1,19 +1,13 @@
 /**
- * Identification core: workflow 2.
+ * Identification core: workflow 2 - one completed response, and which process it belongs to.
  *
- * Takes ONE completed response and decides which process it belongs to. A second
- * session, separate from the interview, whose only job is sameness.
+ * THE MODEL REASONS, THE CODE DECIDES. The model reports `matches`, a confidence and its
+ * reasoning; `validateIdentification` in lib/store/processes.js checks the shape and the caller
+ * stores what survives. Nothing here scores or ranks - that is workflow 3.
  *
- * THE MODEL REASONS, THE CODE DECIDES. The model reports `matches`, a confidence
- * and its reasoning; `validateIdentification` in lib/store/processes.js checks the
- * shape and refuses anything unusable, and the caller stores what survives. Nothing
- * here scores, ranks or advises -- that is workflow 3, deliberately not built.
- *
- * SAME DISCIPLINE AS THE INTERVIEW, and the same two helpers, because a second
- * extraction path would be a second thing to keep right: `extractJsonObject` for a
- * reply that arrives as prose (DeepSeek is asked in plain mode) and
- * `withFormatCommitment` for the trailing turn that keeps a long conversation in
- * JSON. Neither is reimplemented here.
+ * THE SAME TWO HELPERS AS THE INTERVIEW, deliberately unreimplemented: `extractJsonObject` for a
+ * reply that arrives as prose, and `withFormatCommitment` for the trailing turn that keeps a long
+ * conversation in JSON.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -49,13 +43,11 @@ async function loadIdentifyPrompt(toolId, lang) {
 /**
  * The user turn carrying the comparison: the new response and the known processes.
  *
- * SENT AS THE USER TURN rather than folded into the system prompt, because it is
- * the data under comparison and it changes per call. The system prompt states the
- * rules, which do not change.
+ * SENT AS THE USER TURN, not folded into the system prompt: it is the data under comparison and
+ * changes per call, while the system prompt states the rules.
  *
- * Only the fields a decision needs are sent. The full transcripts are NOT sent:
- * they are stored so a person can read them, and shipping several conversations
- * into every comparison would be a large cost for text the decision does not use.
+ * THE FULL TRANSCRIPTS ARE NOT SENT. They are stored so a person can read them, and several
+ * conversations per comparison would be a large cost for text the decision does not use.
  *
  * @param {object} response The response row, with `data` parsed.
  * @param {Array<object>} knownProcesses Existing processes with their reasoning. Each may carry
@@ -66,13 +58,10 @@ async function loadIdentifyPrompt(toolId, lang) {
 export function buildComparisonMessage(response, knownProcesses, adminReasoning = null) {
     const parts = [];
 
-    // THE RAW STORED SHAPE GOES TO THE MODEL, and it is the one remaining place where
-    // the two shapes are read differently - a live round sends `{ workflows: [...] }`,
-    // an imported one sends the workflow directly. Identical results were measured live
-    // against the provider on both shapes, because a language model reads through the
-    // wrapper where a field lookup cannot. That is what makes it safe HERE and not
-    // elsewhere: anything that reads a NAMED field must resolve the shape first, or it
-    // finds nothing and reports the work as unmeasured.
+    // THE RAW PAYLOAD GOES UNDECORATED: a live round sends `{ workflows: [...] }` and an imported
+    // one sends the workflow directly, and a model reads through the wrapper where a field lookup
+    // cannot. MEASURED identical on both shapes. That is what makes it safe HERE and nowhere else:
+    // anything reading a NAMED field must resolve the shape first, or it finds nothing.
     parts.push('## The new response to identify');
     parts.push('');
     parts.push(JSON.stringify(response.data ?? {}, null, 2));
@@ -86,17 +75,12 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         for (const process of knownProcesses) {
             parts.push(`### ${process.id}`);
             parts.push(`name: ${process.name}`);
-            // THE RESPONSE'S CURRENT HOME IS NAMED, and this is what stops a rejudge spawning a
-            // sibling. Without it the model is shown a list of candidates and not told that the
-            // response is already in one of them, so "the argument does not change the grouping"
-            // - much the most common outcome - looks like a fresh decision rather than a
-            // no-change, and `matches` reads as a new placement instead of as "leave it here".
-            //
-            // IT MATTERS MOST ON A REJUDGE FROM A PROCESS, where the process under review is a
-            // candidate that the model could otherwise mistake for a stranger. See rejudge.js:
-            // it used to be EXCLUDED from this list, which emptied the list in the ordinary case
-            // and made `buildComparisonMessage` say "(none yet, so this is a new process)" -
-            // instructing the model to create the duplicate the owner saw.
+            // NAMING THE RESPONSE'S CURRENT HOME IS WHAT STOPS A REJUDGE SPAWNING A SIBLING.
+            // Without it the model sees candidates and is not told the response is already in one,
+            // so "the argument changes nothing" looks like a fresh decision - and `rejudge.js`
+            // used to EXCLUDE this process entirely, which emptied the list in the ordinary case
+            // and had this function say "(none yet, so this is a new process)". MEASURED: the model
+            // did exactly that, and the process under review was left with no members.
             if (process.isCurrentHome === true) {
                 parts.push('THIS IS WHERE THE RESPONSE IS NOW. It is already in this process, so '
                     + 'matching it here means the grouping does not change.');
@@ -106,9 +90,8 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         }
     }
 
-    // A rejudge carries the admin's argument, which is the whole reason the prompt
-    // allows a name change and a re-merge: the model is being given a reason to
-    // reconsider, not a category to apply.
+    // An admin supplies an argument, not a category - which is why the prompt allows a name
+    // change and a re-merge at all.
     if (adminReasoning) {
         parts.push('## An admin disagrees with the current grouping, and says why');
         parts.push('');
