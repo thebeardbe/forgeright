@@ -178,3 +178,210 @@ function claimUnique(base, counts) {
     counts.set(base, n);
     return candidate;
 }
+
+/**
+ * The step names of a workflow, trimmed and case-folded.
+ *
+ * ONE DEFINITION, shared with the client's copy in `public/js/audit.js` and with
+ * `ai/merge-steps.js`'s `stepKey`, so a change to what "the same step" means cannot be made in
+ * one place and missed in the others.
+ *
+ * @param {object} workflow
+ * @returns {string[]}
+ */
+function stepNamesOf(workflow) {
+    if (!workflow || !Array.isArray(workflow.steps)) return [];
+    return workflow.steps
+        .map((step) => (step && typeof step.name === 'string' ? step.name.trim().toLowerCase() : ''))
+        .filter((name) => name !== '');
+}
+
+/**
+ * Whether two workflows share at least one EXACTLY equal step name.
+ *
+ * NO SIMILARITY, NO THRESHOLD. Measured on the owner's own payload, a step-text overlap rule
+ * cannot work: the same process reworded scored 0.588 against a DIFFERENT process described in
+ * the participant's own words at 0.556. A margin of 0.032 is inside the model's rewording noise,
+ * so any threshold that folds the true match is one rewording away from folding a genuine one.
+ *
+ * @param {object} a
+ * @param {object} b
+ * @returns {boolean}
+ */
+export function sharesAStepName(a, b) {
+    const mine = stepNamesOf(a);
+    if (mine.length === 0) return false;
+    const theirs = new Set(stepNamesOf(b));
+    return mine.some((name) => theirs.has(name));
+}
+
+/** A workflow's measurable fields, filled in. Used to choose between two accounts of one process. */
+function filledFields(workflow) {
+    const fields = ['frequencyPerWeek', 'timePerPeriod', 'minutesPerInstance', 'peopleAffected',
+        'handoffTo', 'waitsFor', 'dependsOn', 'systems', 'touchedDepartments',
+        'mistakesPerPeriod', 'mistakeConsequence', 'currentState', 'frustration'];
+    return fields.filter((f) => workflow[f] !== undefined && workflow[f] !== null);
+}
+
+/**
+ * Whether a process is the same one the round was already working on.
+ *
+ * THE ROUND IS THE EVIDENCE THE REPLY CANNOT CARRY, and this is the whole reason the decision
+ * belongs on the server. The model never sees its own prior `processes` - `ai/audit-core.js`
+ * rebuilds an assistant turn as role and content only - so it re-derives its answer from memory
+ * each turn and re-words it. The prompt states one process per round ("`processes` holds the
+ * process you are working on NOW", `prompt_en.md` line 515) and NOTHING enforced it, so a live
+ * interview produced the same process twice: four steps, all four reworded, same order, and
+ * `frequencyPerWeek` 56 in one entry against 7 in the other because the model had forgotten it
+ * had already recorded 56 servers and re-read "every morning" as weekly.
+ *
+ * THE TESTS, in order, and each is a positive statement about the data rather than a score:
+ *
+ *   1. THE ROUND HOLDS EXACTLY ONE PROCESS and the reply carries an entry that is not it. This
+ *      is the ordinary case: the round was working on one process, so a reply cannot be starting
+ *      a second one unless the participant named one - and naming one is a turn of its own,
+ *      which produces an entry with NO shared fields and no steps to share.
+ *   2. THE ENTRY CARRIES NOTHING YET. A newly named process begins as a fresh matrix from its
+ *      `task` and `trigger` (line 511). But see the test below: emptiness alone is NOT identity,
+ *      which is what killed the by-absence arm in the client.
+ *   3. OR THE TWO ENTRIES SHARE AN EXACT STEP NAME. Verbatim agreement, no inference.
+ *
+ * AND THE HARM DIRECTION: it must DECLINE when the reply is a genuinely different process. An
+ * entry with content that shares no step name with the held process is a different process, and
+ * stays separate. Only the case the round can actually witness - one process, being re-emitted -
+ * is folded.
+ *
+ * @param {Array<object>} replyWorkflows The workflows from this reply.
+ * @param {Array<object>} heldWorkflows The processes the round already holds.
+ * @returns {{ workflows: Array<object>, folded: number }}
+ */
+export function reconcileWithHeld(replyWorkflows, heldWorkflows) {
+    if (!Array.isArray(replyWorkflows) || replyWorkflows.length === 0) {
+        return { workflows: replyWorkflows, folded: 0 };
+    }
+    // A ROUND HOLDS ONE PROCESS AT A TIME (line 515). With several held, position and step
+    // sharing are not evidence enough to say WHICH one is being reworded, so this declines and
+    // the caller keeps the reply as it stands - the safe direction.
+    if (!Array.isArray(heldWorkflows) || heldWorkflows.length !== 1) {
+        return { workflows: replyWorkflows, folded: 0 };
+    }
+
+    const held = heldWorkflows[0];
+    if (!held || typeof held !== 'object' || Array.isArray(held)) {
+        return { workflows: replyWorkflows, folded: 0 };
+    }
+
+    // THE REPLY IS THE ROUND'S PROCESS WHEN IT SHARES A STEP NAME WITH IT, or when it carries
+    // nothing to compare and the round holds the content. Otherwise it is something else and is
+    // left alone.
+    const carriesNothing = (w) => !Array.isArray(w.steps) || w.steps.length === 0;
+    // POSITIVE, VERBATIM EVIDENCE ONLY: the entry names the round's id, or shares an exactly
+    // equal step name with it.
+    //
+    // THERE IS DELIBERATELY NO EMPTINESS CLAUSE, and leaving it out is the fix for a trap this
+    // codebase has already sprung twice. An entry carrying no steps is NOT evidence of being the
+    // round's process: on a naming turn it is the process the participant has JUST NAMED, which
+    // the prompt says arrives as "a fresh matrix from its `task` and `trigger` onward"
+    // (`prompt_en.md` line 511). Folding on emptiness discards that process - the harm that
+    // killed the client's by-absence arm - and I reintroduced it here before this test caught it.
+    const isRoundsProcess = (w) => sharesAStepName(w, held)
+        || (typeof w.id === 'string' && w.id === held.id);
+
+    // WHICH ENTRY IS THE ROUND'S, and there can be at most one: the process the round was on.
+    const matches = replyWorkflows.filter((w) => w && typeof w === 'object' && isRoundsProcess(w));
+    if (matches.length === 0) return { workflows: replyWorkflows, folded: 0 };
+
+    // THE ROUND'S OWN ENTRY IS RESTATED, so the reply describes the same process TWICE: once in
+    // the round's wording and once reworded. A reworded copy is recognised by having CONTENT
+    // while the round's process is being restated - see the note above `foldRewording` for why
+    // that, and not emptiness, is the signal.
+    //
+    // A NAMING TURN IS THE OTHER SHAPE AND IS NOT FOLDED: a participant naming a new process
+    // produces `[ the finished process , the new one with NO steps ]`, and the entry with no
+    // content is the NEW one. That is the exact inverse of the by-absence arm that was removed
+    // from the client, and the reason this folds the FULL entry rather than the empty one.
+    const restatedSomething = matches.length > 0;
+    const contentEntries = replyWorkflows.filter((w) => w && typeof w === 'object' && !carriesNothing(w));
+    const foldable = (w) => restatedSomething
+        && !isRoundsProcess(w)
+        && !carriesNothing(w)
+        // Never fold the only entry that carries content: then IT is the process and the empty
+        // restatement is the stale one.
+        && contentEntries.length > 1;
+
+    const toFold = replyWorkflows.filter((w) => w && typeof w === 'object' && foldable(w));
+    const roundEntries = replyWorkflows.filter((w) => w && typeof w === 'object' && isRoundsProcess(w));
+
+    if (toFold.length === 0 && roundEntries.length <= 1) {
+        return { workflows: replyWorkflows, folded: 0 };
+    }
+
+    // THE FULLEST ACCOUNT OF THE PROCESS SURVIVES: the round's entry, any verbatim restatement,
+    // and any reworded copy are one process, so the entry with the most content represents it and
+    // the round's values are merged on top.
+    const all = [...roundEntries, ...toFold];
+    const richest = all.reduce((best, w) => {
+        const score = (x) => (Array.isArray(x.steps) ? x.steps.length : 0) * 100 + filledFields(x).length;
+        return score(w) > score(best) ? w : best;
+    });
+    const merged = mergeHeldIntoReply(held, richest);
+
+    const out = [];
+    let folded = 0;
+    let placed = false;
+    for (const w of replyWorkflows) {
+        const belongsToRound = w && typeof w === 'object'
+            && (isRoundsProcess(w) || foldable(w));
+        if (belongsToRound) {
+            folded += 1;
+            // THE PROCESS TAKES ITS FIRST POSITION, so the reply's own ordering survives.
+            if (!placed) {
+                out.push(merged);
+                placed = true;
+            }
+            continue;
+        }
+        out.push(w);
+    }
+
+    // A FOLD IS NEVER SILENT. The server names what it folded, which is the evidence needed to
+    // tell a reworded process from a genuinely new one if the second is ever seen in the wild.
+    console.warn(
+        '[audit] the reply described the round\'s process more than once (' + folded +
+        ' entries folded into one, id "' + String(merged.id) + '"); the model re-worded work it ' +
+        'had already recorded, which the prompt tells it not to re-describe. The fullest account ' +
+        'survives and the round\'s recorded values are kept.'
+    );
+
+    return { workflows: out, folded };
+}
+
+/**
+ * Merges the round's record of a process with the reply's newer account of it.
+ *
+ * THE ROUND'S VALUE WINS WHERE BOTH HAVE ONE, and this is a decision rather than a default.
+ * `frequencyPerWeek` was 56 in the round and 7 in the reply, because the model re-derived it
+ * from "every morning" having forgotten it had already recorded 56 servers. THE EARLIER VALUE IS
+ * THE PARTICIPANT'S, taken on the turn that collected it, and the later one is the model's
+ * re-reading of its own memory. Taking the later value on a re-emission is taking the guess.
+ *
+ * THE REPLY'S VALUE IS USED WHERE THE ROUND HAS NOTHING, so progress is never lost: this is a
+ * merge of one process's accounts, not a rejection of the new turn.
+ *
+ * @param {object} held The round's account.
+ * @param {object} reply The reply's account.
+ * @returns {object}
+ */
+export function mergeHeldIntoReply(held, reply) {
+    const merged = { ...reply };
+    for (const field of filledFields(held)) {
+        // A field the round has filled is the participant's own earlier statement about THIS
+        // process, so it is kept. `task` is deliberately excluded: the model rewords it, and the
+        // round's wording is not more correct than the reply's - either names the same work.
+        merged[field] = held[field];
+    }
+    // THE ROUND'S IDENTITY IS KEPT, so the console's answer links and `process_response` joins
+    // continue to name one process rather than gaining a second id for the same work.
+    if (typeof held.id === 'string' && held.id !== '') merged.id = held.id;
+    return merged;
+}

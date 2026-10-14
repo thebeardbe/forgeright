@@ -162,7 +162,19 @@
                     toolId: cfg.toolId,
                     participantToken: TOKEN || undefined,
                     lang: cfg.lang,
-                    messages: state.conversation
+                    messages: state.conversation,
+                    // THE ROUND'S OWN PROCESSES GO WITH THE TURN, so the SERVER can tell a
+                    // process the model re-worded from one the participant has just named. The
+                    // reply cannot carry that distinction - both arrive as an entry with content
+                    // - and the client cannot make it either, because two accounts of one
+                    // process and two accounts of two processes are the same shape. What
+                    // separates them is knowing WHICH PROCESS THE ROUND WAS ON, and this is it.
+                    //
+                    // It is the same map the client already keeps for its own carry-forward, so
+                    // this is one field rather than new state. `lib/routes-api.js` deliberately
+                    // resolves no organisation and reads no participant data (see its header),
+                    // which is why the client sends this rather than the route looking it up.
+                    roundProcesses: Array.from(state.roundProcesses.values())
                 })
             });
 
