@@ -181,7 +181,41 @@ RUN mkdir -p /data/store && chown node:node /data/store
 #
 # x86-64 ONLY, because the binary is. On an arm64 host this build fails at the COPY
 # rather than producing an image whose mail silently cannot work.
-COPY --from=proton-cli /opt/proton /usr/local/bin/proton-cli
+# THE SYSTEM CA BUNDLE, AND IT IS HERE BECAUSE OF THE GO BINARY BELOW RATHER THAN FOR NODE.
+#
+# `node:24-slim` SHIPS WITHOUT `ca-certificates`. Measured against the pinned digest by
+# listing the image's own layers: there is no `/etc/ssl/certs/ca-certificates.crt`, no
+# `update-ca-certificates`, and no `ca-certificates` entry in `var/lib/dpkg/status`. The
+# image carries the crypto libraries (`libgnutls30`, `libgcrypt20`, `libp11-kit0`) and no
+# system trust store at all.
+#
+# THAT IS FINE FOR NODE AND FATAL FOR GO, and the difference is the whole reason this line
+# exists. Node ships its OWN root certificates and ignores the system store, so the app's
+# outbound calls verify normally - which is why this looks like a Proton problem rather than
+# an image problem. `proton-cli` is a GO binary, and Go reads the SYSTEM trust store, so
+# every TLS connection it makes is refused before authentication is even attempted:
+#
+#   tls: failed to verify certificate: x509: certificate signed by unknown authority
+#
+# MEASURED on a real deploy, on one container: `node fetch('https://api.deepseek.com/')`
+# returned a real 401 response, so TLS verified, while `proton-cli account login` failed with
+# the x509 error above. THAT SPLIT - the app's own API calls working while proton-cli fails -
+# is the signature of a Go binary in an image with no system roots, and it is recorded in
+# DEPLOY.md's troubleshooting table so the next person reads it as an image problem.
+#
+# IT MUST BE IN THIS STAGE. The binary is built in the `alpine` stage above, but Alpine's
+# certificates stay there: a `COPY --from` brings the file, not the trust store. Installing
+# them next to the binary is what actually fixes it.
+#
+# `--no-install-recommends` AND THE LIST CLEANUP, because this image is built slim on
+# purpose. `ca-certificates` depends on `openssl`, which brings `libssl3`; everything else in
+# that closure (`libc6`, `libgcc-s1`, `debconf`) is already present. So the honest cost is
+# THREE new packages, ~8.5MB installed by Debian's own Installed-Size figures - and this is
+# the final stage, so it is a new layer rather than a saving in an earlier one.
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates; \
+    rm -rf /var/lib/apt/lists/*
 
 # THE SESSION DIRECTORY, EMPTY, OWNED BY node. The binary reads XDG_CONFIG_HOME and
 # looks for proton-cli/ inside it, so pointing that variable at /home/node/.config

@@ -477,3 +477,41 @@ this line used `=`, redacted nothing at all, and looked like it had worked.
 | a **403** on the demo link | that is correct: the demo is read-only and refuses every write. |
 | `EACCES: permission denied, mkdir '/app/data/store/orgs'` at startup | `STORE_DIR` is being read from `.env` and points inside the image. The entrypoint reports `/data/store` in the line above it while the app disagrees - that split is the tell. **Leave `STORE_DIR` unset in `.env`**; the deploy file forces the right value. |
 | the store looks empty after a redeploy, but the entrypoint said it held organisations | the same split seen from the other side: the entrypoint wrote to the volume and the app read somewhere else. Same fix. |
+| `proton-cli` fails with **`x509: certificate signed by unknown authority`** while the app's own API calls work | **the image had no system CA bundle, not a Proton or firewall problem.** This is fixed in the Dockerfile; rebuild with `--build` if you are on an older checkout. See the note below, because the signature matters. |
+
+### `proton-cli` and the system CA bundle
+
+**THE TELL IS THE SPLIT: the app's own outbound calls succeed while `proton-cli` fails.**
+
+```
+node fetch('https://api.deepseek.com/')  ->  401          a real HTTP response, so TLS VERIFIED
+proton-cli account login                 ->  x509: certificate signed by unknown authority
+```
+
+**That combination is not a credential problem and not a Proton outage.** Node ships its own
+root certificates and ignores the system store; `proton-cli` is a **Go** binary, and Go reads
+the **system** trust store. `node:24-slim` ships without `ca-certificates` at all, so the Go
+binary has no roots to verify against and refuses the connection before authentication is
+attempted. The error names Proton, which is why it reads as a Proton fault.
+
+`ca-certificates` is now installed in the final build stage, so a current image is fine. If you
+meet this on an existing deployment, rebuild rather than debugging credentials:
+
+```bash
+docker compose -f docker-compose.deploy.yml up -d --build
+```
+
+**Signing in, once**, for the mail sender. The session lands in the `forgeright-proton` volume,
+so it survives a rebuild and is only needed again if that volume is removed:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright proton-cli account login
+```
+
+**Verify the fix without a Proton account**, in one line. An empty but readable bundle file
+means the roots are present; a Go binary can then verify peers:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright \
+  sh -c 'ls -l /etc/ssl/certs/ca-certificates.crt'
+```
