@@ -13,10 +13,6 @@
  * the disagreement flags and the "needs a person" markers had nothing to mark. A real process
  * weighed 0 with "No steps were recorded" for work the participant had described in three steps.
  *
- * THE HISTORY, checked rather than assumed: `ai/merge-steps.js` was written reading the flat shape
- * (83d6317), and the client switched to saving `{ workflows }` two hours later (632918d). The
- * reader was never updated.
- *
  * WHY THE DEMO HID IT: `scripts/seed-demo-org.js` writes the FLAT shape, so the committed demo
  * artefact weighs correctly and the deployed demo looks perfect. The first real client interview
  * was the one that scored zero.

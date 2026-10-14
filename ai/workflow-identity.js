@@ -193,19 +193,18 @@ function filledFields(workflow) {
 /**
  * Whether a process is the same one the round was already working on.
  *
- * THE ROUND IS THE EVIDENCE THE REPLY CANNOT CARRY, and that is why this decision belongs on the
- * server. The model never sees its own prior `processes` - `ai/audit-core.js` rebuilds an
- * assistant turn as role and content only - so it re-derives and re-words each turn. The prompt
- * states one process per round and NOTHING enforced it, so a live interview produced the same
- * process twice: four steps all reworded, and `frequencyPerWeek` 56 in one entry against 7 in the
- * other because the model had forgotten it recorded 56 and re-read "every morning" as weekly.
+ * THE ROUND IS THE EVIDENCE THE REPLY CANNOT CARRY, which is why this belongs on the server: the
+ * model never sees its own prior `processes` - `ai/audit-core.js` rebuilds an assistant turn as
+ * role and content only - so it re-derives and re-words each turn. MEASURED: the same process came
+ * back as four steps all reworded, with `frequencyPerWeek` 56 in one entry against 7 in the other
+ * because the model had forgotten it recorded 56 and re-read "every morning" as weekly.
  *
  * THE MATCH IS POSITIVE AND VERBATIM: a shared step name, or the same id. Nothing is inferred from
- * the ABSENCE of evidence, which is what the removed by-absence arm did.
+ * the ABSENCE of evidence.
  *
  * THE HARM DIRECTION: it must DECLINE for a genuinely different process, and it does - such an
- * entry shares no step name and is not the held id, so it stays separate. Only the case the round
- * can actually witness - one process, being re-emitted - is folded.
+ * entry shares no step name and is not the held id. Only the case the round can witness, one
+ * process being re-emitted, is folded.
  *
  * @param {Array<object>} replyWorkflows The workflows from this reply.
  * @param {Array<object>} heldWorkflows The processes the round already holds.

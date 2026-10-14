@@ -269,10 +269,11 @@
             //
             // COMPARED BY PROCESS `id`, the only stable name a reply carries, so what was collected
             // stays.
-            // THE IDENTITY IS SETTLED FIRST, so everything below - the carry-forward, the
-            // record of what the round holds, and the payload that is scored - agrees on how
-            // many processes there are. See reconcileWorkflowIdentity for why this is here and
-            // not on the server.
+            // THE IDENTITY IS SETTLED FIRST, so everything below - the carry-forward, the record
+            // of what the round holds, and the payload that is scored - agrees on how many
+            // processes there are. THE SERVER DOES THE SAME at lib/routes-api.js, and this runs
+            // again here because a page can reload mid-round: the server's fold is a reply's own,
+            // while this one reconciles against what the browser has already saved.
             const reconciled = payload && Array.isArray(payload.workflows)
                 ? { ...payload, workflows: reconcileWorkflowIdentity(payload.workflows, state.roundProcesses) }
                 : payload;
@@ -387,53 +388,33 @@
         return steps * 100 + filled;
     }
 
-        /**
+            /**
      * Gives each process in this reply the identity the round already gave it, and collapses a
-     * reply that describes the SAME process twice.
+     * reply
+     * that describes the SAME process twice.
      *
-     * THE DEFECT, MEASURED on a real interview: the server derives a process `id` from its `task`,
-     * and THE MODEL REWORDS THE TASK BETWEEN TURNS. One participant describing one process produced
-     * the same work under several ids, each reading as a NEW process, so they accumulated and the
-     * score came from one variant while the others scored 0. Two runs of one interview gave 385 h/wk
-     * and 25.5 h/wk depending on how often the model reworded itself.
+     * THE DEFECT THIS FIXES, MEASURED: the server derives a process `id` from its `task`, and THE
+     * MODEL REWORDS THE TASK BETWEEN TURNS - so one process accumulated under several ids and the
+     * score came from one variant while the others scored 0. Two runs of one interview gave 385
+     * h/wk and 25.5 h/wk depending on how often the model reworded itself.
      *
-     * THE OLD CONTRACT WAS UNREACHABLE, which is why four rounds of verification missed it: it began
-     * `if (workflows.length !== 1) return workflows`, and a real reply carries TWO entries for one
-     * process - the stale carry-forward beside the current one. MEASURED: one entry merged
-     * correctly, two were returned untouched, EVERY turn. The tests passed because they were written
-     * to the guard's shape.
-     *
-     * THE CONTRACT NOW: every workflow in the reply is matched against every process the round
-     * holds, on the exact step-name co-test below, and takes the id of the process it matches. The
-     * number of entries on either side is not part of the contract.
-     *
-     * A REPLY DESCRIBING ONE PROCESS TWICE IS COLLAPSED, which is what actually removes the
-     * duplicate: identity alone cannot, because in the reported case BOTH entries share the round's
-     * process and would both take its id. Two entries that SHARE AN EXACT STEP NAME are one process,
-     * and the RICHER survives.
-     *
-     * NOTHING IS FOLDED ON ABSENCE. An arm doing that was built and removed, because a process the
-     * participant had just NAMED arrives the same way - see the note where the fold is.
+     * THE CONTRACT: every workflow in the reply is matched against every process the round holds,
+     * on the exact step-name co-test, and takes the id of the process it matches. The number of
+     * entries on either side is NOT part of it. A reply describing one process twice is then
+     * collapsed to the RICHER entry.
      *
      * THE HARM DIRECTION, which is why the matching is per-entry: two genuinely different processes
      * each matching a DIFFERENT held process keep both ids and both entries, which is the case that
-     * would break if the rule assumed "one on each side". Two entries matching the SAME held process
-     * collapse, and the `console.warn` below reports it. An entry matching nothing keeps its own id,
-     * so a NEW process is never fused into an old one.
+     * would break if the rule assumed "one on each side". An entry matching nothing keeps its own id.
      *
-     * A FALSE MERGE NEEDS A POSITIVE, VERBATIM AGREEMENT: an exactly equal step name. Nothing is
-     * inferred from absence, which is what separates this from the boundary filter that was reverted
-     * - that one could not tell a stale carry-forward from a just-named process, because at the
-     * boundary the round's history is not available. Here it is.
-     *
-     * WHY STEP NAMES AND NOT THE TASK: the task is the field the model rewrites, which is what broke
-     * the id. A step is a named thing the participant described. The test is an EXACT comparison
-     * after trimming and case-folding - no similarity, no threshold, no number to tune.
+     * THE EVIDENCE FOR THE CO-TEST ITSELF is in `ai/workflow-identity.js`, whose `reconcileWithHeld`
+     * applies the same rule server-side. THIS IS NOT ITS MIRROR: the server also decides whether a
+     * reply is the round's process at all, while this reattaches an identity and collapses what is
+     * already here.
      *
      * @param {Array<object>} workflows The workflows from this reply.
      * @param {Map<string, object>} held The processes the round already has, by id.
-     * @returns {Array<object>} The workflows, each carrying a held id where one matched, with a
-     *   process described twice collapsed to its richest single entry.
+     * @returns {Array<object>} The workflows, each carrying a held id where one matched.
      */
     function reconcileWorkflowIdentity(workflows, held) {
         if (!Array.isArray(workflows) || workflows.length === 0) return workflows;

@@ -558,43 +558,6 @@ So the priority order is: **a working proof of concept with demo data, deployed.
 Anything that is not a bug blocking that is deferred by decision, not by oversight.
 The open sign-up spending the provider key is a known, accepted cost for now.
 
-## TODO: cull the comments
-
-**The owner's instruction, 2026-10-13:** *"Write down as a todo that we need to
-cull the comments as there are way too much."*
-
-Measured, so the size of the job is known rather than guessed:
-
-```
-tracked source   39,285 lines
-comment lines    13,307   (34%)
-```
-
-The densest files, excluding tests and generated output:
-
-```
-85%   ai/format-commitment.js        65 lines
-78%   lib/auth/demo-readonly.js     174
-71%   ai/period.js                   76
-70%   data/store/schema.sql         367
-69%   lib/store/connection-guard.js  52
-69%   lib/view-format.js            132
-68%   lib/palettes.js                91
-66%   ai/field-shapes.js            509
-66%   lib/auth/require-secure.js    253
-```
-
-**`public/css/palette.css` reads 87%, but it is GENERATED** by
-`scripts/build-palette-css.js`. Culling it by hand would be undone by the next
-run, so the source of any wording there is `lib/palettes.js`.
-
-**Not a small job and not a mechanical one.** Much of the commentary here exists
-because a fix was found by a live run rather than by a test, and the reasoning is
-the only record of why the code is shaped as it is. The value to keep is the
-*why* and the evidence; the value to cut is the restatement of what the next line
-plainly does, and the history of how the code got here, which belongs in the
-commit message.
-
 ## The interview could not finish, and the total was an artifact
 
 Found 2026-10-13 by running a complete interview through the browser against the
@@ -900,13 +863,18 @@ deployed v6 store with all 8 responses intact.
 
 ### The batches
 
-| batch | scope | comment lines |
+| batch | scope | comment lines REMAINING after the batch |
 |---|---|---|
-| 1 | `data/store/schema.sql`, `admin-schema.sql` | 376 → 229 |
-| 2 | `ai/` | ~1,900 |
-| 3 | `lib/auth/`, `lib/store/` | ~2,600 |
-| 4 | `lib/` root, `server.js`, `scripts/` | ~2,600 |
-| 5 | `public/js/audit.js`, `public/css/` | ~1,100 |
+| 1 | `data/store/schema.sql`, `admin-schema.sql` | **376 → 229** (counted) |
+| 2 | `ai/` | roughly 1,600 (ESTIMATE) |
+| 3 | `lib/auth/`, `lib/store/` | roughly 2,760 (ESTIMATE) |
+| 4 | `lib/` root, `server.js`, `scripts/` | roughly 2,000 (ESTIMATE) |
+| 5 | `public/js/audit.js`, `public/css/` | roughly 560 (ESTIMATE) |
+
+**ONLY BATCH 1'S FIGURES WERE COUNTED.** The rest are estimates taken from the builder's own
+reports, and **the gate verified something else entirely** - that no non-comment line changed,
+not how many comment lines went. An unverified number printed beside a verified one reads as
+equally checked, so they are labelled.
 
 ### After batch 5: a review against a different bar
 
@@ -919,3 +887,31 @@ So the review is not a correctness check on the cull. It is a second cut, made b
 reading the whole result rather than one batch at a time, and it should name what it would
 remove and why. **And it must not touch `ai/audit-core.js` beyond comments** — that file is
 past the hard size limit and may only shrink.
+
+**The review ran and named roughly 2,300 to 2,700 lines still to cut.** Its finding is the
+one worth keeping: **the first pass judged BLOCKS, and the remaining problem is REPETITION
+WITHIN a block.** Measured on the worst case, `reconcileWorkflowIdentity`'s doc in
+`public/js/audit.js`, the step-name rule was stated **nine times**, the defect history four,
+absence three and the harm direction twice — **24 sentences for a 3-sentence contract.**
+
+### The rule the review established
+
+> **KEEP THE FIGURE. CUT THE NARRATIVE THAT CARRIED IT — unless the METHOD is the point.**
+
+Most measurements are already reproduced by the test suite, so their **result** is what a
+comment owes a reader. Two exceptions keep their method IN FULL, because the method is the
+content:
+
+- **`lib/store/schema.js`: the hash-check instruction.** *"HASH THE WHOLE FILE... FILE SIZE
+  ALONE IS NOT THE TEST"* — it tells the reader their obvious test is WRONG.
+- **`lib/auth/demo-readonly.js`: the reproduced attack.** `attacker@evil.test` wrote a
+  `login_token` and the redemption created a tenant. It is the security justification for the
+  allow-list, not a measurement whose result suffices.
+
+### `ai/audit-core.js`: cut now, split next session
+
+**The comments were cut; THE FILE WAS NOT SPLIT.** It is 425 code lines doing four
+responsibilities and still above the 1000-line limit. **The guideline's purpose is the split
+and the size is the symptom**, so a comment cut that brings it under the limit would satisfy
+the number while leaving the structure untouched — which is the wrong thing to optimise. The
+split remains for its own session, and a comment cut does not replace it.
