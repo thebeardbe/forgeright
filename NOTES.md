@@ -838,3 +838,84 @@ on, and both arrive with `task` and `trigger` only. Putting it there means eithe
 
 Both are design changes with their own tests, not a predicate. **This arm has been built,
 reverted, rebuilt and removed once; a fifth client-side attempt should be refused.**
+
+## The comment cull: five batches, then a review
+
+**The owner's instruction, 2026-10-14:** *"The comments still need to explain but it can be
+short. There is enough documentation in the repo to understand everything. I want the
+comments a lot less because this is bloating the project."*
+
+```
+BEFORE   22,057 lines of production source | 10,007 comment lines (45%)
+```
+
+**Excluded from the cull, deliberately:**
+
+- **`public/css/palette.css`** — 485 comments, 87%, and it is **generated** by
+  `scripts/build-palette-css.js`. Culling it is undone by the next build; its wording lives
+  in `lib/palettes.js`.
+- **`test/*.js`** — about 3,700 comment lines. **A test comment explains the CASE, not the
+  code**, and a test that says why a case exists is not bloat.
+
+### The rule
+
+**A comment stays if it says something the code cannot.**
+
+```
+CUT   restating what the next line plainly does
+CUT   narrating how the code got here — that is the commit message's job
+CUT   repeating what DEPLOY.md, README.md or NOTES.md already says
+CUT   essays. ONE TO THREE LINES WHERE THERE ARE TEN TO THIRTY-FIVE.
+KEEP  the why, and the evidence behind it
+KEEP  a reproduced defect's reasoning, in one or two sentences
+KEEP  a constant and its reason
+KEEP  a non-obvious danger, an ordering requirement, a security property
+```
+
+### Two passes, and the first is the one that matters
+
+**PASS 1 verifies every comment that asserts behaviour.** Twelve false comments were found
+in one session, each load-bearing — a reader would have written wrong code from any of them
+— and one shape recurs: **a comment pointing at a function, file or line that no longer
+says what is claimed.** Cheap to have, expensive to follow. Correct it or delete it; never
+leave a claim that was not checked.
+
+**PASS 2 cuts.** Verify first, because a cut that leaves a false claim is worse than the
+bloat it removed.
+
+### The gate: no code may change
+
+**Every batch is checked by extracting the non-comment lines before and after and diffing
+them.** Not the agent's word:
+
+```bash
+git show HEAD:$f | grep -vE '^\s*(//|/\*|\*|#|--|$)' > /tmp/before.txt
+grep -vE '^\s*(//|/\*|\*|#|--|$)' "$f"          > /tmp/after.txt
+diff /tmp/before.txt /tmp/after.txt || echo "CODE CHANGED in $f"
+```
+
+**A batch that changes any non-comment line is rejected.** Batch 1 passed: `schema.sql` and
+`admin-schema.sql`, 103 and 48 statement lines, byte-identical, applied to a copy of the
+deployed v6 store with all 8 responses intact.
+
+### The batches
+
+| batch | scope | comment lines |
+|---|---|---|
+| 1 | `data/store/schema.sql`, `admin-schema.sql` | 376 → 229 |
+| 2 | `ai/` | ~1,900 |
+| 3 | `lib/auth/`, `lib/store/` | ~2,600 |
+| 4 | `lib/` root, `server.js`, `scripts/` | ~2,600 |
+| 5 | `public/js/audit.js`, `public/css/` | ~1,100 |
+
+### After batch 5: a review against a different bar
+
+**The builder is asked "is this comment earning its place". The review asks the harder
+question — what is still there that does not need to be?** The owner's bar:
+
+> *"the least comments possible without impeding on the functionality."*
+
+So the review is not a correctness check on the cull. It is a second cut, made by someone
+reading the whole result rather than one batch at a time, and it should name what it would
+remove and why. **And it must not touch `ai/audit-core.js` beyond comments** — that file is
+past the hard size limit and may only shrink.
