@@ -49,6 +49,27 @@ services:
       # 3000 is the app's own default and is restated only so the port nginx must target is
       # visible in this file rather than four files away.
       PORT: "3000"
+      # --- STORE_DIR IS FORCED FOR THE SAME REASON AS HOST, AND IT IS NOT COSMETIC ---
+      #
+      # OUTSIDE /app, AND THAT IS NOT ARBITRARY. The app reads its SQL schema from
+      # `PROJECT_ROOT/data/store/schema.sql`, where PROJECT_ROOT is the application
+      # directory rather than STORE_DIR. A volume mounted over /app/data/store therefore
+      # hides the schema and every connection fails with ENOENT - measured, that is exactly
+      # what the first working build did. Keeping the store under /data means the volume
+      # covers only data and the schema stays in the image where it belongs.
+      #
+      # IT MUST BE FORCED HERE RATHER THAN LEFT TO `.env`, and this file was missing it.
+      # `docker-entrypoint.sh` falls back to `/data/store` ITSELF, so the entrypoint and the
+      # volume agreed while the APP did not: it fell back to `<PROJECT_ROOT>/data/store`,
+      # which is inside the image. MEASURED on a real VPS deploy, with the entrypoint
+      # reporting `/data/store` and the app then failing with:
+      #
+      #   EACCES: permission denied, mkdir '/app/data/store/orgs'
+      #
+      # The two fallbacks only agree when this variable is set explicitly, and `.env` is
+      # shared with the host run mode, where a RELATIVE path like `data/store` is correct
+      # and resolves inside the image here. So the value is forced rather than defaulted.
+      STORE_DIR: /data/store
       # --- WHY TRUST_PROXY IS SET HERE AND IS NOT OPTIONAL ---
       #
       # nginx speaks PLAIN HTTP to this container, and the app refuses an insecure request:

@@ -80,6 +80,15 @@ defaults come from the image; the deploy file restates them because `.env` would
 otherwise override them with the values for running the app directly on the host (see
 below).
 
+**It also forces `STORE_DIR=/data/store`, and that one is easy to get wrong because the
+container appears to work without it.** `docker-entrypoint.sh` falls back to `/data/store`
+on its own, so the entrypoint and the mounted volume agree; the APP does not, because its
+fallback is `<project>/data/store` - a path inside the image. The two only agree when the
+variable is set explicitly, and `.env` is shared with the host run mode, where a relative
+path like `data/store` is correct and resolves inside the image here. **Leave `STORE_DIR`
+unset in `.env` for a container**; the deploy file supplies the right value. The symptom of
+getting it wrong is in the table at the end.
+
 **HOW TO CHECK IT IS REACHABLE, in one line:**
 
 ```bash
@@ -466,3 +475,5 @@ this line used `=`, redacted nothing at all, and looked like it had worked.
 | the interview asks questions and never listens | `AI_PROVIDER=mock`. |
 | the questionnaire refuses to start | the invitation link is wrong, expired or revoked. There is no code to enter: a participant must arrive through a valid token. |
 | a **403** on the demo link | that is correct: the demo is read-only and refuses every write. |
+| `EACCES: permission denied, mkdir '/app/data/store/orgs'` at startup | `STORE_DIR` is being read from `.env` and points inside the image. The entrypoint reports `/data/store` in the line above it while the app disagrees - that split is the tell. **Leave `STORE_DIR` unset in `.env`**; the deploy file forces the right value. |
+| the store looks empty after a redeploy, but the entrypoint said it held organisations | the same split seen from the other side: the entrypoint wrote to the volume and the app read somewhere else. Same fix. |
