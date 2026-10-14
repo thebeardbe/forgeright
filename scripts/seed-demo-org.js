@@ -1,77 +1,44 @@
 /**
  * Builds a demo organisation from the illustrative fixture, through the real pipeline.
  *
- * WHAT IT IS FOR. The owner asked for "an organisation with mock data so we can have a
- * demo version running". This script builds one: it registers a real organisation in a
- * SEPARATE store, inserts the fixture's responses with real invitations, then runs
- * IDENTIFICATION AND WEIGHING for real, so the processes are grouped and scored by the
- * same code the product uses. Nothing is pre-baked into the database.
+ * IT USES THE REAL CODE: it registers an organisation in a SEPARATE store, inserts the fixture's
+ * responses with real invitations, then runs identification and weighing for real. NOTHING IS
+ * PRE-BAKED into the database.
  *
- * THE DATA IS ILLUSTRATIVE. It comes from `ai/fixtures/mock-audit.js`, whose own header
- * says "Illustrative audit fixture ... Not a real client". It is deliberately
- * imperfect, and both imperfections are worth keeping in a demo: `invoice-processing`
- * and `invoice-processing-2` describe the SAME work with very different time estimates,
- * so the pipeline has a real disagreement to surface, and `proposal-drafting` is
- * judgement-heavy and should score low despite high effort. Using that file rather than
- * new invented data is deliberate: it already exercises the pipeline, including the
- * cases that separate a diagnostic from a wish list.
+ * THE DATA IS ILLUSTRATIVE and comes from `ai/fixtures/mock-audit.js`, which says so itself. It is
+ * deliberately imperfect in ways worth keeping in a demo: two fixture processes describe the SAME
+ * work with very different time estimates, so the pipeline has a real disagreement to surface, and
+ * another is judgement-heavy and should score low despite high effort.
  *
  * RUN IT WITH A REAL PROVIDER, and it costs real calls:
  *
  *     AI_PROVIDER=deepseek STORE_DIR=data/demo node scripts/seed-demo-org.js
  *
- * `STORE_DIR` IS REQUIRED, NOT DEFAULTED, and it may not be the default store. This
- * script DELETES an organisation to make itself re-runnable, and the default store is
- * where real data lives. A separate directory also sidesteps the pre-v6 organisation
- * files already in `data/store/orgs/`, which this code refuses by design: the script
- * never reads them, because it never looks at that directory.
+ * `STORE_DIR` IS REQUIRED AND MAY NOT BE THE DEFAULT STORE: this script DELETES an organisation to
+ * make itself re-runnable, and the default store is where real data lives. It also sidesteps the
+ * pre-v6 files in `data/store/orgs/`, which this code refuses by design. `data/demo` is the
+ * COMMITTABLE location - `data/store/orgs/` is gitignored wholesale because it holds live data -
+ * and the result is meant to be committed so the demo travels with the repository.
  *
- * `STORE_DIR=data/demo` IS THE COMMITTABLE LOCATION, and `data/store/orgs/` is NOT:
- * that directory is gitignored wholesale, because it holds live organisation files. A
- * seeded database under `data/demo/` is a checked-in artefact instead, which is the
- * point of it. See "SHIPPING THE SEEDED DATABASE" below.
+ * THE COST IS PRINTED BEFORE ANY CALL, so it is known rather than discovered: one identification per
+ * response, plus at most one weighing per resulting process, since responses describing the same
+ * work merge.
  *
- * `.env` sets `AI_PROVIDER=mock`, and the mock is an INTERVIEW simulator: it answers
- * every call with the next scripted question, so identification and weighing cannot
- * work under it. That is the mock doing its job, not a pipeline failure, and both the
- * startup check and the per-reply check name it rather than letting a mock run read as
- * a broken demo. `scripts/check-weighing-order.js` handles it the same way.
+ * RE-RUNNABLE MEANS IT DELETES: it matches its own organisation by name and removes it through
+ * `orgDbPath`, which refuses an id resolving outside the store directory.
  *
- * WHAT IT COSTS. One identification call per response, plus one weighing call per
- * process that results. The count is printed BEFORE any call, so the cost is known
- * rather than discovered. The fixture has 8 responses, so the run is 8 identifications
- * plus AT MOST 8 weighings: fewer in practice, because responses describing the same
- * work merge into one process and a process is weighed once.
- *
- * RE-RUNNABLE MEANS IT DELETES. Running it again removes the previous demo organisation
- * and rebuilds it, so a demo somebody has clicked through can be reset. It matches its
- * own organisation by name, and it deletes through `orgDbPath`, which refuses an id
- * that would resolve outside the store directory.
- *
- * FAILURE IS LOUD AND PARTIAL WORK IS NAMED. A missing key, an unreachable provider or
- * a refused call stops the run with the reason, the organisation id and what had been
- * completed. Whatever was written stays where it is and is reported, so a half-built
+ * FAILURE IS LOUD AND PARTIAL WORK IS NAMED. A missing key, an unreachable provider or a refused
+ * call stops the run with the reason, the organisation id and what was completed, so a half-built
  * organisation is never mistaken for a working one.
  *
- * SHIPPING THE SEEDED DATABASE. The result is one self-contained file at
- * `<STORE_DIR>/orgs/example-ltd-demo.db`, and it is meant to be COMMITTED so the demo
- * travels with the repository. To install it on another machine:
+ * `AI_PROVIDER=mock` CANNOT SEED ANYTHING: the mock answers every call with the next scripted
+ * interview question, so identification and weighing cannot work under it. That is the mock doing
+ * its job, and both the startup and per-reply checks say so rather than letting it read as a broken
+ * demo. `scripts/check-weighing-order.js` handles it the same way.
  *
- *   1. copy the file to that machine's `data/demo/orgs/`;
- *   2. set `STORE_DIR=data/demo` there, and `DEMO_LOGIN_ORG=example-ltd-demo`;
- *   3. set the three other `DEMO_LOGIN*` variables from `.env.example`.
- *
- * The final deployment then needs **no provider and no API key**: the processes are
- * already grouped and scored, and the console only reads them. Nothing re-runs the
- * pipeline there, which is the whole reason the database is committed rather than
- * rebuilt on the machine that shows it.
- *
- * THE READ-ONLY DEMO LINK IS THE OTHER HALF, AND IT IS CONFIGURED ELSEWHERE. This
- * script needs `STORE_DIR` and a real `AI_PROVIDER`; the link needs `DEMO_LOGIN=1`,
- * `DEMO_LOGIN_ORG`, `DEMO_LOGIN_TOKEN` and optionally `DEMO_LOGIN_DAYS`, and it is off
- * unless the first of those is set. A reader following only this script builds the
- * organisation and then has no documented way to send it, which is why the variables
- * are named here as well as in `.env.example`, where the reasoning for each lives.
+ * THE READ-ONLY DEMO LINK IS CONFIGURED ELSEWHERE - see the DEMO_LOGIN block in .env.example, where
+ * each variable and its reasoning lives. A deployment serving the committed database needs NO
+ * provider and no API key, because the processes are already grouped and scored.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -266,9 +233,10 @@ async function main() {
         const transcript = synthesiseTranscript(workflow);
         const response = addResponse(orgId, invitation.token, { department, data, transcript });
 
-        // THE REAL IDENTIFICATION PATH. `recordIdentification` defaults to a MODEL
-        // decision, which is what a first pass is. The rejudge route would mark every
-        // revision as an admin correction and require an admin's argument, and a demo
+        // THE REAL IDENTIFICATION PATH. `recordIdentification` defaults to DECIDED_BY.MODEL,
+        // which is what a first pass is - and what a LIVE interview now gets too, since
+        // lib/auth/identify-response.js calls this with no decidedBy. The rejudge route would
+        // mark every revision as an admin correction AND require an admin's argument, and a demo
         // should show the ordinary result rather than a console full of regroupings.
         const known = listProcessesForConsole(orgId).map((process) => ({
             id: process.id,
@@ -354,38 +322,16 @@ function report(orgId, responseCount, identifications, weighings) {
 /**
  * Closes every connection, which CHECKPOINTS THE WAL INTO THE DATABASE FILE.
  *
- * THIS IS WHAT MAKES THE FILE COMMITTABLE. The store runs in WAL mode, so while a
- * connection is open the recent writes live in a `-wal` sidecar beside the database.
- * Committing the `.db` without it would ship a database missing its last writes, and
- * committing both would ship two files that have to be restored together - a
- * corruption waiting for whoever copies only one. Closing the connection folds the WAL
- * back in and removes the sidecars, leaving one self-contained file.
+ * THIS IS WHAT MAKES THE FILE COMMITTABLE. The store runs in WAL mode, so while a connection is
+ * open the recent writes live in a `-wal` sidecar. Committing the `.db` without it ships a database
+ * missing its last writes, and committing both ships two files that must be restored together - a
+ * corruption waiting for whoever copies one. Closing folds the WAL back in and removes the
+ * sidecars, leaving one self-contained file.
  *
- * RUN WHETHER THE SEED SUCCEEDED OR FAILED. A partial organisation is still worth
- * checkpointing: the failure message tells the operator it is partial, and a
- * half-written file with a stale WAL would be worse than either.
- *
- * THE CONSEQUENCE FOR GIT is that `data/demo/orgs/` contains exactly one `.db`, and the
- * ignore rules for the WAL sidecars are there in case a run is interrupted rather than
- * as the normal state.
- */
-/**
- * Closes every connection, which CHECKPOINTS THE WAL INTO THE DATABASE FILE.
- *
- * THIS IS WHAT MAKES THE FILE COMMITTABLE. The store runs in WAL mode, so while a
- * connection is open the recent writes live in a `-wal` sidecar beside the database.
- * Committing the `.db` without it would ship a database missing its last writes, and
- * committing both would ship two files that have to be restored together - a
- * corruption waiting for whoever copies only one. Closing the connection folds the WAL
- * back in and removes the sidecars, leaving one self-contained file.
- *
- * RUN WHETHER THE SEED SUCCEEDED OR FAILED. A partial organisation is still worth
- * checkpointing: the failure message tells the operator it is partial, and a
- * half-written file with a stale WAL would be worse than either.
- *
- * THE CONSEQUENCE FOR GIT is that `data/demo/orgs/` contains exactly one `.db`, and the
- * ignore rules for the WAL sidecars are there in case a run is interrupted rather than
- * as the normal state.
+ * RUN WHETHER THE SEED SUCCEEDED OR FAILED: a partial organisation is still worth checkpointing,
+ * and a half-written file with a stale WAL is worse than either. The consequence for git is that
+ * `data/demo/orgs/` holds exactly one `.db`; the ignore rules for the sidecars exist in case a run
+ * is interrupted.
  */
 await main();
 

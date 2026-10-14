@@ -5,28 +5,21 @@
  * suite, which has to pass offline and without keys. Run with
  * `node scripts/check-weighing-order.js`.
  *
- * WHY THIS EXISTS. The prompt says a frequently repeating, simple process should
- * score above a rare, complicated one, and the composition is the model's own. That
- * property is stated in the prompt as dominance: if A's reward terms are all at
- * least B's and none of A's costs is worse, A must score higher. Measured once in a
- * live conversation, at 84 against 18. **This script is that measurement, made
- * repeatable**: a model that stopped composing monotonically is the failure the
- * whole ranking rests on, and nothing else here would catch it.
+ * THE PROPERTY: the prompt says a frequently repeating, simple process scores above a rare,
+ * complicated one. It states that as DOMINANCE - if A's reward terms are all at least B's and none
+ * of A's costs is worse, A must score higher - and it was measured once in a live conversation at
+ * 84 against 18. THIS SCRIPT IS THAT MEASUREMENT MADE REPEATABLE: a model that stopped composing
+ * monotonically is the failure the whole ranking rests on, and nothing else would catch it.
  *
- * THE TWO PROCESSES ARE CONSTRUCTED TO DOMINATE, so the expected order does not
- * depend on taste: the quick one is better on every reward term and no worse on any
- * cost term, which makes the order the prompt's own requirement rather than this
- * script's opinion.
+ * THE TWO PROCESSES ARE CONSTRUCTED TO DOMINATE, so the expected order does not depend on taste.
  *
- * EXIT CODE IS THE RESULT: 0 when the order is right, 1 when it is not or the
- * weighing failed. A check that prints a warning and passes is a check nobody runs.
+ * EXIT CODE IS THE RESULT: 0 when the order is right, 1 when it is not or the weighing failed. A
+ * check that prints a warning and passes is a check nobody runs.
  *
- * RUN IT WITH A REAL PROVIDER: `AI_PROVIDER=deepseek node scripts/check-weighing-order.js`.
- * `.env` sets `AI_PROVIDER=mock`, and the mock answers every call with the next
- * interview question rather than a weighing, so the default run reports a failed
- * weighing that names nothing useful. That is a property of the mock, not of the
- * prompt. The script says so when it sees a non-completion reply rather than letting
- * it read as a composition failure.
+ * RUN IT WITH A REAL PROVIDER: `AI_PROVIDER=deepseek node scripts/check-weighing-order.js`. `.env`
+ * sets `AI_PROVIDER=mock`, and the mock answers every call with the next interview question - so
+ * the default run reports a failed weighing naming nothing useful, which is a property of the mock
+ * rather than of the prompt.
  */
 import 'dotenv/config';
 import { runWeighing } from '../ai/weigh-core.js';

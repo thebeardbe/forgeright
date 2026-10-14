@@ -16,22 +16,15 @@
 /**
  * THE ORGANISATION'S ID, PINNED SO THE FILE NAME IS PREDICTABLE.
  *
- * `createOrganisation` generates a random UUID by default, which is right for every
- * other caller and stays that way. This seed is the ONE caller that needs a fixed id,
- * for three reasons that all follow from the database being COMMITTED and shipped:
+ * `createOrganisation` generates a random UUID by default, and that stays right for every other
+ * caller. This seed is the ONE caller needing a fixed id, because the database is COMMITTED and
+ * shipped: `DEMO_LOGIN_ORG` in the deployment is a constant; re-seeding produces the SAME file so a
+ * rebuild replaces the committed one rather than adding a second organisation beside it; and
+ * copying the file needs no rename, because the id is in the name.
  *
- *   - `DEMO_LOGIN_ORG` in the final deployment's environment is a constant, so it can
- *     be written down once and never change;
- *   - re-seeding produces the SAME file, so a rebuild replaces the committed database
- *     rather than adding a second organisation beside it;
- *   - copying the committed file to another machine needs no rename and no lookup: the
- *     id is in the name.
- *
- * IT SATISFIES THE STORE'S OWN SAFE-PATH RULE: lowercase letters and hyphens, well
- * under 64 characters. `assertSafeOrgId` checks it on the same path a generated id
- * takes, before any file is touched, so this constant cannot become a way to name a
- * path outside the store. Changing it means re-seeding AND updating `DEMO_LOGIN_ORG`,
- * which is why it is obviously illustrative rather than a plausible-looking UUID.
+ * IT SATISFIES THE STORE'S SAFE-PATH RULE - lowercase letters and hyphens, well under 64 characters
+ * - and `assertSafeOrgId` checks it on the same path a generated id takes, before any file is
+ * touched. Changing it means re-seeding AND updating `DEMO_LOGIN_ORG`.
  */
 export const DEMO_ORG_ID = 'example-ltd-demo';
 
@@ -110,37 +103,28 @@ export function demoEmailFor(workflowId) {
 /**
  * A synthetic interview transcript for a demo response.
  *
- * SYNTHESISED FOR PRESENTATION, NOT CAPTURED. A real transcript is the browser's own
- * conversation, stored by `/api/response` as the participant answers. This function
- * builds a conversation that READS like one, from the fields the fixture already
- * carries, so the demo shows the raw-words view without a real participant having to
- * sit through an interview. Nothing here is a record of anything a person said.
+ * SYNTHESISED FOR PRESENTATION, NOT CAPTURED. A real transcript is the browser's own conversation,
+ * stored as the participant answers; this builds one that READS like it, from the fields the
+ * fixture already carries, so the demo shows the raw-words view without a real participant. NOTHING
+ * HERE IS A RECORD OF ANYTHING A PERSON SAID.
  *
- * IT LIVES HERE RATHER THAN IN `ai/fixtures/mock-audit.js`, which is the point of the
- * fixture's own header: that file exists to exercise the pipeline, and demo-presentation
- * concerns must not enter the data the identification and weighing tests run against.
- * It sits beside `responseDataFor` because it is the same kind of thing - a pure
- * transformation of one fixture workflow.
+ * IT LIVES HERE RATHER THAN IN `ai/fixtures/mock-audit.js`: that file exists to exercise the
+ * pipeline, and demo-presentation concerns must not enter the data the identification and weighing
+ * tests run against.
  *
- * THE QUESTIONS ARE THE INTERVIEW'S OWN, taken from the scripted sequence in
- * `ai/adapters/mock.js` and matching the rules in `data/prompts/cartiere_audit/prompt_en.md`:
- * one question per turn, never two joined with "and", and the judgement question asks
- * for the BASIS rather than whether judgement was needed.
+ * THE QUESTIONS ARE THE INTERVIEW'S OWN, taken from the scripted sequence in `ai/adapters/mock.js`:
+ * one per turn and never two joined with "and".
  *
- * THE PARTICIPANT'S WORDS COME FROM THE STORED FIELDS, NEVER FROM NOWHERE. Every
- * participant turn is built from `task`, `trigger`, the steps' `name` and `decidedHow`,
- * `systems`, `handoffTo` and the rest, so the transcript cannot contradict the summary
- * rendered beside it. A demo where the two disagree is worse than no transcript.
+ * EVERY PARTICIPANT TURN IS BUILT FROM THE STORED FIELDS - `task`, `trigger`, the steps' `name` and
+ * `decidedHow`, `systems`, `handoffTo` and the rest - so the transcript cannot contradict the
+ * summary rendered beside it. A demo where the two disagree is worse than no transcript.
  *
- * THE FORMAT-COMMITMENT TURN IS DELIBERATELY ABSENT. `withFormatCommitment` appends it at
- * the PROVIDER call, server-side, after the browser has sent its conversation, so it was
- * never part of a stored transcript. This function replaces the browser side, and adding
- * it would be inventing a turn the real path cannot produce.
+ * THE FORMAT-COMMITMENT TURN IS DELIBERATELY ABSENT: `withFormatCommitment` appends it at the
+ * PROVIDER call, after the browser has sent its conversation, so it was never part of a stored
+ * transcript and adding it would invent a turn the real path cannot produce.
  *
- * LENGTH VARIES BY RESPONSE. Every fixture workflow carries a different number of steps,
- * and the question list is derived from what it actually has, so a short process gets a
- * short interview. That is also why it does not look generated: eight identical
- * conversations would.
+ * LENGTH VARIES BY RESPONSE, because each workflow carries a different number of steps and the
+ * question list comes from what it actually has.
  *
  * @param {object} workflow One fixture workflow, as `buildMockAudit` returns it.
  * @returns {Array<{role: string, content: string}>} Turns in order, in the shape

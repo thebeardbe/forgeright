@@ -1,9 +1,8 @@
 /**
  * Roadmap builder server.
  *
- * A standalone Node application. It shares no configuration, no data store and
- * no code with the CV site: client workflow data and a personal CV corpus
- * should never live in the same place.
+ * A standalone Node application, sharing no configuration, data store or code with the CV site -
+ * see the note in README.md for why the separation matters.
  *
  * Routes:
  *   GET  /                -> questionnaire UI
@@ -45,20 +44,16 @@ const PORT = Number(process.env.PORT) || 3000;
 /**
  * Interface the listener binds, from HOST. Defaults to loopback.
  *
- * WHY LOOPBACK BY DEFAULT. The deployment is a reverse proxy on the same host,
- * connecting over loopback, so binding 127.0.0.1 is exactly the access this
- * needs while making the container unreachable from anywhere else. That is the
- * other half of the proxy-trust boundary: TRUST_PROXY decides which PEER may
- * claim a request was HTTPS, and HOST decides who can connect at all. With the
- * listener open on all interfaces, the trust setting is the only thing standing
- * between a LAN client and the application, and a single mistake there serves it
- * over cleartext (that was the H2 bypass: reachable on the LAN, so one forged
- * header was believed).
+ * WHY LOOPBACK BY DEFAULT: the deployment is a reverse proxy on the same host connecting over
+ * loopback, so 127.0.0.1 is exactly the access needed while making the container unreachable
+ * elsewhere. It is the other half of the proxy-trust boundary - TRUST_PROXY decides which PEER may
+ * claim a request was HTTPS, HOST decides who can connect at all - and with the listener open on all
+ * interfaces the trust setting is the ONLY thing between a LAN client and the application. One
+ * mistake there serves it over cleartext: that was the H2 bypass, reachable on the LAN so one forged
+ * header was believed.
  *
- * Set HOST=0.0.0.0 deliberately, in a container where the proxy is NOT on the
- * same host and reaches this one over a private network, or for a development
- * setup where another machine must connect. In that case TRUST_PROXY must name
- * that proxy's address, and a hop count is not enough for the reason above.
+ * Set 0.0.0.0 deliberately, and then TRUST_PROXY must NAME that proxy's address; a hop count is not
+ * enough, for the reason above.
  */
 const HOST = (process.env.HOST || '127.0.0.1').trim();
 
@@ -126,25 +121,20 @@ app.use((req, res, next) => {
 
     // THE PATH THE BROWSER IS ON, for the theme picker's way back.
     //
-    // TAKEN FROM THE REQUEST RATHER THAN BUILT FROM PUBLIC_BASE_URL, because the whole
-    // point is that the browser's URL may differ from the configured one: behind a proxy
-    // that terminates a different hostname, a link built from the configuration would
-    // send the user to a host they are not using. `req.path` is what the browser asked
-    // for, so returning to it is a no-op the user cannot detect.
+    // TAKEN FROM THE REQUEST RATHER THAN BUILT FROM PUBLIC_BASE_URL, because the browser's URL may
+    // differ from the configured one: behind a proxy terminating a different hostname, a link built
+    // from the configuration sends the user to a host they are not using.
     //
-    // **THE QUERY STRING IS DELIBERATELY DROPPED, AND THAT IS A SECURITY DECISION.**
-    // This value is written into a hidden form field on every page, so carrying the query
-    // string would echo whatever the URL held into the body: the demo link's TOKEN, on
-    // the very refusal page that exists to say nothing about it. A credential reflected
-    // into HTML lands in browser history, a proxy log, and any error reporter that
-    // captures the DOM. It was measured: a bad-token request returned a page containing
-    // the submitted token, and the demo tests caught it because two requests that must be
+    // **THE QUERY STRING IS DELIBERATELY DROPPED, AND THAT IS A SECURITY DECISION.** This value goes
+    // into a hidden form field on every page, so carrying the query would echo whatever the URL held
+    // into the body - the demo link's TOKEN, on the very refusal page that exists to say nothing
+    // about it. A credential reflected into HTML lands in browser history, a proxy log, and any
+    // error reporter capturing the DOM. MEASURED: a bad-token request returned a page containing the
+    // submitted token, and the demo tests caught it because two requests that must be
     // indistinguishable had different bodies.
     //
-    // The cost is that changing the theme on a page showing a rejudge NOTICE returns to
-    // the page without its notice. That is a small loss of convenience against not
-    // writing credentials into pages, and the notice is the kind of state a reader can
-    // re-trigger by acting again.
+    // THE COST: changing the theme on a page showing a rejudge notice returns without the notice -
+    // a small convenience against not writing credentials into pages.
     res.locals.currentUrl = req.path;
 
     // The formatting helpers, so a template writes `<%= shortInstant(x) %>` rather than
@@ -218,15 +208,12 @@ app.use(themeMiddleware);
 /**
  * EVERYTHING the app serves is HTTPS only, applied here rather than per route.
  *
- * This sits before the content routes so a route added later is covered without
- * anyone remembering: the rule is the connection, not the feature. See
- * lib/auth/require-secure.js for why the questionnaire is included (the
- * participant token is a credential and the answers describe internal
- * processes) and for the single /healthz exemption.
+ * BEFORE THE CONTENT ROUTES, so one added later is covered without anyone remembering: the rule is
+ * the connection, not the feature. See lib/auth/require-secure.js for why the questionnaire is
+ * included and for the single /healthz exemption.
  *
- * It runs after the host guard so an unlisted host is rejected as misdirected
- * before anything else, and it sets no cookie, so a refusal cannot itself leave
- * state behind.
+ * AFTER THE HOST GUARD, so an unlisted host is rejected as misdirected first, and it sets no
+ * cookie - so a refusal cannot leave state behind.
  */
 app.use(requireSecureConnection);
 
@@ -331,17 +318,16 @@ app.use((req, res) => {
 });
 
 /**
- * THE LAST HANDLER, AND IT DID NOT EXIST. An uncaught throw anywhere in a route reached
- * Express's default, which answers with the stack trace in the body when NODE_ENV is not
- * production - so a fault mid-interview would show a participant a file path and a line number.
+ * THE LAST HANDLER. Without it an uncaught throw reached Express's default, which puts the stack
+ * trace in the body when NODE_ENV is not production - so a fault mid-interview showed a participant
+ * a file path and a line number.
  *
- * IT LOGS THE ERROR AND RENDERS A PAGE, and the two carry different amounts of information on
- * purpose. The log gets the message and the stack, because that is what an operator needs and
- * the log is not public. The PAGE gets neither, in any environment: see lib/error-page.js for
- * why the development exception is not worth making.
+ * THE LOG AND THE PAGE CARRY DIFFERENT AMOUNTS on purpose: the log gets the message and stack,
+ * because an operator needs them and the log is not public, while the page gets neither in any
+ * environment.
  *
- * IT MUST TAKE FOUR ARGUMENTS. That is how Express recognises error middleware, and a handler
- * declared with three would be mounted as an ordinary route and never called.
+ * IT MUST TAKE FOUR ARGUMENTS, which is how Express recognises error middleware; a handler with
+ * three is mounted as an ordinary route and never called.
  */
 app.use((err, req, res, next) => {
     console.error(`[server] unhandled error on ${req.method} ${req.originalUrl}:`, err);
@@ -360,21 +346,18 @@ app.use((err, req, res, next) => {
     // these pages exist to make. The wrong status also hides the problem from a monitor, since a
     // 400 storm would read as a healthy server.
     //
-    // THE STATUS IS VALIDATED RATHER THAN MERELY CONVERTED, and that is a fix for a fault in this
-    // handler's own last resort. `Number(err.status) || 500` passes any truthy number through,
-    // and `res.status()` accepts only 100-599 - so a middleware attaching -1 or 99999 made
-    // `res.status()` THROW from inside the error handler. The response then came from Express's
-    // default, which puts a stack trace in the body: the exact outcome this handler exists to
-    // eliminate, arrived at by the handler itself. MEASURED: `err.status = -1` produced
-    // `RangeError [ERR_HTTP_INVALID_STATUS_CODE]` in the response body.
+    // THE STATUS IS VALIDATED RATHER THAN MERELY CONVERTED, which is a fix for a fault in this
+    // handler's own last resort: `Number(err.status) || 500` passes any truthy number through, and
+    // `res.status()` accepts only 100-599 - so a middleware attaching -1 or 99999 made it THROW from
+    // inside the error handler, and the response came from Express's default with a STACK TRACE in
+    // the body. That is the outcome this handler exists to eliminate, arrived at by the handler
+    // itself. MEASURED: `err.status = -1` produced `RangeError [ERR_HTTP_INVALID_STATUS_CODE]`.
     //
-    // THE BOUNDS ARE 400 TO 599, AND THE FLOOR IS DELIBERATELY NOT 100. Everything reaching this
-    // middleware is an error, so a status below 400 is either nonsense or a bug in whatever
-    // attached it - and rendering an error PAGE with a 2xx or a 3xx would be worse than the
-    // stack trace it replaced: a monitor would count a failure as a success, and a client
-    // following a redirect from an error page would end up somewhere unrelated. An error status
-    // is the only honest answer once an error has been thrown, so anything outside the band
-    // becomes 500, which reads as a server fault rather than as a client mistake.
+    // THE BOUNDS ARE 400 TO 599, AND THE FLOOR IS DELIBERATELY NOT 100: everything reaching this
+    // middleware is an error, so a status below 400 is nonsense or a bug - and rendering an error
+    // PAGE with a 2xx or 3xx would be worse than the stack trace it replaced, because a monitor
+    // would count a failure as a success and a client following a redirect would land somewhere
+    // unrelated. Anything outside the band becomes 500.
     //
     // `Number.isInteger` RATHER THAN A RANGE TEST ALONE, so `NaN`, `Infinity` and a numeric
     // string like "418" behave predictably: NaN and Infinity fail the test and become 500, while
@@ -395,25 +378,18 @@ const server = app.listen(PORT, HOST, () => {
 
     // A DEPLOYMENT THAT CANNOT INTERVIEW SHOULD NOT BE SILENT ABOUT IT.
     //
-    // `mock` answers every turn with a scripted interview question and NEVER completes,
-    // so an instance left on it cannot run a real interview at all - and nothing about
-    // that is visible from outside. The owner's container sat on mock for hours while he
-    // read the resulting behaviour as a bug in the interview. This warning is the fix for
-    // the SILENCE, not for the setting.
+    // `mock` answers every turn with a scripted question and NEVER completes, so an instance left on
+    // it cannot run a real interview - and nothing about that is visible from outside. The owner's
+    // container sat on mock for hours while he read the result as a bug in the interview. This fixes
+    // the SILENCE, not the setting.
     //
-    // IT IS NOT AN ERROR, and must not become one: local development legitimately uses
-    // mock, and the whole test suite depends on it. Refusing to start would break both.
+    // IT IS NOT AN ERROR AND MUST NOT BECOME ONE: local development uses mock and the whole suite
+    // depends on it, so refusing to start would break both.
     //
-    // THE CONDITION IS "THIS LOOKS LIKE A DEPLOYMENT", and the tell is that the app is
-    // not bound to loopback: a local run is 127.0.0.1, and anything reachable from
-    // elsewhere is somebody's served instance. That is deliberately narrow, so the
-    // warning does not fire for `npm start` or a test run and become noise an operator
-    // learns to skip - which is how a real warning stops being read.
-    //
-    // A KEY PRESENT IS NOT THE TEST, and that matters: the mock branch of ai/config.js
-    // skips the key check entirely, so `DEEPSEEK_API_KEY` being set proves nothing about
-    // which provider is in use. Folded into this one condition so there is only ever a
-    // single thing to check.
+    // THE CONDITION IS "THIS LOOKS LIKE A DEPLOYMENT", and the tell is that the app is NOT bound to
+    // loopback - narrow on purpose, so the warning does not become noise an operator learns to skip.
+    // A KEY PRESENT IS NOT THE TEST: the mock branch of ai/config.js skips the key check entirely,
+    // so `DEEPSEEK_API_KEY` being set proves nothing about which provider is in use.
     if (config.type === 'mock' && HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1') {
         console.warn(
             `[server] WARNING: AI_PROVIDER is "${config.name}" while this instance is bound to ` +
