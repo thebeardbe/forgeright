@@ -716,12 +716,32 @@ on NOW, not every process of the interview"*).
 scores zero, and does not touch the total. Measured: the two entries collapse into
 one grouping when a match is known.
 
-**And it is narrower than it sounds.** There is **no automatic identification**:
-`runIdentification` runs only from an admin rejudge and the demo seed, so a completed
-interview produces **no roadmap rows at all** until an admin rejudges - and at that
-point the model sees the whole payload and has matched the stub to the real process
-in testing. The extra row appears only when no matching process is known at
-identification time.
+**THE GAP THIS USED TO DESCRIBE IS CLOSED, and this note is corrected because it is now
+false.** It read: *"There is no automatic identification: `runIdentification` runs only from an
+admin rejudge and the demo seed, so a completed interview produces no roadmap rows at all until
+an admin rejudges."*
+
+**A finished round is now identified on the ordinary path.** `lib/auth/identify-response.js`
+runs `runIdentification` then `recordIdentification` with the default `decidedBy: 'model'` when
+`/api/response` finalises a round, so a live interview reaches the roadmap without an admin
+touching it. It is not a rejudge: no admin argument, and no `decidedBy.admin`, so the console
+does not read every live interview as a console full of regroupings.
+
+**It does not block the participant**, which is why it is fired without being awaited after the
+turn's reply is sent. The answers are already saved and the round already finalised by then, so
+the failure mode is an answer that still reads **"not yet read"** - never a lost answer. A
+failure is logged with the response id and, because that state already exists and Rejudge
+already fixes it, nothing new was needed to represent it.
+
+**It cannot double-identify.** Measured against the store: a second `recordIdentification` with
+`matches: <id>` stays at one process, but one with `matches: null` creates a SECOND - and the
+identify prompt tells the model to answer `matches: null` when unsure (`identify_en.md`), so
+this is reachable rather than theoretical. The automatic path therefore declines when the
+response already has a current grouping, checked before the model call. An admin's rejudge is a
+deliberate correction and is deliberately not guarded.
+
+**So the extra row above now appears only when no matching process is known at identification
+time** - which is the same condition as before, reached automatically instead of by hand.
 
 ### A boundary filter was built and REVERTED. Do not rebuild it.
 

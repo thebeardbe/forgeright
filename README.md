@@ -252,9 +252,18 @@ rather than on the work itself.
 
 **Nothing here scores or ranks.** That is workflow 3, not built.
 
-**The participant never sees any of it.** No participant route imports the process
-module, deliberately: a participant who could see where their answer was grouped
+**The participant never sees any of it, and never could.** No participant route returns
+grouping information, deliberately: a participant who could see where their answer was grouped
 would write to influence where it landed.
+
+**It used to be stronger than that, and this note is corrected because the stronger claim is now
+false.** It read: *"No participant route imports the process module, deliberately."* A finished
+round is now **identified automatically** - `lib/auth/identify-response.js` runs when
+`/api/response` finalises a round, fired after the turn's reply is sent and never awaited - so
+the participant route does reach the process module. **What it must not do is show the result**,
+and that is unchanged: the identification runs on the way out, its outcome is never in the
+response body, and the participant's next turn cannot reflect it back. The original rule was
+protecting the write, not forbidding the read.
 
 ### How a grouping is stored
 
