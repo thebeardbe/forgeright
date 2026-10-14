@@ -58,7 +58,8 @@ async function loadIdentifyPrompt(toolId, lang) {
  * into every comparison would be a large cost for text the decision does not use.
  *
  * @param {object} response The response row, with `data` parsed.
- * @param {Array<object>} knownProcesses Existing processes with their reasoning.
+ * @param {Array<object>} knownProcesses Existing processes with their reasoning. Each may carry
+ *   `isCurrentHome: true` for the process this response is ALREADY in.
  * @param {string} [adminReasoning] An admin's argument, when this is a rejudge.
  * @returns {string}
  */
@@ -85,6 +86,21 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         for (const process of knownProcesses) {
             parts.push(`### ${process.id}`);
             parts.push(`name: ${process.name}`);
+            // THE RESPONSE'S CURRENT HOME IS NAMED, and this is what stops a rejudge spawning a
+            // sibling. Without it the model is shown a list of candidates and not told that the
+            // response is already in one of them, so "the argument does not change the grouping"
+            // - much the most common outcome - looks like a fresh decision rather than a
+            // no-change, and `matches` reads as a new placement instead of as "leave it here".
+            //
+            // IT MATTERS MOST ON A REJUDGE FROM A PROCESS, where the process under review is a
+            // candidate that the model could otherwise mistake for a stranger. See rejudge.js:
+            // it used to be EXCLUDED from this list, which emptied the list in the ordinary case
+            // and made `buildComparisonMessage` say "(none yet, so this is a new process)" -
+            // instructing the model to create the duplicate the owner saw.
+            if (process.isCurrentHome === true) {
+                parts.push('THIS IS WHERE THE RESPONSE IS NOW. It is already in this process, so '
+                    + 'matching it here means the grouping does not change.');
+            }
             if (process.reasoning) parts.push(`why it exists: ${process.reasoning}`);
             parts.push('');
         }

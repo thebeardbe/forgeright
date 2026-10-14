@@ -358,6 +358,55 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_process_score_current
 -- not understand -- reading version 5 with version 6 queries would answer the
 -- wrong question quietly -- not to upgrade one. An older file is a loud error,
 -- and someone who wants the data should export it before deleting the file.
+-- AN ADMIN'S CORRECTION TO A VALUE THE SCORE IS COMPUTED FROM.
+--
+-- WHY THIS EXISTS. The effort formula is `frequencyPerWeek * minutesPerInstance * peopleAffected
+-- / 60`, and every one of those is read from `response.data` - the participant's own answer. When
+-- the MODEL reads that answer wrongly, an admin has no way to say so: the rejudge is a reasoned
+-- argument about the GROUPING, and it reaches neither the stored value nor the score computed
+-- from it. Measured on the deployed instance: an admin rejudged with "it is not 56 a week, but 56
+-- every morning so 7 times 56", and the weighing still read "fifty-six checks a week, every
+-- morning" - the correction became a sentence and the number stayed 56.
+--
+-- THE PARTICIPANT'S ANSWER IS NOT REWRITTEN, and that is the whole design. `response.data` keeps
+-- what they said, because it is the evidence this tool is an audit of, and the answers view must
+-- go on showing their words. A correction is THE ANALYSIS'S READING OF THAT ANSWER, held
+-- separately, so the two can be shown side by side and neither can be mistaken for the other.
+--
+-- ONE CURRENT CORRECTION PER RESPONSE AND FIELD, enforced by the index below: a second correction
+-- supersedes the first rather than accumulating, because "what is the frequency" has one answer
+-- and a reader should not have to choose between two rows. The superseded value is not lost - the
+-- row is updated and `decided_at` moves - which is a deliberate trade: this records the CURRENT
+-- reading, and the argument that produced it survives in `process_revision.admin_reasoning` on
+-- the revision the correction caused.
+--
+-- NO schema_version BUMP, for the reason the two indexes above give: `CREATE TABLE IF NOT EXISTS`
+-- applies this to an existing file on its next open with nothing to migrate, while a bump would
+-- REFUSE every existing file - including the owner's deployed store - and the project has no
+-- migration path by design. An additive table is exactly the case that rule is about.
+CREATE TABLE IF NOT EXISTS response_field_correction (
+    id           TEXT PRIMARY KEY,
+    -- The response whose answer is being corrected. ON DELETE CASCADE because a correction has no
+    -- meaning without the answer it corrects.
+    response_id  TEXT NOT NULL REFERENCES response(id) ON DELETE CASCADE,
+    -- WHICH FIELD, from a closed set the code validates: the four the effort formula reads. A
+    -- column rather than a JSON blob, so "what has been corrected" is a query rather than a parse,
+    -- and so a typo cannot introduce a field nobody reads.
+    field        TEXT NOT NULL,
+    -- THE CORRECTED READING, as JSON: a number for the three numeric fields, or the
+    -- `{hours, period}` object `timePerPeriod` already takes. JSON because one of the four is
+    -- not a scalar, and a text column that must be parsed by field name is the same shape with
+    -- more branches.
+    value        TEXT NOT NULL,
+    -- THE ADMIN'S OWN WORDS, required. A corrected number nobody can explain cannot be reviewed,
+    -- which is the same reason process_revision.reasoning is NOT NULL.
+    admin_reasoning TEXT NOT NULL,
+    decided_at   TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_field_correction_current
+    ON response_field_correction(response_id, field);
+
 CREATE TABLE IF NOT EXISTS schema_meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

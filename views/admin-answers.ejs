@@ -235,6 +235,39 @@
                               placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, and is free to disagree."></textarea>
                     <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Rejudge this answer</button>
                 </form>
+
+                <%#
+                    THE SECOND CORRECTION THE ADMIN CAN MAKE, and it is a different kind from the
+                    one above. A rejudge is an argument about WHICH PROCESS this answer belongs to;
+                    it cannot reach a VALUE. When the model reads an answer wrongly - a participant
+                    said "56 checks every morning" and the frequency was recorded as 56 per week -
+                    the error is in the stored reading and this is how it is fixed.
+
+                    IT IS NOT A REJUDGE AND NOT A MODEL CALL: the admin types the number, it is
+                    validated here and at the store, and it is recorded as a correction so the
+                    console can show it as one rather than as the participant's words. The
+                    participant's own answer is never rewritten.
+
+                    ONLY THE FOUR FIELDS THE SCORE IS COMPUTED FROM. A field the effort formula
+                    reads and cannot be corrected is the defect; the rest would be console surface
+                    with no caller. See CORRECTABLE_FIELDS.
+                %>
+                <form class="rejudge" method="post" action="<%= basePath %>/admin/answers/<%= response.id %>/correct">
+                    <label for="correct-field-<%= response.id %>">A value was read wrong</label>
+                    <div class="row">
+                        <select id="correct-field-<%= response.id %>" name="field">
+                            <option value="frequencyPerWeek">Times per week</option>
+                            <option value="minutesPerInstance">Minutes each time</option>
+                            <option value="peopleAffected">People involved</option>
+                            <option value="timePerPeriod">Time for the period</option>
+                        </select>
+                        <input type="text" name="value" required inputmode="decimal"
+                               placeholder="The corrected figure, as a number">
+                    </div>
+                    <textarea id="correct-reason-<%= response.id %>" name="reason" required
+                              placeholder="Say what is wrong with the stored value, so the correction can be reviewed."></textarea>
+                    <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Correct this value</button>
+                </form>
                 <% } else if (response.empty) { %>
                     <p class="meta">
                         Every question was asked and none was answered, so there is nothing here to
