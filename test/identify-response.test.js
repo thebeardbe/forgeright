@@ -1,19 +1,18 @@
 /**
- * AUTOMATIC IDENTIFICATION - a finished interview had to identify itself, and did not.
+ * AUTOMATIC IDENTIFICATION - a finished interview must identify itself.
  *
- * THE DEFECT, found by the owner reading his own answer:
+ * THE FAILURE THIS GUARDS. An answer card complete and correct, every step and field present, and
+ * NOTHING on the roadmap beside the note:
  *
  *   "This answer has not been identified into a process yet."
  *
- * with the answer card complete and correct beside it - every step, every field, 56 times a week -
- * and NOTHING on the roadmap. `runIdentification` was called in exactly two places: the admin's
- * rejudge, and the demo seed. THE SEED IDENTIFIES EVERY RESPONSE ON THE ORDINARY PATH; A LIVE
- * INTERVIEW IDENTIFIED NOTHING. So the demo showed a complete roadmap and a real participant's work
- * sat unread until somebody pressed a button, which is why a deployed instance looked broken while
- * every test and every checked path passed.
+ * `runIdentification` runs from the admin's rejudge and the demo seed. THE SEED IDENTIFIES EVERY
+ * RESPONSE ON THE ORDINARY PATH; without a third caller a live interview identifies nothing, so
+ * the demo shows a complete roadmap and a real participant's work sits unread until somebody
+ * presses a button.
  *
- * The fix calls `identifyFinishedResponse` from `POST /api/response` when the round completes,
- * NOT AWAITED, recorded as `model`, guarded so a response that already has a grouping is declined.
+ * `identifyFinishedResponse` is called from `POST /api/response` when the round completes, NOT
+ * AWAITED, recorded as `model`, guarded so a response that already has a grouping is declined.
  *
  * HOW THE SUCCESS PATH IS TESTED, SINCE THE MOCK CANNOT IDENTIFY. The mock provider is an INTERVIEW
  * simulator: it answers every call with the next interview question, which is why the seed carries
@@ -156,7 +155,6 @@ test('an ADMIN identification is still recorded as `admin`, because a rejudge is
 // ===========================================================================
 // 3. THE FAILURE MODE - "not identified yet", never "lost"
 // ===========================================================================
-
 test('identifyFinishedResponse NEVER THROWS, whatever the model does', async () => {
     // IT RUNS AFTER THE PARTICIPANT'S TURN HAS BEEN SAVED AND ANSWERED, so a model outage must not
     // become an error the participant sees. Every failure is reported and swallowed.

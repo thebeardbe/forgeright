@@ -1,30 +1,30 @@
 /**
  * THE TWO STORED SHAPES, AND THE READERS THAT MUST AGREE ABOUT THEM.
  *
- * WHY THIS FILE EXISTS. A live interview saves `{ workflows: [ ... ] }`; an imported round saves the
- * workflow directly. Two readers assumed the second shape:
+ * WHAT THIS FILE COVERS. A live interview saves `{ workflows: [ ... ] }`; an imported round saves
+ * the workflow directly. Two readers must handle both:
  *
- *   ai/merge-steps.js   read `response.data.steps`          -> 0 steps, 0 departments
- *   ai/weigh-core.js    read `response.data?.[field]`       -> {} for all fourteen fields
+ *   ai/merge-steps.js   reads `response.data.steps`          -> 0 steps, 0 departments
+ *   ai/weigh-core.js    reads `response.data?.[field]`       -> {} for all fourteen fields
  *
- * On a real interview that scored a described process at ZERO, with "No steps were recorded" for
- * work the participant had described in three steps, and an EMPTY "what the participants said"
- * section in the weighing prompt - a reader failure that reads as a model failure.
+ * On a nested interview that scores a described process at ZERO, with "No steps were recorded" for
+ * work the participant described in three steps, and an EMPTY "what the participants said" section
+ * in the weighing prompt - a reader failure that reads as a model failure.
  *
- * THE DEMO HID IT COMPLETELY: `scripts/seed-demo-org.js` writes the FLAT shape, so the committed
- * demo artefact weighs correctly and the deployed demo looks perfect. The first real client
- * interview would have been the one that scored zero.
+ * THE DEMO HIDES IT: `scripts/seed-demo-org.js` writes the FLAT shape, so the committed demo
+ * artefact weighs correctly and the deployed demo looks perfect. The first real client interview is
+ * the one that scores zero.
  *
  * THE ROOT CAUSE IS THE SHAPE OF THE COVERAGE, NOT A MISSING ASSERTION. Every existing fixture in
- * both files used the flat shape, so the nested read was never exercised by anybody - and a shape
- * change in one module is invisible to another module's tests. So this file builds ONE workflow in
- * TWO stored shapes and asserts the two produce the SAME result, through EACH reader. That pairing
- * is what would have caught the defect on the day it broke: it fails the moment either reader
- * stops resolving, whichever shape the rest of the suite happens to use.
+ * both files uses the flat shape, so the nested read is exercised by nobody - and a shape change in
+ * one module is invisible to another module's tests. So this file builds ONE workflow in TWO stored
+ * shapes and asserts the two produce the SAME result, through EACH reader. That pairing is what
+ * catches the failure: it fails the moment either reader stops resolving, whichever shape the rest
+ * of the suite happens to use.
  *
  * BOTH SHAPES ARE ASSERTED, NOT ONLY THE NESTED ONE. A test that covered only the nested shape
- * would leave the demo path unguarded, and the demo is what the owner deploys - so the flat variant
- * is not legacy here, it is the deployed artefact.
+ * would leave the demo path unguarded, and the demo is the deployed artefact - so the flat variant
+ * is not legacy here.
  *
  * NO PRODUCTION CODE IS TOUCHED, and `data/demo/` plus `scripts/seed-demo-org.js` are unchanged:
  * the flat shape is deliberate and the committed scores (68, 58, 58, 58, 58, 38, 38) depend on it.
@@ -45,7 +45,7 @@ import { responseWorkflow as reExported } from '../lib/view-format.js';
  * A workflow as a participant described it, with the fields both readers consume.
  *
  * Three steps, one marked as needing a person, and one touched department - the shape of a real
- * answer rather than a single field. The counts matter: the defect reported 0 steps and 0
+ * answer rather than a single field. The counts matter: a flat read reports 0 steps and 0
  * departments where the resolved read sees 3 and 1.
  */
 const WORKFLOW = {
@@ -78,8 +78,8 @@ const nestedResponse = (overrides = {}) => ({
 // ===========================================================================
 
 test('mergeProcessSteps: a NESTED payload yields the participant\'s steps, flags and departments', () => {
-    // THE DEFECT ITSELF. This read `response.data.steps` and found nothing, so a described process
-    // merged to zero steps with every step-derived term unmeasured.
+    // A read of `response.data.steps` finds nothing, so a described process merges to zero steps
+    // with every step-derived term unmeasured.
     const merged = mergeProcessSteps([nestedResponse()]);
 
     assert.equal(merged.stepCount, 3, 'three steps are seen, not zero');
@@ -102,13 +102,13 @@ test('mergeProcessSteps: the FLAT payload yields the SAME result as the nested o
     assert.deepEqual(flat.describedBy, [['Finance', 1]]);
 });
 
-test('the counts the defect reported: 0 steps and 0 departments become 3 and 1', () => {
-    // The numbers from the live payload, pinned. A regression that reintroduced the flat read would
+test('the counts a nested read must produce: 3 steps and 1 department, not 0 and 0', () => {
+    // The counts from a real nested payload, pinned. A reader that reintroduced the flat read would
     // make this 0 and [] while every flat-shape test in merge-steps.test.js still passed.
     const merged = mergeProcessSteps([nestedResponse()]);
 
-    assert.notEqual(merged.stepCount, 0, 'no longer zero steps');
-    assert.notEqual(merged.describedBy.length, 0, 'no longer zero departments');
+    assert.notEqual(merged.stepCount, 0, 'not zero steps');
+    assert.notEqual(merged.describedBy.length, 0, 'not zero departments');
     assert.equal(merged.stepCount, WORKFLOW.steps.length);
     assert.deepEqual(merged.describedBy, [['Finance', 1]]);
 });
@@ -201,9 +201,9 @@ test('the participant block carries ALL the fields the participant supplied', ()
 });
 
 test('the weighing prompt keeps its section heading with content under it', () => {
-    // The empty section was the SYMPTOM, so the heading plus content is asserted as a pair: the
-    // heading alone would render for an empty block too, which is what made the defect look like a
-    // model failure.
+    // The empty section is the SYMPTOM, so the heading plus content is asserted as a pair: the
+    // heading alone would render for an empty block too, which makes the failure look like a model
+    // failure rather than a reader failure.
     const message = weighingMessage(nestedResponse());
     assert.match(message, /## What the participants said\s*\{[^}]*"task"/,
         'the heading is followed by real fields, not an empty object');
@@ -244,14 +244,14 @@ test('the RE-EXPORT from lib/view-format.js is the same function, so callers are
 });
 
 // ===========================================================================
-// 4. THE PROPERTY THAT WOULD HAVE CAUGHT IT ON THE DAY
+// 4. THE PROPERTY THAT CATCHES A SHAPE MISMATCH
 // ===========================================================================
 
 test('BOTH READERS AGREE ABOUT BOTH SHAPES - the shape of the coverage that was missing', () => {
-    // THE TEST THIS FILE EXISTS FOR. The defect was not a missing assertion inside one reader; it
-    // was that no reader's tests exercised the shape the OTHER module produced. So this asserts the
-    // two shapes produce identical results through BOTH readers AT ONCE - and it fails if either
-    // reader stops resolving, whichever shape the other tests in the suite happen to use.
+    // WHY THIS TEST EXISTS. The failure was not a missing assertion inside one reader; it was that
+    // no reader's tests exercised the shape the OTHER module produced. So this asserts the two
+    // shapes produce identical results through BOTH readers AT ONCE - and it fails if either reader
+    // stops resolving, whichever shape the other tests in the suite happen to use.
     const nested = {
         merged: mergeProcessSteps([nestedResponse()]),
         fields: participantFields(weighingMessage(nestedResponse()))

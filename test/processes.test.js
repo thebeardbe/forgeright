@@ -184,10 +184,9 @@ test('a MISSING confidence is accepted and recorded as low', () => {
 // 2. THE MERGE CARRIES MEMBERSHIP FORWARD
 // ===========================================================================
 //
-// The defect this pins: a joining response used to create a revision containing
-// only itself, so a merged process reported ONE response behind it when two had
-// merged. That loses participants silently, which is the failure a reader would
-// never notice from the summary.
+// A joining response must not create a revision containing only itself, or a merged process
+// reports ONE response behind it when two merged. That loses participants silently, which is the
+// failure a reader would never notice from the summary.
 
 test('a first response creates a process with one response behind it', () => {
     const { org, response } = orgWithResponse({ task: 'first' });

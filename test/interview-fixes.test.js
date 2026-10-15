@@ -1,13 +1,11 @@
 /**
- * The four interview fixes from 831e5ce, and the partial tag from 9b161f5.
+ * Four interview rules, and the partial tag.
  *
- * All observed against the owner's own runs with a real provider, and none had tests:
- *
- *   1. `validateWorkflows` validated the WRONG SHAPE, so a finished interview was
- *      rejected as "1 entry has no id" and died.
- *   2. the closing question was gated by nothing.
- *   3. the fresh-start rule caused DATA LOSS unless the participant confirmed.
- *   4. a completion claim could NARROW the payload, losing a process's answers.
+ *  1. `validateWorkflows` validates the RIGHT SHAPE, so a finished interview is not rejected as
+ *     "1 entry has no id".
+ *  2. the closing question is gated.
+ *  3. the fresh-start rule does not lose data unless the participant confirmed.
+ *  4. a completion claim cannot NARROW the payload and lose a process's answers.
  *
  * Plus the `stepsStillNeed` guard, which is recursive now, and the partial tag.
  */
@@ -174,8 +172,8 @@ test('the Dutch prompt gates the closing question too', () => {
 });
 
 test('the OLD unconditional wording is gone from both prompts', () => {
-    // The sentence used to stand alone with no condition, so the model asked it whenever
-    // a process felt finished. Pinned as an absence so it cannot drift back.
+    // The sentence must not stand alone with no condition, because the model would then ask it
+    // whenever a process felt finished. Pinned as an absence so it cannot drift back.
     for (const file of ['prompt_en.md', 'prompt_nl.md']) {
         const prompt = fs.readFileSync(path.join(PROMPTS_DIR, file), 'utf8');
         assert.equal(
@@ -214,9 +212,8 @@ test('the Dutch fresh-start rule is conditional too', () => {
 });
 
 test('neither prompt drops a finished process on the model\'s own belief alone', () => {
-    // The failure the fix addresses: the rule triggering on the model believing a process
-    // was finished. The wording must require the PARTICIPANT, so a model-only trigger is
-    // not present.
+    // The rule must not trigger on the model believing a process was finished: the wording
+    // requires the PARTICIPANT, so a model-only trigger must not be present.
     for (const file of ['prompt_en.md', 'prompt_nl.md']) {
         const prompt = fs.readFileSync(path.join(PROMPTS_DIR, file), 'utf8');
         assert.equal(
@@ -231,7 +228,7 @@ test('neither prompt drops a finished process on the model\'s own belief alone',
 // 4. A COMPLETION CLAIM CANNOT NARROW THE PAYLOAD — THE BROWSER HALF
 // ===========================================================================
 //
-// Driven through the REAL client script in a sandbox, because the fix is a browser IIFE
+// Driven through the REAL client script in a sandbox, because the client is a browser IIFE
 // with no exports. This tests the behaviour: a completion reply that DROPS a process the
 // round already had must still POST that process.
 
@@ -320,8 +317,8 @@ test('a completion reply that DROPS a process still POSTS it, carried forward', 
 });
 
 test('the narrowing is NOT triggered when no process was dropped', async () => {
-    // The control: a reply that keeps everything carries nothing forward, so the fix does
-    // not silently accumulate duplicates.
+    // The control: a reply that keeps everything carries nothing forward, so nothing is
+    // silently accumulated as a duplicate.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-1', title: 'One' }, { id: 'proc-2', title: 'Two' }] } }

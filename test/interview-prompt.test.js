@@ -1,19 +1,16 @@
 /**
- * The interview prompt's DERIVE / ASK / RECORD rewrite, and the `{ said: ... }` marker.
+ * The interview prompt's DERIVE / ASK / RECORD structure, and the `{ said: ... }` marker.
  *
- * WHY THIS FILE EXISTS. The prompt used to say, of the typed minimum, "ask about it - once,
- * in different words". That instruction is what the owner experienced as the model looping,
- * and the model was following it. It applied to only four fields, so the other eleven had no
- * rule at all and the model fell back to asking.
- *
- * The rewrite covers all fifteen fields with three steps, makes the overlap between fields
- * concrete, and adds a stop rule. `{ said: ... }` records an answer that will not fit a type,
- * and is refused by the typed minimum so a model cannot complete by writing prose everywhere.
+ * WHAT THE PROMPT GOVERNS. An instruction of the form "ask about it - once, in different words",
+ * applied to only four fields, leaves the other eleven with no rule and the model falls back to
+ * asking and repeating. The prompt now covers all fifteen fields with three steps, makes the
+ * overlap between fields concrete, and adds a stop rule. `{ said: ... }` records an answer that
+ * will not fit a type, and is refused by the typed minimum so a model cannot complete by writing
+ * prose everywhere.
  *
  * PROMPT TESTS ARE TEXT ASSERTIONS, and they are the right shape for a change whose artefact
  * IS prose: the rule is the thing that governs the model, so the rule's presence and its
- * exact condition are the behaviour. They are pinned against drift, which is the failure this
- * file is for.
+ * exact condition are the behaviour. They are pinned against drift.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -167,15 +164,13 @@ test('the stop rule is made detectable through the conversation, with NO new sta
 });
 
 test('the model really does receive its own earlier turns, so the stop rule rests on something true', async () => {
-    // THE INTENT, WHICH STILL HOLDS: an assistant turn the model produced is in the next
-    // request's messages, so the model can read its own earlier questions and the stop rule
-    // rests on something real rather than on remembered state elsewhere.
+    // An assistant turn the model produced is in the next request's messages, so the model can
+    // read its own earlier questions and the stop rule rests on something real rather than on
+    // remembered state elsewhere.
     //
-    // THE CLAIM IS NO-NEW-STATE, NOT NO-TRANSFORMATION. The line that used to be asserted here
-    // was `safeMessages.push(msg)`, and it now pushes `{ role, content }` INSTEAD - the same
-    // turn, with the internal bookkeeping fields dropped before the provider sees them. So this
-    // reads the purpose rather than the push: non-user messages are forwarded, and the forwarded
-    // form keeps role and content.
+    // THE CLAIM IS NO-NEW-STATE, NOT NO-TRANSFORMATION: non-user messages are forwarded, and the
+    // forwarded form pushes `{ role, content }` rather than the whole message, dropping the
+    // internal bookkeeping fields before the provider sees them. This reads that purpose.
     //
     // Checked against the source, since a live call would need a provider.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
@@ -338,8 +333,8 @@ test('the two outcomes are DIFFERENT for the SAME field, asserted directly', () 
 // ===========================================================================
 
 test('a `{ said: ... }` reaches the weighing prompt as saidInTheirWords, with a note', () => {
-    // THE BUG THIS GUARDS: `mergeParticipants` passed the raw marker, so `{ said: "just me" }`
-    // would have reached the model as an unexplained object it might score as a figure.
+    // The raw marker must not reach the model: `{ said: "just me" }` would arrive as an
+    // unexplained object it might score as a figure.
     const grouping = {
         responses: [{ responseId: 'r1', department: 'Finance', data: { task: 'invoices', peopleAffected: { said: 'just me' } } }]
     };
@@ -348,11 +343,11 @@ test('a `{ said: ... }` reaches the weighing prompt as saidInTheirWords, with a 
     assert.match(message, /saidInTheirWords/, 'the value is labelled as the participant\'s words');
     assert.match(message, /"saidInTheirWords":\s*"just me"/, 'and carries the words themselves');
 
-    // The note is the fix, so its presence is the assertion.
+    // The note must be present: it is what tells the model the value is not a figure.
     assert.match(message, /not a figure/i, 'the note says it is not a figure');
     assert.match(message, /not measured/i, 'and that an unmeasurable field differs from an empty one');
 
-    // The raw marker must NOT reach the model: that was the bug.
+    // The raw marker must NOT reach the model.
     assert.equal(/"said":/.test(message), false, 'the raw { said } object must not appear');
 });
 
@@ -405,16 +400,16 @@ test('a prose field renders the words, with no leftover marker object', async ()
 });
 
 // ===========================================================================
-// THE AUTHOR'S TWO "NOT FULLY WORKING" REPORTS
+// TWO PROMPT GAPS THAT NEED A LIVE PROVIDER
 // ===========================================================================
 //
 // These are assertions about the PROMPT, because the model's behaviour needs a live
 // provider. They pin whether the rule as written can govern what it claims to.
 
 test('REPORT 1: the stop rule forbids a repeated PHRASE, not only a repeated field', () => {
-    // The author saw the same question text asked EIGHT times while `missing` fell from 10 to
-    // 4, and reports the stop rule governs ASKING and did not catch the phrase. If the rule
-    // only counts asks-per-field, a model can repeat one sentence for different fields.
+    // A question text repeated eight times while `missing` falls from 10 to 4 shows the stop rule
+    // governs ASKING and does not catch the phrase. If the rule only counts asks-per-field, a
+    // model can repeat one sentence for different fields.
     const text = prompt('en');
 
     // The rule DOES name a repeated question, not only a repeated field.

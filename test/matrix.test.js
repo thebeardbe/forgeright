@@ -330,10 +330,9 @@ test('the fixture pairs a rule with false and a variable basis with true, per th
 // 4. BOTH PAYLOAD SHAPES
 // ===========================================================================
 //
-// A defect fixed in the last commit: a reply carrying `processes` and no `audit`
-// fell through to the older single-shot check and errored. Both directions are
-// pinned here so it cannot return. `workflowsFrom` is the one place that reads
-// either shape, so it is tested directly as well as through parseModelResponse.
+// A reply carrying `processes` and no `audit` must not fall through to the older single-shot
+// check and error. Both directions are pinned here so it cannot return. `workflowsFrom` is the
+// one place that reads either shape, so it is tested directly as well as through parseModelResponse.
 
 test('a processes-only reply with a complete process returns complete', () => {
     const result = completeWith([completeProcess()]);
@@ -513,9 +512,8 @@ async function mockTurn(userTurns, lang = 'en') {
 }
 
 test('the mock emits `processes` and NOT `audit` on completion', async () => {
-    // THE MASKING THAT HID THE DEFECT. Emitting a second shape to satisfy the
-    // parser hides exactly the defect the parser has, so the absence is asserted
-    // explicitly: a future change that re-adds the old key fails here.
+    // Emitting a second shape to satisfy the parser would hide exactly the defect the parser has,
+    // so the absence is asserted explicitly: a future change that re-adds the old key fails here.
     const reply = await mockTurn(8);
 
     assert.equal(reply.status, 'complete');

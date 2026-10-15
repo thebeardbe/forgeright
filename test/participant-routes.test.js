@@ -500,7 +500,7 @@ test('a revoked token and an unknown token are refused identically', async () =>
 test('after a write as A, analysis for B is empty of it and for A contains it', () => {
     const marker = 'isolation-final';
     // A write went through the store API here rather than HTTP, because this test
-    // is about the read scoping, which the previous tests already exercised over
+    // is about the read scoping, which the other tests already exercised over
     // HTTP. The file inspection below is the evidence either way.
     store.addResponse(ORG_A.id, TOKEN_A, { department: 'Finance', data: { marker } });
 
@@ -540,8 +540,7 @@ test('a valid transcript is stored and read back in order over HTTP', async () =
 });
 
 test('a malformed transcript is refused with 400, not silently dropped', async () => {
-    // Every shape the builder exercised, plus the two a caller is most likely to
-    // send by mistake. None may be stored.
+    // Every shape a caller is likely to send by mistake. None may be stored.
     const before = responsesInFile(ORG_A.id).length;
     const badTranscripts = [
         'not an array',
@@ -649,12 +648,8 @@ test('POST /lost-link responds identically whether or not the address was invite
 // 7. mayUseQuestionnaire: WHICH CREDENTIAL ADMITS A REQUEST
 // ===========================================================================
 //
-// lib/routes-api.js accepts ONE credential: a live participant token. The shared
-// access code was removed (see mayUseQuestionnaire), so there is no second way in.
-//
-// DELETED HERE, because the behaviour no longer exists: `the access code alone still
-// admits the questionnaire` asserted that a request carrying only `pass` was
-// admitted, and that path is gone.
+// lib/routes-api.js accepts ONE credential: a live participant token. There is no
+// second way in: a request carrying only `pass` is not admitted.
 
 test('a live participant token admits the questionnaire', async () => {
     const res = await post('/api/chat', {
@@ -695,8 +690,8 @@ test('a bogus token is refused with the LINK wording, not a code', async () => {
 });
 
 test('no credential at all is refused, and the refusal says what to DO', async () => {
-    // MORE IMPORTANT NOW, not less: this is no longer a fallback that a code could
-    // satisfy, it is the only refusal for a request that names no participant.
+    // This is the only refusal for a request that names no participant, not a fallback a code
+    // could satisfy.
     const res = await post('/api/chat', { messages: [{ role: 'user', content: 'hello' }] });
     assert.equal(res.status, 403);
     assert.equal(
@@ -707,9 +702,7 @@ test('no credential at all is refused, and the refusal says what to DO', async (
 });
 
 test('a request carrying the removed `pass` field alone is refused like no credential', async () => {
-    // The tokenless branch is gone, so a `pass` value is ignored rather than honoured.
-    // This is the closest expressible form of the deleted access-code test, and it
-    // asserts the OPPOSITE: the code no longer admits anyone.
+    // A `pass` value is ignored rather than honoured: the code admits no one.
     const res = await post('/api/chat', {
         pass: 'any-value-at-all',
         messages: [{ role: 'user', content: 'hello' }]

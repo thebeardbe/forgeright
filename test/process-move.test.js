@@ -1,14 +1,13 @@
 /**
  * The workflow-2 fixes: a move, and the transaction join.
  *
- * WHY THIS FILE EXISTS. Four commits (0708717, dc0ee3c, 0666ddd, c7f8ec8) touched
- * fourteen source files and zero test files. The reviewer reverted the central
- * feature - a response re-identified into a different process now leaves the one it
- * left - and 812 tests still passed. The existing re-identification tests all stay
- * WITHIN one process, so none of them moves one.
+ * WHAT THIS FILE COVERS. A response re-identified into a different process must leave the one it
+ * left, and a nested write must join the outer transaction rather than opening its own. The
+ * existing re-identification tests all stay WITHIN one process, so none of them moves one, and a
+ * move is the behaviour that needs its own fixture.
  *
- * Every test here is mutation-verified in the report. A test for these behaviours
- * that has never been seen to fail is the failure this file exists to prevent.
+ * Every test here is mutation-verified in the report. A test for these behaviours that has never
+ * been seen to fail is the failure this file exists to prevent.
  *
  * STORE_DIR is a temp directory per run, set before anything is imported.
  */
@@ -99,8 +98,8 @@ function doubledResponses(orgId) {
 // ===========================================================================
 
 test('a response re-identified into ANOTHER process leaves the one it left', () => {
-    // The regression the existing tests miss: every re-identification test in
-    // test/processes.test.js stays within one process.
+    // Every re-identification test in test/processes.test.js stays within one process, so
+    // none of them exercises a move.
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const two = addResponse({ task: 'two' });
@@ -201,7 +200,7 @@ test('a NON-MOVING create returns left: null and membership is what it was', () 
 });
 
 test('a NON-MOVING merge returns left: null and the process keeps both members', () => {
-    // THE COMMON PATH. A regression here would be worse than the original bug.
+    // THE COMMON PATH. A defect here would be worse than one on the unusual path.
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const two = addResponse({ task: 'two' });

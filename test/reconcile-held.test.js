@@ -1,7 +1,8 @@
 /**
  * ONE PROCESS THE MODEL RE-EMITTED WAS SCORED AS TWO.
  *
- * THE OWNER'S PAYLOAD, from his own transcript - this is the artefact, not a reconstruction:
+ * THE PAYLOAD THIS GUARDS AGAINST, from a real transcript - this is the artefact, not a
+ * reconstruction:
  *
  *   [ { task: "Testing whether a server is up",    frequencyPerWeek: 56,
  *       steps: [Open the URL, Check if it is up, Log it in Excel, Notify IT] },
@@ -60,10 +61,10 @@ const HELD_FIRST_ENTRY = [
     }
 ];
 
-test('the OWNER\'S payload folds to ONE process, keeping the round\'s `frequencyPerWeek` 56', () => {
-    // THE DEFECT ITSELF, on his own data. The two entries are one process described twice, and the
-    // value that survives is the ROUND'S recorded 56 - not the model's re-derived 7, which it
-    // produced because it had forgotten it already recorded 56 servers.
+test('the REAL payload folds to ONE process, keeping the round\'s `frequencyPerWeek` 56', () => {
+    // The two entries are one process described twice, and the value that survives is the ROUND'S
+    // recorded 56 - not the model's re-derived 7, which it produced because it had forgotten it
+    // already recorded 56 servers.
     const { workflows, folded } = reconcileWithHeld(OWNER_PAYLOAD, HELD_FIRST_ENTRY);
 
     assert.equal(workflows.length, 1, 'the two reworded entries are ONE process');
