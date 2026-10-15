@@ -894,19 +894,18 @@ WITHIN a block.** Measured on the worst case, `reconcileWorkflowIdentity`'s doc 
 `public/js/audit.js`, the step-name rule was stated **nine times**, the defect history four,
 absence three and the harm direction twice — **24 sentences for a 3-sentence contract.**
 
-### The rule the review established
+### Superseded: the rule an agent invented
 
-> **KEEP THE FIGURE. CUT THE NARRATIVE THAT CARRIED IT — unless the METHOD is the point.**
+**The paragraph that used to sit here — "KEEP THE FIGURE. CUT THE NARRATIVE THAT CARRIED
+IT" — was NOT the owner's instruction.** It was a review subagent's phrasing, written into this
+file as though it were a decision, and then applied across three passes as if it had been asked
+for. It is deleted rather than reworded, because a rule recorded here as the owner's gets read
+back as the owner's.
 
-Most measurements are already reproduced by the test suite, so their **result** is what a
-comment owes a reader. Two exceptions keep their method IN FULL, because the method is the
-content:
-
-- **`lib/store/schema.js`: the hash-check instruction.** *"HASH THE WHOLE FILE... FILE SIZE
-  ALONE IS NOT THE TEST"* — it tells the reader their obvious test is WRONG.
-- **`lib/auth/demo-readonly.js`: the reproduced attack.** `attacker@evil.test` wrote a
-  `login_token` and the redemption created a tenant. It is the security justification for the
-  allow-list, not a measurement whose result suffices.
+**The instruction actually given:** one sentence saying why the code is there, plus what the
+unclear variables mean. Architecture, flows and anything that would break the code go in the
+docs. The narrative — how a defect was found, what an earlier version did, what was measured —
+is gone. The owner wrote the code; the comments decode it, they do not narrate it.
 
 ### `ai/audit-core.js`: cut now, split next session
 
