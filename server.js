@@ -111,31 +111,29 @@ app.set('views', path.join(__dirname, 'views'));
  *
  * The value is "" when the site is at an origin root, and views interpolate it
  * directly: href="<%= basePath %>/admin/login".
+ *
+ * `currentUrl` IS THE PATH THE BROWSER IS ON, for the theme picker's way back. TAKEN FROM THE
+ * REQUEST, NOT BUILT FROM PUBLIC_BASE_URL: behind a proxy terminating a different hostname, a
+ * link built from the configuration sends the user to a host they are not using.
+ *
+ * **THE QUERY STRING IS DELIBERATELY DROPPED - A SECURITY DECISION.** This value goes into a
+ * hidden form field on every page, so carrying the query would echo whatever the URL held into
+ * the body: the demo link's TOKEN, on the very refusal page that exists to say nothing about it.
+ * A credential reflected into HTML lands in browser history, a proxy log, and any error reporter
+ * capturing the DOM. MEASURED: a bad-token request returned a page containing the submitted
+ * token, and the demo tests caught it because two requests that must be indistinguishable had
+ * different bodies.
+ *
+ * THE COST: changing the theme on a page showing a rejudge notice returns without the notice - a
+ * small convenience against not writing credentials into pages.
  */
 app.use((req, res, next) => {
     res.locals.basePath = PUBLIC_PATH;
-    // `currentUrl` is the path the browser is on, for the theme picker's way back.
-    //
-    // TAKEN FROM THE REQUEST, NOT BUILT FROM PUBLIC_BASE_URL: behind a proxy terminating a
-    // different hostname, a link built from the configuration sends the user to a host they
-    // are not using.
-    //
-    // **THE QUERY STRING IS DELIBERATELY DROPPED - A SECURITY DECISION.** This value goes into
-    // a hidden form field on every page, so carrying the query would echo whatever the URL
-    // held into the body: the demo link's TOKEN, on the very refusal page that exists to say
-    // nothing about it. A credential reflected into HTML lands in browser history, a proxy
-    // log, and any error reporter capturing the DOM. MEASURED: a bad-token request returned a
-    // page containing the submitted token, and the demo tests caught it because two requests
-    // that must be indistinguishable had different bodies.
-    //
-    // THE COST: changing the theme on a page showing a rejudge notice returns without the
-    // notice - a small convenience against not writing credentials into pages.
 
-    // The picker's list, derived from the palette data so a new palette appears
-    // without touching a template. Ordered as lib/palettes.js orders them.
+    // The picker's list, derived from the palette data so a new palette appears without
+    // touching a template. Ordered as lib/palettes.js orders them.
     res.locals.themeOptions = PALETTE_IDS.map((id) => ({ id, name: PALETTES[id].name }));
 
-    // The path the browser is on, for the theme picker's way back. See the caveat above.
     res.locals.currentUrl = req.path;
 
     // The formatting helpers, so a template writes `<%= shortInstant(x) %>` rather than

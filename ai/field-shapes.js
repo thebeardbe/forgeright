@@ -254,16 +254,15 @@ function hasShape(value, shape, field) {
     const said = proseSaidIn(value);
     if (said !== null) return !TYPED_MINIMUM_FIELDS.includes(field);
 
-    // A LOWER BOUND ONLY, and not a general range check: there is no upper limit, and a
-    // non-number falls through to the shape switch below. Reading it as a range check would invite
-    // an upper bound to be added here without the shape being consulted at all.
+    // A LOWER BOUND ONLY, not a range check: there is no upper limit, and a non-number falls
+    // through to the shape switch. Reading it as a range check would invite an upper bound here
+    // without the shape being consulted at all.
     //
-    // The comparison is written INVERTED on purpose: `!(value > min)` rather than
-    // `value <= min`. They agree for every finite number, and they part company at
-    // NaN: `NaN <= min` is false, so a naive `value <= min` would let a NaN through
-    // as if it cleared the minimum, while `!(NaN > min)` is true and refuses it. Do
-    // not "simplify" this one. It is also STRICT, so a fractional frequency like
-    // `0.25` passes a minimum of 0.
+    // WRITTEN INVERTED ON PURPOSE: `!(value > min)`, not `value <= min`. They agree for every
+    // finite number and part company at NaN - `NaN <= min` is false, so the naive form lets a NaN
+    // through as if it cleared the minimum, while `!(NaN > min)` is true and refuses it. DO NOT
+    // "SIMPLIFY" THIS. It is also STRICT, so a fractional frequency like `0.25` passes a minimum
+    // of 0.
     if (field !== undefined && Object.hasOwn(FIELD_MINIMUMS, field)
         && typeof value === 'number' && !(value > FIELD_MINIMUMS[field])) {
         // Reported as not supplied so the interview asks again, which is the safe

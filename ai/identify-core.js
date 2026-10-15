@@ -58,10 +58,7 @@ async function loadIdentifyPrompt(toolId, lang) {
 export function buildComparisonMessage(response, knownProcesses, adminReasoning = null) {
     const parts = [];
 
-    // THE RAW PAYLOAD GOES UNDECORATED: a live round sends `{ workflows: [...] }` and an imported
-    // one sends the workflow directly, and a model reads through the wrapper where a field lookup
-    // cannot. MEASURED identical on both shapes. That is what makes it safe HERE and nowhere else:
-    // anything reading a NAMED field must resolve the shape first, or it finds nothing.
+    // Raw payload, undecorated; see the note above.
     parts.push('## The new response to identify');
     parts.push('');
     parts.push(JSON.stringify(response.data ?? {}, null, 2));
@@ -75,12 +72,7 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         for (const process of knownProcesses) {
             parts.push(`### ${process.id}`);
             parts.push(`name: ${process.name}`);
-            // NAMING THE RESPONSE'S CURRENT HOME IS WHAT STOPS A REJUDGE SPAWNING A SIBLING.
-            // Without it the model sees candidates and is not told the response is already in one,
-            // so "the argument changes nothing" looks like a fresh decision - and `rejudge.js`
-            // used to EXCLUDE this process entirely, which emptied the list in the ordinary case
-            // and had this function say "(none yet, so this is a new process)". MEASURED: the model
-            // did exactly that, and the process under review was left with no members.
+            // Naming the current home stops a rejudge spawning a sibling; see the note above.
             if (process.isCurrentHome === true) {
                 parts.push('THIS IS WHERE THE RESPONSE IS NOW. It is already in this process, so '
                     + 'matching it here means the grouping does not change.');

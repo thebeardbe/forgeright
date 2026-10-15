@@ -724,6 +724,13 @@ const FIELD_QUESTIONS = {
  * while `audit` is the older shape it also emits. Emptiness is judged only when there is nothing
  * better to fall back to.
  *
+ * A REPLY WITH NO OBJECT IS REPORTED AS UNREADABLE rather than parsed into a fragment, so a
+ * silently empty model response surfaces as a clear error instead of a downstream field access
+ * that fails for no visible reason. WHAT CAME BACK IS LOGGED, not just that it was unreadable:
+ * the message alone sent an earlier investigation back to the live API to find out what the
+ * model had said, when the answer was a bare prose question. Truncated at 120 characters -
+ * enough to see the shape, short enough not to dump a whole reply into the log.
+ *
  * EACH SHAPE IS VALIDATED AGAINST ITS OWN REQUIREMENTS. Checking only `status === 'complete'`
  * against the FINAL payload's requirements killed real interviews: `workflowsFrom` prefers
  * `processes`, whose field matrix never mentions `id` or `title`, so a finished interview was
@@ -745,16 +752,10 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
     // sentence survivable rather than fatal. See ai/json-extract.js and
     // NOTES-deepseek-json-mode.md.
     //
-    // A reply with NO object is reported as unreadable rather than parsed into a
-    // fragment, so a silently empty model response surfaces as a clear error
-    // instead of a downstream field access that fails for no visible reason.
+    // A reply with no object is reported as unreadable; see the note above.
     const parsed = extractJsonObject(raw);
     if (parsed === null) {
-        // WHAT CAME BACK IS LOGGED, not just that it was unreadable. The message
-        // alone ("returned an unreadable response") sent an earlier investigation
-        // back to the live API to find out what the model had actually said, when
-        // the answer was a bare prose question. Truncated at 120 characters: enough
-        // to see the shape, short enough not to dump a whole reply into the log.
+        // The reply itself is logged; see the note above.
         console.error(
             `[audit] no JSON object in the model reply (${String(raw).length} chars): ` +
             (String(raw).trim() === '' ? '(blank reply)' : JSON.stringify(String(raw).slice(0, 120)))
@@ -1075,17 +1076,18 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
  * it also sent. The envelope is not preferred for the workflows themselves, which came from the
  * best source, but its labels are worth taking rather than dropping.
  *
+ * THE ONE PLACE THE INTERVIEW PAYLOAD IS BUILT, so the one place the `id` and `title` the
+ * scorer requires are supplied. `workflowsFrom` resolves the payload from `parsed.processes`
+ * on a live interview, and the prompt's `processes` example carries NEITHER field - so without
+ * this the participant's answers reached `/api/score` without them and were refused with a 400
+ * and "The analysis could not be computed." See `ai/workflow-identity.js` for why the fields are
+ * generated rather than the validator relaxed, and how stability is guaranteed.
+ *
  * @param {object} parsed The parsed reply, which may carry the flags.
  * @param {Array<object>} workflows A non-empty array, already resolved.
  * @returns {object}
  */
 function normaliseProcessesPayload(parsed, workflows) {
-    // THE ONE PLACE THE INTERVIEW PAYLOAD IS BUILT, so this is the one place the `id` and `title`
-    // the scorer requires are supplied. `workflowsFrom` resolves the payload from `parsed.processes`
-    // on a live interview, and the prompt's `processes` example carries NEITHER field, so without
-    // this the participant's own answers reached `/api/score` without them and were refused with a
-    // 400 and "The analysis could not be computed." See `ai/workflow-identity.js` for why the
-    // fields are generated rather than the validator relaxed, and for how stability is guaranteed.
     const payload = { workflows: withWorkflowIdentity(workflows) };
 
     const envelope = parsed && typeof parsed.audit === 'object' && parsed.audit !== null ? parsed.audit : {};

@@ -396,19 +396,21 @@
      * implementation and NOT this one's mirror: it also decides whether a reply is the
      * round's process at all, while this reattaches an identity and collapses what is here.
      *
+     * NO EARLY RETURN ON AN EMPTY `held`: it looks like a cheap short-circuit and it is a bug,
+     * because the fold below compares entries WITHIN THIS REPLY and needs no round history. So
+     * returning early would leave the duplicate on the very first turn it appears - exactly when
+     * the stale copy is not yet in `held` and nothing else can catch it.
+     *
+     * EACH ENTRY IS MATCHED ON ITS OWN, so a reply carrying several processes, several wordings
+     * of one process, or both, is handled by the same pass.
+     *
      * @param {Array<object>} workflows The workflows from this reply.
      * @param {Map<string, object>} held The processes the round already has, by id.
      * @returns {Array<object>} The workflows, each carrying a held id where one matched.
      */
     function reconcileWorkflowIdentity(workflows, held) {
         if (!Array.isArray(workflows) || workflows.length === 0) return workflows;
-        // NO EARLY RETURN ON AN EMPTY `held`. It looks like a cheap short-circuit and it is a bug:
-        // the fold below compares entries WITHIN THIS REPLY and needs no round history at all, so
-        // returning here would leave the duplicate on the very first turn it appears - which is
-        // exactly when the stale copy is not yet in `held` and nothing else can catch it.
 
-        // EACH ENTRY IS MATCHED ON ITS OWN, so a reply carrying several processes, several
-        // wordings of one process, or both, is handled by the same pass.
         const resolved = workflows.map((workflow) => {
             if (!workflow || typeof workflow !== 'object' || Array.isArray(workflow)) return workflow;
 
