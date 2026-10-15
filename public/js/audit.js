@@ -389,8 +389,7 @@
     }
 
             /**
-     * Gives each process in this reply the identity the round already gave it, and collapses a
-     * reply
+     * Gives each process in this reply the identity the round already gave it, and collapses a reply
      * that describes the SAME process twice.
      *
      * THE DEFECT THIS FIXES, MEASURED: the server derives a process `id` from its `task`, and THE
@@ -398,19 +397,19 @@
      * score came from one variant while the others scored 0. Two runs of one interview gave 385
      * h/wk and 25.5 h/wk depending on how often the model reworded itself.
      *
-     * THE CONTRACT: every workflow in the reply is matched against every process the round holds,
-     * on the exact step-name co-test, and takes the id of the process it matches. The number of
-     * entries on either side is NOT part of it. A reply describing one process twice is then
-     * collapsed to the RICHER entry.
+     * WHAT THIS DOES, and only this: every workflow in the reply is matched against each process the
+     * round holds on the exact step-name co-test, and takes the id of the process it matches; then a
+     * reply describing one process twice is collapsed to the RICHER entry. The number of entries on
+     * either side is NOT part of the contract.
      *
      * THE HARM DIRECTION, which is why the matching is per-entry: two genuinely different processes
-     * each matching a DIFFERENT held process keep both ids and both entries, which is the case that
-     * would break if the rule assumed "one on each side". An entry matching nothing keeps its own id.
+     * each matching a DIFFERENT held process keep both ids and both entries - the case that would
+     * break if the rule assumed "one on each side" - while an entry matching nothing keeps its own id.
      *
-     * THE EVIDENCE FOR THE CO-TEST ITSELF is in `ai/workflow-identity.js`, whose `reconcileWithHeld`
-     * applies the same rule server-side. THIS IS NOT ITS MIRROR: the server also decides whether a
-     * reply is the round's process at all, while this reattaches an identity and collapses what is
-     * already here.
+     * THE EVIDENCE FOR THE CO-TEST, and why it is a step name rather than the task, is in
+     * `ai/workflow-identity.js`. THAT IS THE SERVER'S IMPLEMENTATION AND NOT THIS ONE'S MIRROR: it
+     * also decides whether a reply is the round's process at all, while this reattaches an identity
+     * and collapses what is already here.
      *
      * @param {Array<object>} workflows The workflows from this reply.
      * @param {Map<string, object>} held The processes the round already has, by id.
@@ -503,20 +502,16 @@
         // function, a finished process beside "Onboarding a new supplier" (`task` and `trigger` only)
         // came out as ONE entry, the new process gone.
         //
-        // THE TWO SITUATIONS ARE THE SAME SHAPE, which is why no rule separates them - a stale
-        // carry-forward beside its own process, and a newly named process beside an unrelated one,
-        // are both an empty entry beside a rich sibling, and the prompt creates BOTH (line 521 holds
-        // the completed process, line 511 starts the new one with no steps).
-        //
-        // THE OBVIOUS DISCRIMINATOR WAS TESTED AND DOES NOT WORK. MEASURED on the artefacts: the case
-        // the arm was built for shares only FOUR words with its rich sibling, while a newly named
-        // process in the same domain shares TWO. Any overlap rule low enough to fold the first
-        // destroys the second, and naming a second process in a domain already described is the
-        // ordinary case. There is no separating value, so there is no rule to write.
+        // THE TWO SITUATIONS ARE THE SAME SHAPE: a stale carry-forward beside its own process, and a
+        // newly named process beside an unrelated one, are both an empty entry beside a rich sibling,
+        // and the prompt creates BOTH (line 521 holds the completed process, line 511 starts the new
+        // one with no steps). THE OBVIOUS DISCRIMINATOR - comparing the empty entry's task with its
+        // sibling's - WAS TESTED AND DOES NOT WORK: MEASURED, the case the arm was built for shares
+        // only FOUR words with its rich sibling while a newly named process in the same domain shares
+        // TWO, so any overlap rule low enough to fold the first destroys the second.
         //
         // THE ASYMMETRY DECIDES IT: an extra row is cosmetic - a second process reading "not
-        // measured" - while a discarded process is SILENT DATA LOSS the participant is never asked
-        // about again.
+        // measured" - while a discarded process is SILENT DATA LOSS.
         return merged;
     }
 
@@ -745,6 +740,28 @@
         return factors.some((f) => isProse(f) || isDeclined(f));
     }
 
+    /**
+     * `timePerPeriod` in words, or null when it is not a figure.
+     *
+     * THE OTHER HALF OF THE EFFORT PAIR, and it is an OBJECT rather than a number: `{ hours, period }`.
+     * `metaPart` below renders ANY object as unknown, so without this the card showed `not measured`
+     * for effort while the score used the participant's own number.
+     *
+     * THE LINE IS ai/period.js `timePerPeriodIsScorable`: a DESCRIPTION such as "2 hours a day" is an
+     * accepted answer with unknown hours, and scoring treats it as unmeasurable rather than zero, so
+     * it must not read as a measurement here either. The wording matches
+     * views/partials/response-fields.ejs, so the answers view and the analysis agree.
+     *
+     * @param {*} value The workflow's `timePerPeriod`.
+     * @returns {string|null} For example "2 hours per week", or null when there is no figure.
+     */
+    function timePerPeriodText(value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+        if (typeof value.hours !== 'number' || !Number.isFinite(value.hours) || value.hours <= 0) return null;
+        if (typeof value.period !== 'string' || value.period.trim() === '') return null;
+        return value.hours + ' hours per ' + value.period.trim();
+    }
+
     /** Renders a measurement in HTML, or the reason there is none. */
     function metaPart(value, suffix) {
         const text = fieldText(value);
@@ -800,6 +817,8 @@
                 // rather than printing "undefined" as though it were a reading.
                 metaPart(wf.frequencyPerWeek, '/wk') + ' · ' +
                 metaPart(wf.minutesPerInstance, ' min') + ' · ' +
+                // See `timePerPeriodText` for why this needs resolving before `metaPart`.
+                metaPart(timePerPeriodText(wf.timePerPeriod) ?? wf.timePerPeriod, '') + ' · ' +
                 metaPart(wf.peopleAffected, ' people') + ' · ' +
                 'judgement ' + escapeHtml(String(wf.judgementScore)) + '/5' +
                 '</div></div>';
@@ -862,6 +881,9 @@
                     '### ' + wf.title + ' - ' + scoreLabel, '',
                     '- How often: ' + markdownValue(wf.frequencyPerWeek, ' per week'),
                     '- Time for one instance: ' + markdownValue(wf.minutesPerInstance, ' minutes'),
+                    // The either/or partner of the line above, through the same helper as the card.
+                    '- Time per period: ' +
+                        markdownValue(timePerPeriodText(wf.timePerPeriod) ?? wf.timePerPeriod, ''),
                     '- People involved: ' + markdownValue(wf.peopleAffected, ''),
                     '- Needs judgement: ' + wf.judgementScore + '/5 (1 = always, 5 = follows rules)',
                     '- Same steps every time: ' + (wf.stepsConsistent ? 'yes' : 'no'),

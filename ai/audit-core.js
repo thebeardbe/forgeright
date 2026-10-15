@@ -237,12 +237,10 @@ function countReason(count, singular, plural) {
  * The workflows a completion reply carries, from either shape.
  *
  * THE ONE PLACE THAT KNOWS BOTH SHAPES: the interview shape carries `processes`, which is what the
- * prompt asks the model to emit, and the older single-shot shape carries `audit.workflows`.
- * Everything downstream reads the payload through this function, so a consumer cannot be updated
- * for one shape and missed for the other - which is how this defect happened, with the completion
- * check and the client both reading `audit` alone while the prompt had moved to `processes`.
- *
- * Both are returned as a plain array, so no caller branches.
+ * prompt asks the model to emit, and the older single-shot shape carries `audit.workflows`. Every
+ * consumer reads the payload through here, so none can be updated for one shape and missed for the
+ * other - which is how this defect happened. Both are returned as a plain array, so no caller
+ * branches.
  *
  * @param {object} parsed A parsed model response.
  * @returns {Array<object>|undefined} The workflows, or undefined when neither is present.
@@ -276,13 +274,10 @@ function hasPayload(parsed) {
  * takes the payload straight from the client. Validating only the model path left the direct route
  * able to serve a blank heading, and duplicated checks drift apart.
  *
- * EVERY CHECK BELOW IS LIVE ON THE HTTP PATH, including the one for an entry that is not an
- * object. That check WAS reported as unreachable, and it is - FROM THE INTERVIEW PATH only, where a
- * malformed entry leaves the matrix incomplete so the completion gate returns `asking` first.
- * `POST /api/score` calls this DIRECTLY with whatever the client sent, so `{"workflows":[null]}`
- * returns "1 entry is not an object" and that is the only thing between a malformed body and the
- * scorer. DO NOT REMOVE IT AS DEAD, and do not relax it because the interview path cannot produce
- * it.
+ * EVERY CHECK BELOW IS LIVE ON THE HTTP PATH, including the one for an entry that is not an object.
+ * That check IS unreachable from the INTERVIEW path, where a malformed entry leaves the matrix
+ * incomplete so the completion gate returns `asking` first - but `POST /api/score` calls this
+ * DIRECTLY, so `{"workflows":[null]}` returns "1 entry is not an object". DO NOT REMOVE IT AS DEAD.
  *
  * @param {*} workflows
  * @returns {{ok: true} | {ok: false, reason: string}}
@@ -371,15 +366,13 @@ const CLOSING_QUESTION_SHAPES = [
     /\banything else\s+(?:you|we)(?:['\u2019]d|\s+would)?\s+(?:like|want|wish|add|cover)\b/i,
     /\banything else\s+(?:to add|to cover|before we)\b/i,
     /\bsomething else\b/i,
-    // MOVING ON MEANS TO A DIFFERENT PROCESS, NOT THE NEXT STEP OF THIS ONE. The earlier version
-    // matched "move on" and so gated "Would you like to move on to the next step?", which is an
-    // ordinary question about the current work. The target has to be another/a new one.
+    // MOVING ON MEANS TO A DIFFERENT PROCESS, NOT THE NEXT STEP OF THIS ONE: matching "move on" alone
+    // would gate "Would you like to move on to the next step?", which asks about the current work.
     /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:\w+\s+){0,2}(?:move on to\s+(?:the next process|another|a new)|continue with\s+(?:another|the next process))\b/i,
     /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:stop|finish|wrap up|end)\b/i,
-    // `shall we move on` IS A CLOSING OFFER even with no object, which the narrowing above got
-    // wrong. The distinction from "Would you like to move on to the next step?" is the SUBJECT OF
-    // THE SENTENCE: "we" moves the conversation somewhere, while "you ... to the next step" asks
-    // about one step of the work in front of them. Only the latter is an ordinary question.
+    // `shall we move on` IS A CLOSING OFFER even with no object, and THE DISTINCTION IS THE SUBJECT
+    // OF THE SENTENCE: "we" moves the conversation somewhere, while "you ... to the next step" asks
+    // about one step of the work in front of them.
     /\b(?:shall|should)\s+we\s+(?:stop|finish|wrap|move|continue|go on|press on)\b/i
 ];
 
@@ -420,14 +413,13 @@ function withoutClosingQuestion(content, computed) {
 /**
  * What to say when every open field has already been asked and nothing is moving.
  *
- * A FUNCTION OF THE OPEN FIELDS RATHER THAN A CONSTANT, so it differs each time it is needed and
- * is never itself a repeat. A fixed sentence would become the question of record and be replaced
- * by itself on the next turn, which moves the stall from the model to this gate instead of
- * ending it - measured, and the reason this is not a string constant.
+ * A FUNCTION OF THE OPEN FIELDS RATHER THAN A CONSTANT, so it differs each time and is never itself a
+ * repeat. A fixed sentence would become the question of record and be replaced by itself on the next
+ * turn, which moves the stall from the model to this gate instead of ending it - MEASURED, and the
+ * reason this is not a string constant.
  *
- * IT DOES NOT NAME THE FIELDS TO THE PARTICIPANT. `frustration` and `mistakesPerPeriod` are
- * internal names; saying "we did not get to mistakesPerPeriod" would be worse than the stall.
- * The phrasing counts them, which is honest and reads like a person speaking.
+ * IT DOES NOT NAME THE FIELDS: `frustration` and `mistakesPerPeriod` are internal names, so the
+ * phrasing counts them, which is honest and reads like a person speaking.
  *
  * @param {string[]} open The fields still unsupplied.
  * @returns {string}
@@ -435,10 +427,9 @@ function withoutClosingQuestion(content, computed) {
 function moveOnLine(open) {
     const count = open.length === 1 ? 'one thing' : `${open.length} things`;
 
-    // THE CLOSING SENTENCE VARIES WITH THE FIELDS THEMSELVES, because counting alone was not enough:
-    // a stalled conversation leaves `missing` UNCHANGED, so the same count produced the same
-    // sentence and the gate repeated itself - MEASURED at turn 18 of a simulation. Naming the fields
-    // would fix it but reads badly to a participant.
+    // COUNTING ALONE WAS NOT ENOUGH: a stalled conversation leaves `missing` UNCHANGED, so the same
+    // count produced the same sentence and the gate repeated itself - MEASURED at turn 18 of a
+    // simulation.
     const variants = [
         'If you think of something later, it can be added.',
         'Anything you can add now would still be useful.',
@@ -502,17 +493,15 @@ const EVIDENCE_CAP_CONTENT =
 /**
  * HOW MANY TURNS THE INTERVIEW MAY GO WITHOUT GAINING ANY EVIDENCE.
  *
- * THE NET UNDER THE WHOLE GUARD. Every mechanism found so far has the same shape - the interview is
- * not gaining evidence - and they were reached one at a time: oscillation, claim churn, the
- * all-fifteen loop, rewording and echo/rotation. A CAP ON TURNS CATCHES ALL OF THEM, and whatever
- * the sixth turns out to be, which is why it is a property of the CONVERSATION rather than a sixth
- * text heuristic - three of those already produced false positives.
+ * THE NET UNDER THE WHOLE GUARD: oscillation, claim churn, the all-fifteen loop, rewording and
+ * echo/rotation all have the same shape - the interview is not gaining evidence - so a cap on turns
+ * catches every one of them and whatever the sixth turns out to be. That is why it is a property of
+ * the CONVERSATION rather than a sixth text heuristic, three of which produced false positives.
  *
- * TWENTY IS MEASURED, not guessed: a completing run took 6-31 turns; the mock went SIX turns with no
- * new evidence and then gained fourteen fields at once; stalled runs ran 100-200 turns and never
- * gained again; and a run gaining a field every EIGHT turns reached a TWELVE-turn plateau, because
- * `evidenced` counts the effort pair as two fields and holds still while step data lands. THAT IS
- * WHY TWELVE WAS TOO TIGHT. This is the only place the number lives.
+ * TWENTY IS MEASURED, not guessed: a completing run took 6-31 turns; the mock went SIX with no new
+ * evidence and then gained fourteen fields at once; stalled runs ran 100-200 and never gained again;
+ * and a run gaining a field every EIGHT turns reached a TWELVE-turn plateau, because `evidenced`
+ * counts the effort pair as two fields. THAT IS WHY TWELVE WAS TOO TIGHT.
  *
  * THE COST IS NAMED: a stuck participant sees up to twenty questions. Cutting off a working
  * interview loses evidence the participant gave; a longer wait on a broken one costs patience.
@@ -583,21 +572,19 @@ function turnsWithoutEvidence(messages) {
 /**
  * Whether every field's question has appeared in the conversation.
  *
- * THE MONOTONIC HALF OF EXHAUSTION: the number of DISTINCT FIELD QUESTIONS ASKED only grows, so
- * once this is true it stays true. A comparison against the open field set - which the model can
- * vary every turn - is not monotonic and can be defeated indefinitely.
+ * THE MONOTONIC HALF OF EXHAUSTION: the number of DISTINCT FIELD QUESTIONS ASKED only grows, so once
+ * this is true it stays true - where a comparison against the open field set, which the model can
+ * vary every turn, can be defeated indefinitely.
  *
  * A FIELD WITH NO PHRASING IS NOT COUNTED, deliberately: comparing against the questions that EXIST
- * rather than a fixed fifteen means a field added without a question cannot make this never true and
- * trap the interview.
+ * rather than a fixed fifteen means a field added without a question cannot make this never true.
  *
  * @param {Set<string>} askedQuestions The texts already sent to the participant.
  * @returns {boolean}
  */
 function asksEveryField(askedQuestions, openFields) {
-    // EVERY QUESTION THAT COULD STILL BE ASKED HAS BEEN ASKED. The set is
-    // `FIELD_QUESTIONS` LIMITED TO THE FIELDS CURRENTLY OPEN, and the limitation is the fix for
-    // a residual stall rather than a convenience.
+    // THE SET IS `FIELD_QUESTIONS` LIMITED TO THE FIELDS CURRENTLY OPEN, and that limitation is the
+    // fix for a residual stall rather than a convenience.
     //
     // REQUIRING ALL FIFTEEN WAS TOO STRONG and produced the very loop the guard prevents: a field
     // the model CLAIMS to hold is never offered as a question, so its phrasing never enters the
@@ -687,12 +674,10 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
         return phrasing !== undefined && !askedQuestions.has(phrasing);
     });
 
-    // EXHAUSTION IS DECIDED BY WHAT HAS BEEN ASKED, NOT BY WHAT IS OPEN. It used to test
-    // `askedQuestions.has(moveOnLine(computed.missing))`, and `moveOnLine` is a function of the OPEN
-    // FIELD SET - so exhaustion was recognised only once that exact set had been seen, and a model
-    // that rotates its payload produced a new set every turn. MEASURED against a rotating set: 25
-    // turns where 15 were enough, unbounded under faster rotation, and 40 turns in the reviewer's
-    // live capture. The condition below is monotonic instead: every field's question has appeared.
+    // EXHAUSTION IS DECIDED BY WHAT HAS BEEN ASKED, NOT BY WHAT IS OPEN, because a comparison against
+    // the open set is not monotonic: a model that rotates its payload produces a new set every turn
+    // and exhaustion is never recognised. MEASURED against a rotating set: 25 turns where 15 were
+    // enough, unbounded under faster rotation, and 40 in the reviewer's live capture.
     if (fresh === undefined && asksEveryField(askedQuestions, computed.missing)) {
         console.warn(
             '[audit] the model repeated a question with no progress, and every field question has ' +
@@ -905,12 +890,10 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         };
     }
 
-    // THE EVIDENCE CAP, CHECKED BEFORE ANY QUESTION IS CONSIDERED.
-    //
-    // IT SITS ABOVE THE EXACT-TEXT GUARD ON PURPOSE, because that guard cannot see a REWORDED
-    // repeat: the model appending " (part 2)" is never a match target, so the guard never fires,
-    // the `evidenced` comparison is never reached, and the interview runs indefinitely - MEASURED
-    // at 120 turns with a two-field payload. The cap does not care what the question SAYS.
+    // THE EVIDENCE CAP, CHECKED BEFORE ANY QUESTION IS CONSIDERED. IT SITS ABOVE THE EXACT-TEXT GUARD
+    // ON PURPOSE, because that guard cannot see a REWORDED repeat: the model appending " (part 2)" is
+    // never a match target, so the guard never fires, the `evidenced` comparison is never reached,
+    // and the interview runs indefinitely - MEASURED at 120 turns with a two-field payload.
     //
     // IT CLOSES THE ROUND RATHER THAN SUBSTITUTING: after a long run without evidence there is
     // nothing left worth asking, because whatever the model is doing it is not recording answers.
@@ -1111,16 +1094,13 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
 /**
  * Wraps a workflows array in the payload shape the client reads.
  *
- * The interview shape carries a bare array under `processes`; the client wants an
- * object with `workflows`, and optionally `illustrative` and `note`, which the
- * prompt does not ask a model to produce but which this system uses to label
- * generated data. An unknown model therefore yields a payload with neither flag,
- * which reads as "not illustrative", the correct default for a real interview.
+ * The interview shape carries a bare array under `processes`; the client wants an object with
+ * `workflows`, and optionally `illustrative` and `note`. An unknown model yields a payload with
+ * neither flag, which reads as "not illustrative" - the correct default for a real interview.
  *
- * The flags are read from EITHER place a model might put them: the top level, or
- * inside an `audit` envelope it also sent. The envelope is not preferred for the
- * workflows themselves, because those came from the best source, but its labels
- * are still worth taking rather than dropping.
+ * THE FLAGS ARE READ FROM EITHER PLACE a model might put them, the top level or an `audit` envelope
+ * it also sent. The envelope is not preferred for the workflows themselves, which came from the
+ * best source, but its labels are worth taking rather than dropping.
  *
  * @param {object} parsed The parsed reply, which may carry the flags.
  * @param {Array<object>} workflows A non-empty array, already resolved.

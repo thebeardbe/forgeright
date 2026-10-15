@@ -395,6 +395,43 @@ placeholder token, but this installation is reachable beyond this machine...
 So if your demo link 404s after deploying, check the log for that line before anything
 else. The fix is the `DEMO_LOGIN_TOKEN` you generated above.
 
+### Where the demonstration organisation comes from
+
+**The demo link shows an organisation that has to be BUILT, and the repository does not
+carry one that is ready to serve.** Its processes are grouped and scored by the real pipeline,
+which means a provider and a key - and doing that on the deployment would cost calls every time
+the container restarts. So it is seeded once, into a file, and that file is what gets served.
+
+**Seed it on a machine you can run the provider on, not necessarily the server:**
+
+```bash
+AI_PROVIDER=deepseek STORE_DIR=data/demo node scripts/seed-demo-org.js
+```
+
+**`STORE_DIR` IS REQUIRED AND MUST NOT BE THE DEFAULT STORE.** The script deletes and rebuilds
+its organisation so it can be re-run, and the default store is where real data lives. It
+refuses to run against it rather than trusting you to be careful. `data/demo` is the location
+meant for this: it is not gitignored, so the seeded file can be committed and travel with the
+repository.
+
+**Cost, printed before anything is spent:** one identification per fixture response plus at
+most one weighing per resulting process - roughly 8 and 8 for the shipped fixture, fewer in
+practice, because responses describing the same work merge into one process and a process is
+weighed once. **A missing key, an unreachable provider or a refused call stops the run** and
+names the organisation id and what had been completed, so a half-built organisation is never
+mistaken for a working one.
+
+**`AI_PROVIDER=mock` CANNOT SEED ANYTHING.** The mock answers every call with the next
+scripted interview question, so identification and weighing have nothing to work from. Both
+the startup check and the per-reply check say so rather than letting it read as a broken
+demo. That is why the deployment itself needs **no provider and no key for the demo**: the
+grouping and the scores are already in the file.
+
+**Putting it on the server.** Copy the seeded `.db` to that machine's `data/demo/orgs/`, then
+set `STORE_DIR=data/demo` and point `DEMO_LOGIN_ORG` at the organisation's id - which is the
+file's name, `example-ltd-demo` for the committed one. The three other `DEMO_LOGIN*` variables
+are described in `.env.example`.
+
 ## The one case that changes the publish
 
 The container publishes on `127.0.0.1:3000`, deliberately: the app refuses plain HTTP,
