@@ -515,6 +515,7 @@ this line used `=`, redacted nothing at all, and looked like it had worked.
 | `EACCES: permission denied, mkdir '/app/data/store/orgs'` at startup | `STORE_DIR` is being read from `.env` and points inside the image. The entrypoint reports `/data/store` in the line above it while the app disagrees - that split is the tell. **Leave `STORE_DIR` unset in `.env`**; the deploy file forces the right value. |
 | the store looks empty after a redeploy, but the entrypoint said it held organisations | the same split seen from the other side: the entrypoint wrote to the volume and the app read somewhere else. Same fix. |
 | `proton-cli` fails with **`x509: certificate signed by unknown authority`** while the app's own API calls work | **the image had no system CA bundle, not a Proton or firewall problem.** This is fixed in the Dockerfile; rebuild with `--build` if you are on an older checkout. See the note below, because the signature matters. |
+| **`spawn proton-cli ENOENT`**, or `proton-cli is not on PATH` in the log | **the binary is not in the image at all.** It is fetched into a build stage and must be copied into the final one; a Dockerfile edit once deleted that `COPY` while adding the CA bundle. Rebuild with `--build`, then run the check below. |
 
 ### `proton-cli` and the system CA bundle
 
@@ -552,3 +553,47 @@ means the roots are present; a Go binary can then verify peers:
 docker compose -f docker-compose.deploy.yml exec forgeright \
   sh -c 'ls -l /etc/ssl/certs/ca-certificates.crt'
 ```
+
+### What to check in the image after any Dockerfile change
+
+**A DOCKERFILE IS NOT PARSED BY ANYTHING.** `node --check` reads the JavaScript, the suite reads
+the code, and neither looks inside a container. A line deleted here fails at RUNTIME, in the
+middle of an operation somebody is waiting on, with an error that names the wrong thing. That is
+how a deleted `COPY` shipped an image with no mail at all: the app reported `proton-cli is not on
+PATH`, which reads as a configuration problem rather than a missing file.
+
+**RUN THIS AFTER EVERY BUILD, before trusting the image.** Both halves must answer:
+
+```bash
+docker compose -f docker-compose.deploy.yml run --rm --entrypoint sh forgeright -c \
+  'ls -l /usr/local/bin/proton-cli /etc/ssl/certs/ca-certificates.crt; proton-cli --version'
+```
+
+Expected, and nothing less:
+
+```
+-rw-r--r-- 1 root root   224449 ... /etc/ssl/certs/ca-certificates.crt
+-rwxr-xr-x 1 root root 28438688 ... /usr/local/bin/proton-cli
+proton version 5.0.1
+```
+
+**The version line is the one that matters.** A file can exist and still not execute - a wrong
+architecture, a lost mode bit - and only running it proves the binary works. `--version` also
+confirms the pinned fetch, so a version that surprises you is a signal rather than noise.
+
+**THEN ASK THE APP ITSELF**, which is the check the log will perform anyway:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright \
+  node -e "import('./lib/mail/proton.js').then(m => console.log(m.readinessProblems().join('\\n')))"
+```
+
+**TWO ANSWERS ARE POSSIBLE, AND THEY MEAN DIFFERENT THINGS:**
+
+- *"no Proton session is present..."* - the binary and the CA bundle are both fine, and the only
+  thing left is to sign in once. **This is the healthy state on a fresh deployment.**
+- *"proton-cli is not on PATH..."* - **the build is wrong, not your configuration.** Do not go
+  looking at credentials or the network; the binary did not make it into the image.
+
+If the session message does not appear and no message appears either, the module did not load -
+check that the working directory is `/app`.

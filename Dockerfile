@@ -205,7 +205,10 @@ RUN mkdir -p /data/store && chown node:node /data/store
 #
 # IT MUST BE IN THIS STAGE. The binary is built in the `alpine` stage above, but Alpine's
 # certificates stay there: a `COPY --from` brings the file, not the trust store. Installing
-# them next to the binary is what actually fixes it.
+# them next to the binary is what actually fixes it - AND THE BINARY MUST STILL BE COPIED:
+# the CA install and the COPY are two halves of one fix, and neither replaces the other.
+# The COPY was once deleted by the commit that added the CA install below, which shipped an
+# image whose mail transport could not start at all (`spawn proton-cli ENOENT`).
 #
 # `--no-install-recommends` AND THE LIST CLEANUP, because this image is built slim on
 # purpose. `ca-certificates` depends on `openssl`, which brings `libssl3`; everything else in
@@ -216,6 +219,11 @@ RUN set -eu; \
     apt-get update; \
     apt-get install -y --no-install-recommends ca-certificates; \
     rm -rf /var/lib/apt/lists/*
+
+# THE BINARY ITSELF, from the verified fetch stage. It is statically linked, so a plain copy
+# is all it needs beyond the CA bundle above; see the note on that RUN for why the two belong
+# together. `--chmod=0755` makes it executable regardless of the mode the stage carried.
+COPY --from=proton-cli --chmod=0755 /opt/proton /usr/local/bin/proton-cli
 
 # THE SESSION DIRECTORY, EMPTY, OWNED BY node. The binary reads XDG_CONFIG_HOME and
 # looks for proton-cli/ inside it, so pointing that variable at /home/node/.config
