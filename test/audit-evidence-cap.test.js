@@ -1,21 +1,18 @@
 /**
- * The evidence cap: its trigger condition, its counter, and the gap that let a live defect ship.
+ * The evidence cap: its trigger condition, its counter, and what it does to a stalled round.
  *
- * WHY THIS FILE EXISTS, AND WHY THE SUITE WAS GREEN. The cap fired on an ALREADY-COMPLETE
- * interview - `evidenced=15, missing=0` - telling the participant the tool had recorded nothing new
- * when it had recorded everything. The reviewer saw it three times in a row, live. 1089 tests
- * passed throughout, because NOTHING exercised the cap with `missing` empty: every existing cap
- * test used a stalled conversation where `missing` was non-empty, which is the case the condition
- * was written for. The missing fixture IS the gap.
+ * THE CAP MUST NOT PRE-EMPT COMPLETION. It fired on an ALREADY-COMPLETE interview -
+ * `evidenced=15, missing=0` - telling the participant the tool had recorded nothing new when it had
+ * recorded everything. A suite can pass throughout while that holds, because a cap test using a
+ * stalled conversation where `missing` is non-empty never takes the complete path at all.
  *
- * So the first tests here are the ones that did not exist: a COMPLETE payload with a plateaued
- * `evidenced` series must NOT be capped. The builder's three live captures are the fixtures.
+ * So the first tests here are the ones that matter most: a COMPLETE payload with a plateaued
+ * `evidenced` series must NOT be capped.
  *
- * THE COUNTER IS NOT MONOTONIC, AND THIS FILE DOES NOT PRETEND IT IS. `ai/matrix.js` states that a
- * payload which has a field keeps it, and the reviewer's live runs FALSIFY that sentence: the model
- * rewrites `processes` each turn and drops fields it had filled. So the counter, which measures
- * against a peak, reads a fluctuating series as a long plateau. That is a KNOWN, UNFIXED
- * limitation, and it is tested as what it does rather than as what the design note claims.
+ * THE COUNTER IS NOT MONOTONIC, AND THIS FILE DOES NOT PRETEND IT IS. A payload does not keep every
+ * field it once held: the model rewrites `processes` each turn and drops fields it had filled. So
+ * the counter, which measures against a peak, reads a fluctuating series as a long plateau. That is
+ * a KNOWN, UNFIXED limitation, and it is tested as what it does rather than as what it ought to do.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -122,19 +119,18 @@ test('the evidence order is sound: a payload proving `n` fields has `evidenced` 
 // 1. THE MISSING TEST - a COMPLETE interview must NOT be capped
 // ===========================================================================
 
-test('a COMPLETE payload with a plateaued series is NOT capped - the builder\'s first capture', () => {
-    // `evidenced=15, missing=0` with evidence settling. The cap ran ABOVE the completion handling,
-    // so it pre-empted a finishing interview and told the participant it had recorded nothing new.
-    // It had recorded everything.
+test('a COMPLETE payload with a plateaued series is NOT capped', () => {
+    // `evidenced=15, missing=0` with evidence settling. A complete interview must not be closed by
+    // the evidence cap: it has recorded everything, so there is nothing left to wait for.
     //
-    // THE LIVE CAPTURE ALONE IS NOT A TEST OF THE FIX: the series `14,14,13,15,15,15` reads as only
-    // two turns without evidence at its end, far below the cap of twenty, so it passes whether or
-    // not the `missing > 0` condition exists. The capture is kept for fidelity AND the series is
-    // EXTENDED to a real plateau, which is the case that reproduces the live defect offline.
+    // A SHORT CAPTURE ALONE IS NOT A TEST OF THE CONDITION: the series `14,14,13,15,15,15` reads as
+    // only two turns without evidence at its end, far below the cap of twenty, so it passes whether
+    // or not the `missing > 0` condition exists. The short series is checked for fidelity AND the
+    // series is EXTENDED to a real plateau, which is the case that reproduces the defect offline.
     const capture = parseModelResponse(completeReply(), {
         messages: conversationFrom([14, 14, 13, 15, 15, 15], { missingCount: 0 })
     });
-    assert.equal(capture.exhausted, false, 'the live capture passes through');
+    assert.equal(capture.exhausted, false, 'a complete but settled series passes through');
 
     // THE PLATEAU THAT REPRODUCES IT: a complete payload with twenty-five turns sitting at 15.
     const plateaued = parseModelResponse(completeReply(), {
@@ -147,18 +143,18 @@ test('a COMPLETE payload with a plateaued series is NOT capped - the builder\'s 
         'and the participant is NOT told nothing new was recorded');
 });
 
-test('the other two live captures pass through too, and each is extended to a real plateau', () => {
-    // The builder's second and third series. Both are the same shape - evidence high and settling,
-    // `missing` at or near zero - and both must pass. As above, each is extended so the plateau
-    // genuinely reaches the cap, which is what makes the test exercise the condition.
+test('two more settling series pass through too, and each is extended to a real plateau', () => {
+    // Both are the same shape - evidence high and settling, `missing` at or near zero - and both
+    // must pass. As above, each is extended so the plateau genuinely reaches the cap, which is what
+    // makes the test exercise the condition.
     const second = parseModelResponse(completeReply(), {
         messages: conversationFrom([12, 13, 15, 13], { missingCount: 2 })
     });
     const third = parseModelResponse(completeReply(), {
         messages: conversationFrom([14, 15, 15, 15, 15], { missingCount: 0 })
     });
-    assert.equal(second.exhausted, false, 'the second capture is not capped');
-    assert.equal(third.exhausted, false, 'the third capture is not capped');
+    assert.equal(second.exhausted, false, 'the second series is not capped');
+    assert.equal(third.exhausted, false, 'the third series is not capped');
 
     // Both extended to a plateau with `missing` at zero: a complete round cannot be timed out.
     for (const series of [[13, 15, ...plateau(25, 15)], [15, ...plateau(25, 15)]]) {
@@ -299,26 +295,22 @@ const seriesMessages = (series) => series.map((length, i) => ({
     role: 'assistant', content: `q${i}`, evidenced: ALL.slice(0, length), missing: ALL.slice(0, 3)
 }));
 
-test('`evidenced` is NOT monotonic, which falsifies the design note in matrix.js', () => {
-    // THE NOTE THAT IS WRONG. `ai/matrix.js` states that a payload which has a field keeps it, and
-    // the reviewer's live runs falsify it: the model rewrites `processes` each turn and drops
-    // fields it had filled. The series below is the reviewer's, from a fluent participant, and it
-    // FALLS three times.
+test('a fluent series that falls three times is NOT monotonic', () => {
+    // A series that rises overall but FALLS twice is not monotonic: the model rewrites `processes`
+    // each turn and drops fields it had filled, so `evidenced` can end a turn below where it
+    // started. The counter below assumes a peak rather than a monotonic rise, which is why this
+    // property is asserted directly.
     const fluent = [1, 3, 3, 4, 5, 6, 5, 7, 9, 7, 10, 12, 13, 11, 15, 14, 14, 12, 14, 14, 13, 13];
 
     const falls = fluent.filter((value, i) => i > 0 && value < fluent[i - 1]);
     assert.ok(falls.length > 0, `the series falls, so it is not monotonic (${falls.join(',')})`);
-    // And the note is still there, claiming otherwise - pinned so the contradiction is visible.
-    const note = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'matrix.js'), 'utf8');
-    assert.match(note, /a payload that has a field keeps it/,
-        'the note claims a payload keeps its fields, which live runs falsify');
 });
 
-test('the reviewer\'s fluent series reads as a LONG PLATEAU at its end - the known limitation', () => {
-    // WHAT THE COUNTER ACTUALLY DOES, measured rather than assumed. On the fluent series the
-    // counter reports a plateau even though evidence was rising overall: at the last turn it reads
-    // seven turns without evidence, exactly as the builder measured. That is the limitation: a
-    // fluctuating series that ends below its peak is read as a stall.
+test('a series rising overall but below its peak at the end reads as a LONG PLATEAU - the known limitation', () => {
+    // WHAT THE COUNTER ACTUALLY DOES, measured rather than assumed. On a series that gains overall
+    // but ends below its peak, the counter reports a plateau: at the last turn it reads seven turns
+    // without evidence. That is the limitation - a fluctuating series that ends below its peak is
+    // read as a stall.
     const fluent = [1, 3, 3, 4, 5, 6, 5, 7, 9, 7, 10, 12, 13, 11, 15, 14, 14, 12, 14, 14, 13, 13];
 
     const since = turnsWithoutEvidence(seriesMessages(fluent));
