@@ -1,34 +1,18 @@
 /*
- * The console views: answers and the roadmap.
- *
- * SPLIT FROM app.css so both files stay readable. app.css carries the roles and
- * the components every page shares; this carries the two views of the workflow
- * output, which appear together and nowhere else.
- *
- * It names no palette colour, only the semantic roles from app.css, so it reads
- * the same in all 22 themes.
+ * The console views: answers and the roadmap. Loaded by the three console views and nothing else, and it
+ * names no palette colour, only the semantic roles from app.css.
  */
 
-/* ─── The console views ───────────────────────────────────────────────────────
- *
- * The two views the spec calls for. They use the semantic roles above, so they
- * read correctly in all 22 palettes and no rule here names a theme colour.
- */
+/* ─── The console views ─────────────────────────────────────────────────────── */
 
 /* ─── THE CONSOLE IS WIDER THAN A PAGE OF PROSE ───────────────────────────────
  *
- * MEASURED BEFORE: `.wrap` is 620px at every viewport - 48% of a 1280px screen, 322px
- * of margin each side. That is the right measure for prose, and the WRONG one for a
- * console whose main objects are a five-column table and an answers list.
+ * `.wrap` is 620px, the right measure for prose and the wrong one for a console whose main objects are a
+ * five-column table and an answers list.
  *
- * SCOPED BY THE STYLESHEET, NOT BY A NEW CLASS: this file is loaded by the three console
- * views and nothing else, so a rule here cannot leak onto the prose pages. A
- * `.wrap.wide` class would need the same three views edited and would silently do
- * nothing if a fourth forgot it.
- *
- * 1080px RATHER THAN A PERCENTAGE OR `none`: the widest object is a table of addresses
- * and timestamps, which gains nothing from a 2560px window - the eye travels and the
- * columns drift apart. IT IS STILL A MAXIMUM, so below 1080px nothing changes.
+ * Scoped by the stylesheet rather than a new class, so a rule here cannot leak onto the prose pages. 1080px
+ * rather than a percentage, because the widest object is a table that gains nothing from a 2560px window; it
+ * is still a maximum, so below 1080px nothing changes.
  */
 .wrap {
     max-width: 1080px;
@@ -74,10 +58,8 @@
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.14em;
-    /* `--ink` RATHER THAN `--muted`. Muted is mixed 90% toward the foreground to carry
-       paragraphs, so as a header colour it was no darker than the text under it - which is the
-       other half of "difficult to see the difference". The header now reads as a label by being
-       spaced and coloured, not only by being sized. */
+    /* --ink rather than --muted, which is mixed toward the foreground to carry paragraphs and so was no
+       darker than the text under it. */
     color: var(--ink);
     margin: 20px 0 8px;
 }
@@ -147,11 +129,9 @@
 .tag.reasoning { background: var(--warn-bg); color: var(--warn-ink); }
 .tag.departments { background: var(--notice-bg); color: var(--notice-ink); }
 
-/* Split while unsure. THE CALM REGISTER ON PURPOSE: this fires on every
-   low-confidence creation and most are false alarms, so it is a quiet label rather
-   than a warning. The yellow `.reasoning` treatment is reserved for something a
-   reader must act on; this is something a reader may want to look at. It shares the
-   notice blue so it reads as information, in the same row as the other tags. */
+/* Split while unsure. The calm register on purpose: it fires on every low-confidence creation and most are
+   false alarms, so it shares the notice blue rather than using the yellow `.reasoning` treatment, which is
+   reserved for something a reader must act on. */
 .tag.review { background: var(--notice-bg); color: var(--notice-ink); }
 
 /* A rejudge is a reasoned request, never a category to pick. */
@@ -177,20 +157,10 @@
 .history .when { color: var(--muted); font-size: 0.78rem; }
 
 /* The view switcher, which is two links rather than tabs with script. */
-/* THE VIEW SWITCHER: AT THE TOP, STICKY, AND OPAQUE.
-
-   IT USED TO SIT BELOW THE HEADING, so on a 390px phone a two-line <h1> plus a banner
-   pushed the only way to change page off the first screen. The tabs existed and were
-   unreachable, which reads as a missing feature.
-
-   `position: sticky` WITH `top: 0` keeps the row against the top of the viewport while
-   the roadmap scrolls under it. THE BACKGROUND IS OPAQUE AND THE ROW SPANS THE WIDTH,
-   because content passes underneath: a transparent bar would show text through it, and
-   the negative margins let the band reach the panel edges rather than stopping at the
-   text column. `z-index` puts it above the content it covers.
-
-   The bottom border is what separates it from the page once it is stuck; without it the
-   tabs would float over the content with no edge. */
+/* The view switcher: at the top, sticky, and opaque.
+   Below the heading, a two-line <h1> plus a banner pushed the only way to change page off the first
+   screen. The background must be opaque and the row span the width, because content passes underneath,
+   and the bottom border is what separates it from the page once it is stuck. */
 .views {
     position: sticky;
     top: 0;
@@ -205,15 +175,8 @@
     background: var(--bg);
     border-bottom: 1px solid var(--line);
 }
-/* THE THEME PICKER, ALIGNED WITH THE TABS RATHER THAN SITTING ON THEM. It is included in the
-   bar by console-nav.ejs, and its own styles live in app.css because the questionnaire uses
-   the same control. This is only the bar's arrangement: pushed to the right on a wide screen
-   so it reads as a setting beside the navigation rather than a fourth page, and left to wrap
-   naturally on a phone where there is no width to spare.
-
-   `margin-left: auto` IS WHAT RIGHT-ALIGNS IT, and it costs nothing when the bar wraps: on
-   the second line the picker starts at the left edge with the tabs above it, which is where a
-   wrapped item belongs. */
+/* The theme picker in the bar; its own styles live in app.css because the questionnaire uses the same
+   control. `margin-left: auto` right-aligns it, and costs nothing when the bar wraps. */
 .views .theme-picker { margin-left: auto; }
 
 /* The select sits a shade lower than the pills because a form control has its own baseline.
@@ -236,29 +199,11 @@
 .depts { display: flex; gap: 6px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; }
 .depts li { font-size: 0.8rem; padding: 3px 9px; background: var(--raised); border-radius: 99px; }
 
-/* The read-only demo band. A BAND, NOT A NOTICE BOX.
-
-   IT USED TO BE a rounded, pale-blue box with the same text colour as the body, which
-   read as a paragraph someone had highlighted rather than as the application telling you
-   something about itself. Measured in the browser: a box, not a band.
-
-   WHAT MAKES IT A BAND: full width, squared, no side margin, and a heavier edge than a
-   box would carry. The accent appears as a THICK TOP RULE rather than as the fill.
-
-   WHY NOT A FILLED ACCENT BAND, WHICH WAS THE FIRST ATTEMPT. Measured across six
-   palettes in a browser, filling with `--accent` and setting text in `--accent-ink`
-   dropped to a contrast ratio of 3.45 on `catppuccin-latte` and 4.16 on `white` - below
-   the 4.5 that body text needs. The fill also read as a warning on the lighter palettes,
-   which are exactly the ones whose accent is a saturated blue. The accent rule keeps the
-   band in the palette's own colour while the text sits on `--raised` against `--ink`,
-   the pairing every palette is built around.
-
-   IT IS STILL CHROME RATHER THAN CONTENT: full-bleed, heavier than any card, and set in
-   the same upper-case eyebrow register the rest of the console's labels use.
-
-   IT SCROLLS AWAY RATHER THAN STICKING, deliberately: the tabs below it are the control
-   a reader needs at every scroll position, and a permanent band would cost the vertical
-   space a phone does not have. */
+/* The read-only demo band: a band rather than a notice box, so full width and squared with the accent as
+   a thick top rule.
+   Not filled with --accent, because that measured 3.45:1 on catppuccin-latte and 4.16:1 on white, under
+   the 4.5 body text needs, and read as a warning on the lighter palettes. It scrolls away rather than
+   sticking, because the tabs below it are the control needed at every scroll position. */
 .demo-banner {
     /* Reaches the viewport edges rather than stopping at the 620px text column: the
        negative inline margin cancels `.wrap`'s padding, and the same value is added
@@ -279,24 +224,13 @@
    concludes the tool is broken rather than that they are looking at a demo. */
 button[disabled] { opacity: 0.5; cursor: not-allowed; }
 
-/* A SCROLLABLE TABLE, SO THE CARD STAYS THE VISIBLE BOUNDARY.
-   The invitations table is five columns of unbreakable content and cannot fit a 374px
-   card. Without this it simply overflowed: measured at 390px it was 609px wide inside a
-   374px card, so the Send a link and Reset all access buttons rendered on the page
-   background and read as broken layout.
-
-   `overflow-x: auto` keeps every column and every control while the CARD remains the
-   edge a reader sees. The alternative - hiding columns on narrow screens - would have
-   removed the two buttons the page exists for.
-
-   `min-width` on the table inside it stops the columns squeezing to unreadable widths
-   when the container is narrower than the content: without it the browser compresses
-   cells rather than scrolling, and an address wraps to one character per line. */
+/* A scrollable table, so the card stays the visible boundary: the invitations table is five columns of
+   unbreakable content and overflowed a 374px card, putting its buttons on the page background.
+   `overflow-x: auto` keeps every column and control; `min-width` on the table stops the columns
+   squeezing to unreadable widths instead of scrolling. */
 /* ─── A LINK TO ONE ANSWER, FROM THE ROADMAP ──────────────────────────────────
  *
- * `.answer-links` replaced a list of every participant field, so these styles are what a
- * reader sees INSTEAD: the department and the contribution carry the section on their own.
- * A PLAIN LIST, not a table - nothing here is a column of figures.
+ * The department and the contribution carry the section on their own; a plain list, not a table.
  */
 .answer-links { list-style: none; margin: 0; padding: 0; }
 .answer-links li {
@@ -310,15 +244,9 @@ button[disabled] { opacity: 0.5; cursor: not-allowed; }
 .answer-links li:last-child { border-bottom: none; }
 .answer-links a { font-weight: 600; }
 
-/* THE STICKY NAV WOULD OTHERWISE COVER THE ANSWER A LINK SCROLLS TO.
- *
- * MEASURED: the nav stands 58px on a desktop viewport and 97px once the theme picker wraps on
- * a phone. A fragment scroll puts the target's top edge at the viewport's top edge, so that
- * much of the answer - including the summary line naming it - would sit UNDERNEATH the nav.
- *
- * 74px clears the desktop nav; the media query below raises it for the wrapped phone nav,
- * which is the taller of the two and therefore the one that decides. IF THE NAV IS EVER
- * RESIZED, THESE MOVE WITH IT, which is why both numbers are stated here. */
+/* The sticky nav would otherwise cover the answer a link scrolls to: it stands 58px on desktop and 97px
+   once the picker wraps on a phone, and a fragment scroll puts the target's top edge at the viewport's top
+   edge. 74px clears the desktop nav, and the media query below raises it for the wrapped one. */
 details.item { scroll-margin-top: 74px; }
 
 @media (max-width: 620px) {
@@ -326,21 +254,11 @@ details.item { scroll-margin-top: 74px; }
     details.item { scroll-margin-top: 108px; }
 }
 
-/* THE SCROLLER WORKS; IT JUST DID NOT LOOK LIKE ONE. Measured below 500px: the table's
-   460px min-width exceeds the scroller's client width - 430px at a 500px viewport, 320px at
-   390px - so 30 to 140px of table sits past the right edge with nothing to say so. The
-   overlay scrollbar a phone draws is invisible until you already scroll (`scrollbar: 0`
-   measured, and no shadow or hint), so a column cut mid-word reads as a BROKEN LAYOUT
-   rather than as content to the right. That is the report, and this is the affordance.
-
-   A SHADOW ON THE RIGHT EDGE while there is more to see, so it appears exactly when it is
-   true and disappears at the end of the table. `background-attachment: local` is what makes
-   that work: the gradient scrolls WITH the content, so it is covered up once the reader
-   reaches the right-hand end. It stays off on a wide screen because there the table fits
-   the card and there is nothing to reveal.
-
-   IT NAMES NO PALETTE COLOUR. The shadow is built from `--line`, a semantic role, so it
-   reads correctly in all 22 themes rather than being a grey that suits one. */
+/* Below 500px the table's min-width exceeds the scroller's client width, so part of it sits past the right
+   edge, and the overlay scrollbar a phone draws is invisible until you already scroll: a column cut
+   mid-word reads as broken layout rather than as content to the right.
+   The shadow appears only while there is more to see, which `background-attachment: local` achieves, and
+   it is built from `--line` rather than a grey that suits one theme. */
 .table-scroll {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -353,16 +271,11 @@ details.item { scroll-margin-top: 74px; }
 }
 .table-scroll table { min-width: 460px; }
 
-/* THE USERS TABLE SITS BELOW THE ADD-USER FORM, so it needs the separation the form does
-   not give it. This was an inline `margin-top:14px` on the element - the last `style=`
-   attribute in the views, and this project removed those once already. A class keeps the
-   rule where every other spacing rule lives and lets it be changed in one place. */
+/* The users table sits below the add-user form and needs the separation the form does not give it. */
 .users-table { margin-top: 14px; }
 
-/* THE RAW CONVERSATION, INSIDE AN ANSWER.
-   A nested <details>, so it does not compete with the answer's own summary until a reader
-   asks for it. Styled as a quiet inset rather than a second card: it is evidence behind
-   the summary above it, not a sibling of it. */
+/* The raw conversation inside an answer: a nested <details>, styled as a quiet inset rather than a second
+   card, because it is evidence behind the summary above it. */
 .transcript { margin: 10px 0 0; border-left: 2px solid var(--line); padding-left: 10px; }
 .transcript > summary {
     cursor: pointer;
@@ -373,11 +286,8 @@ details.item { scroll-margin-top: 74px; }
 }
 .transcript > summary .meta { font-weight: 400; margin-left: 6px; }
 
-/* Each turn, INDENTED AND WRAPPED RATHER THAN SCROLLED.
-   A conversation is prose: it must break at word boundaries and never widen its
-   container. `overflow-wrap: anywhere` is what stops one long unbroken token - a
-   pasted URL, a machine field name - from stretching the card past the viewport, which
-   is the failure the invitations table had. */
+/* Each turn, indented and wrapped rather than scrolled. `overflow-wrap: anywhere` stops one long
+   unbroken token stretching the card past the viewport, which is the failure the invitations table had. */
 .transcript-turn {
     margin: 0 0 8px;
     padding: 6px 9px;

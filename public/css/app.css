@@ -1,14 +1,9 @@
 /*
  * Semantic roles, then the components. One stylesheet for every page.
  *
- * TWO LAYERS, and the order matters: `--o-*` is the palette (public/css/palette.css),
- * byte-for-byte theme colours, and the named roles (--bg, --card, --accent) are what
- * components actually use.
- *
- * A COMPONENT NEVER NAMES A PALETTE COLOUR. The roles are derived with `color-mix` - a
- * proportion of the theme's own foreground over its own background - so a card is
- * readable in all 22 palettes without 22 rules, and changing a theme cannot break a
- * component.
+ * Two layers: `--o-*` is the palette, and the named roles (--bg, --card, --accent) are what components
+ * use. A component never names a palette colour, because the roles are derived with `color-mix` from the
+ * theme's own foreground and background.
  */
 
 /* ─── Roles ───────────────────────────────────────────────────────────────── */
@@ -24,37 +19,18 @@
     --raised: color-mix(in srgb, var(--o-fg) 8%, var(--o-bg));
 
     /* Text.
-       --muted is MIXED TOWARD THE FOREGROUND rather than used raw. The palette's
-       dim foreground is designed for terminal chrome, and measured against each
-       theme's own background it sits between 1.8 and 2.6:1, well under the 4.5
-       that body text needs. This role carries .intro, .meta and .note, which are
-       paragraphs rather than decoration.
-
-       90% is the measured value, not a guess: at that mix the muted colour clears
-       4.5:1 against its own background in ALL 22 palettes (the worst is rose-pine
-       at 5.25, and the next lowest is catppuccin-latte). Lower mixes leave two
-       themes short. The palette colour is the input, not the output. */
+       --muted is mixed toward the foreground rather than used raw: the palette's dim foreground sits
+       between 1.8 and 2.6:1 against its own background, under the 4.5 body text needs, and this role
+       carries paragraphs. 90% is the measured value that clears 4.5:1 in all 22 palettes. */
     --ink: var(--o-fg);
     --ink-bright: var(--o-fg-bright);
     --muted: color-mix(in srgb, var(--o-fg) 90%, var(--o-bg));
 
-    /* THE PLACEHOLDER NEEDS ITS OWN ROLE, AND `--muted` WAS THE WRONG ONE.
-       The owner asked for a placeholder that is "more opaque than the text once it is filled"
-       and distinguishable from it. `--muted` is a 90% mix toward the foreground - deliberately
-       almost the same as `--ink`, because it carries PARAGRAPHS (.intro, .meta, .note) that have
-       to clear 4.5:1. Used for a placeholder it renders as effectively the same colour as
-       entered text, which is the opposite of what is wanted.
-
-       THE PALETTE'S OWN `--o-fg-dim` IS TOO FAINT ON ITS OWN - MEASURED at 2.51:1 on
-       matte-black and 2.30:1 on catppuccin-latte, under the 3:1 that non-text content needs -
-       so this is a mix toward it rather than the raw value, exactly as `--muted` is a mix away
-       from it and for the same reason.
-
-       60% IS THE MEASURED VALUE, not a guess. Across the two default palettes it gives 4.68:1
-       on matte-black and 3.46:1 on catppuccin-latte - both legible, and still clearly not the
-       entered text, which measures 10.08:1 and 7.06:1. At 70% the light palette falls to
-       3.11:1 and at 80% to 2.80:1, below the floor; at 40% the placeholder is too close to the
-       text to be told apart. The palette colour is the input, not the output. */
+    /* Placeholder text, distinguishable from what is typed into the field.
+       --muted is deliberately almost the same as --ink, because it carries paragraphs, so it is the wrong
+       colour here; the palette's dim foreground is too faint on its own at 2.51:1 and 2.30:1, under the
+       3:1 non-text content needs. 60% is the measured mix that clears the floor on both defaults and
+       still reads as distinct from the entered text. */
     --placeholder: color-mix(in srgb, var(--o-fg) 40%, var(--o-fg-dim));
 
     /* Lines and interaction */
@@ -114,15 +90,9 @@ body {
 
 /* ─── Type ────────────────────────────────────────────────────────────────── */
 
-/* MEASURED: these labels were 11.2px against 14.4px body text - SMALLER than the paragraphs
-   they head, and coloured `--accent` at a weight that reads as decoration. The owner's words
-   were that it is "pretty difficult to see the difference between a normal text and a category
-   header", and the measurement says why: there was no difference in size to see.
-
-   SIZE AND LETTER-SPACING BOTH MOVE, because the complaint is about identifying a header rather
-   than about reading one. 0.8rem with more tracking and full uppercase reads as a LABEL at a
-   glance, which a size change alone does not achieve at this scale - and the tracking is what
-   carries it, since these strings are short. */
+/* These labels were smaller than the paragraphs they head and coloured --accent, so they read as
+   decoration. Size and letter-spacing both move: 0.8rem with more tracking and uppercase reads as a label
+   at a glance, and the tracking is what carries it at this scale. */
 .eyebrow {
     font-size: 0.8rem;
     font-weight: 700;
@@ -206,37 +176,22 @@ input:focus, select:focus, button:focus-visible, a.button:focus-visible {
     outline-offset: 1px;
 }
 
-/* THE PLACEHOLDER IS DISTINGUISHABLE, LEGIBLE, AND GONE THE MOMENT THEY TYPE.
-   `:focus::placeholder` is explicit rather than relied upon: Chrome and Firefox hide the
-   placeholder on typing, but keeping it while the field is focused is allowed and some
-   browsers do it, so the owner's "disappear once clicked" is stated here instead of assumed.
-   `opacity: 1` is required alongside it - Firefox applies a default reduction to placeholder
+/* Gone the moment the field is focused, stated explicitly rather than relying on browser defaults.
+   `opacity: 1` is required alongside it, because Firefox applies its own reduction to placeholder
    colour, which would undo the measured contrast. */
 input::placeholder, textarea::placeholder { color: var(--placeholder); opacity: 1; }
 input:focus::placeholder, textarea:focus::placeholder { color: transparent; }
 
 /* A row of controls that wraps on a phone rather than overflowing. */
-/* MEASURED, NOT CHOSEN BY EYE: the gap was 8px, which put the Save button 8px from the
-   input it saves - close enough that the two read as one control rather than a field and
-   its action. 12px separates them without the row wrapping any sooner, and `flex-wrap`
-   still lets a narrow screen stack them.
-
-   THE TWO FORMS ON THE CONSOLE SHARE THIS, which is the point of it being here: the
-   organisation name row and the invite row are the same shape, so they must not drift
-   apart in spacing. */
+/* 12px rather than 8px, which put the Save button close enough to the input it saves that the two read
+   as one control. The console's organisation-name row and invite row are the same shape and share this. */
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .row > div { flex: 1 1 160px; min-width: 0; }
 .row input { flex: 1 1 200px; min-width: 0; }
 
-/* MEASURED: 11px of vertical padding gave a 38px button, which the owner read as cramped -
-   "padding around the button is way too small on top and bottom". The HORIZONTAL padding was
-   never the complaint and is unchanged at 18px, so the button is taller without becoming wider:
-   15px top and bottom gives 46px, which is a comfortable touch target on a phone (44px is the
-   usual floor) and reads as a button rather than as a label with a background.
-
-   ONE RULE FOR EVERY BUTTON on every surface - the console's Save and Send invitation, the
-   questionnaire's submit, and Sign out - because they share this selector. The questionnaire
-   was checked separately: its submit measured 38px too and is now 46px with the rest. */
+/* 15px top and bottom gives a 46px button, a comfortable touch target on a phone and enough to read as a
+   button rather than a label with a background. The horizontal padding is unchanged at 18px. Every button
+   on every surface shares this selector. */
 button {
     padding: 15px 18px;
     font-size: 0.9rem;
@@ -287,12 +242,8 @@ form.inline { display: inline; }
 /* ─── Tables (the console) ────────────────────────────────────────────────── */
 
 table { width: 100%; border-collapse: collapse; font-size: 0.87rem; }
-/* ROW RHYTHM. 8px of vertical padding made a table of addresses and timestamps read as a
-   dense block rather than as rows - the owner's "cramped vertical rhythm". 10px top and
-   bottom gives each row room without turning a five-row table into a column of islands,
-   and the 10px of horizontal padding stops a long address touching the column beside it.
-   Measured: a row was 70px tall before, and the tokens inside cells carry their own
-   spacing, so this is the one gap that was doing all the work. */
+/* Row rhythm: 10px top and bottom gives each row room without turning a five-row table into a column of
+   islands, and the horizontal padding stops a long address touching the column beside it. */
 th, td { text-align: left; padding: 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th {
     font-size: 0.7rem;
@@ -319,15 +270,8 @@ th {
 
 /* ─── Header and the theme/language switcher ──────────────────────────────── */
 
-/* MEASURED: the theme picker sat 0px from the paragraph below it on the questionnaire, and the
-   owner read that as "too close to the text below it". The header carried no bottom margin, so
-   its last row - the picker and the language links - touched whatever came next. The console
-   views looked fine only because their nav has its own `margin-bottom: 18px`, which is why this
-   was visible on one surface and not the others.
-
-   THE SPACE BELONGS TO THE HEADER RATHER THAN TO THE PICKER, because what needs separating is
-   the whole header block from the page's content. Putting it on `.theme-picker` would fix the
-   questionnaire alone and leave the console's nav sizing to drift against a second rule. */
+/* The space belongs to the header rather than to the picker, because what needs separating is the whole
+   header block from the page's content. */
 header {
     display: flex;
     justify-content: space-between;
@@ -354,18 +298,11 @@ header {
 }
 
 /* ─── The cookie notice ──────────────────────────────────────────────────────
-   MOVED HERE FROM questionnaire.css: see views/partials/cookie-notice.ejs for why it is a
-   site component rather than a questionnaire one.
+   A site component rather than a questionnaire one; see views/partials/cookie-notice.ejs.
 
-   `.hidden` COMES WITH IT. It is what the banner uses to hide itself, and it lived only in
-   questionnaire.css - so on the other pages the banner would render visible on load and
-   clicking would do nothing, which is the defect this move fixes.
-
-   `--cookie-notice-height` IS WRITTEN BY THE PARTIAL'S SCRIPT from the banner's own measured
-   height, and the body padding reserves exactly that much. Zero until then, so a page without
-   JavaScript keeps today's behaviour rather than reserving a gap for a banner that may not
-   appear. The padding is what stops the fixed banner covering the questionnaire's answer
-   input, which it otherwise does at 390px. */
+   `--cookie-notice-height` is written by the partial's script from the banner's own measured height, and
+   the body padding reserves exactly that much, zero until then. The padding is what stops the fixed
+   banner covering the questionnaire's answer input. */
 .hidden { display: none !important; }
 
 .cookie-banner {

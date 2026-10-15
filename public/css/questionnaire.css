@@ -1,23 +1,15 @@
 /*
- * The questionnaire and the analysis: styles for views/audit.ejs only.
- *
- * SPLIT FROM app.css so both stay readable - that file carries the shared roles and
- * components, this carries the conversation and the ranked output. IT NAMES NO PALETTE
- * COLOUR: every value is a role from app.css, so it reads the same in all 22 themes.
+ * The questionnaire and the analysis, for views/audit.ejs only. It names no palette colour: every value is
+ * a role from app.css.
  */
 
 /* ─── The questionnaire ───────────────────────────────────────────────────── */
 
 .history {
-    /* THE NOTICE'S HEIGHT IS GIVEN UP HERE, so the answer input ends ABOVE the fixed banner
-       instead of behind it. MEASURED at 390px before this: the input row sat 56px from the
-       viewport bottom and the 177px banner covered it at arrival. `.history` is the only
-       flexible-height element on the page, so shrinking it is what moves the input up.
-       `--cookie-notice-height` is written by the partial's script from the banner's own
-       measured height, and it is UNSET when the banner is dismissed or absent - the fallback
-       is 0, so the page is exactly as it was and no space is reserved for nothing. The floor
-       keeps a usable conversation area on a very short viewport, where the participant
-       scrolls as they do today rather than losing the history entirely. */
+    /* The notice's height is given up here, so the answer input ends above the fixed banner instead of behind
+       it. `.history` is the only flexible-height element on the page, so shrinking it moves the input up;
+       `--cookie-notice-height` is unset when the banner is dismissed or absent, so nothing is reserved for
+       nothing. The floor keeps a usable conversation area on a very short viewport. */
     height: max(120px, calc(360px - var(--cookie-notice-height, 0px)));
     overflow-y: auto;
     padding: 14px;
@@ -29,11 +21,8 @@
 }
 
 @media (max-width: 520px) {
-    /* THE SAME GIVE-BACK AS THE RULE ABOVE, and it is REQUIRED here rather than inherited:
-       this query overrides that height, so a phone would keep its full 52vh and the 177px
-       banner would cover the input at arrival - which is exactly what it did, measured, until
-       this was changed too. Both heights are measured against the notice, so there is still
-       one source for it and no constant that can drift from the banner. */
+    /* The same give-back as above, required here rather than inherited: this query overrides that height, so
+       without it a phone keeps its full 52vh and the banner covers the input at arrival. */
     .history { height: max(120px, calc(52vh - var(--cookie-notice-height, 0px))); }
 }
 
@@ -121,10 +110,8 @@
 
 .total strong { font-size: 1.15rem; }
 
-/* The cookie banner and `.hidden` used to live here. Both are site chrome rather than
-   questionnaire styling, and the banner is included from `theme-head` on every page, so
-   both now live in app.css - which every page loads. Moved rather than duplicated:
-   two copies of a component's rules are two things to keep in step. */
+/* The cookie banner and `.hidden` live in app.css now, because both are site chrome and every page
+   loads that file. */
 
 /* ─── Small screens ───────────────────────────────────────────────────────── */
 

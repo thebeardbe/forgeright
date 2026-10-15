@@ -1,18 +1,14 @@
 /**
- * Questionnaire client.
- *
- * Drives the conversation, then renders the scored analysis. All display text
- * comes from the server-rendered strings object, so the copy lives in one place.
+ * Questionnaire client: drives the conversation, then renders the scored analysis. All display text comes
+ * from the server-rendered strings object.
  */
 (function () {
     const cfg = window.AUDIT_CONFIG || {};
     const S = cfg.strings || {};
 
     /**
-     * The app's base path from the page config, "" when served at the root.
-     *
-     * It comes from the server via AUDIT_CONFIG rather than being hardcoded, so
-     * a deployment under a prefix needs no change here. One value, one place.
+     * The app's base path from the page config, "" when served at the root. From the server via
+     * AUDIT_CONFIG rather than hardcoded, so a deployment under a prefix needs no change here.
      */
     const BASE_PATH = cfg.basePath || '';
 
@@ -25,15 +21,9 @@
     const apiPath = (appPath) => `${BASE_PATH}${appPath}`;
 
     /**
-     * The participant's token, when the page was reached from an invitation
-     * link. THE TOKEN IS THE ONLY CREDENTIAL: it is sent as `participantToken` with
-     * every request, and the server resolves the organisation from it.
-     *
-     * THERE WAS A SECOND FIELD, `state.pass`, ALSO SET TO THIS TOKEN and sent beside
-     * `participantToken` on both requests. It was the access code's slot, reused to
-     * carry the token while the code gate existed; the server no longer reads that
-     * field at all, so both it and the field are gone. Sending the same credential
-     * twice under two names invites a reader to think they are different things.
+     * The participant's token, when the page was reached from an invitation link, sent as
+     * `participantToken` with every request. The token is the only credential, and the server resolves the
+     * organisation from it.
      */
     const TOKEN = cfg.participantToken || '';
     const hasToken = TOKEN !== '';
@@ -62,15 +52,11 @@
     };
 
     /**
-     * The round this participant left open, if any.
+     * The round this participant left open, if any: only an open round is resumed, because a timestamp
+     * means that process was concluded.
      *
-     * ONLY AN OPEN ROUND IS RESUMED: `submitted_at === null` means unfinished, while a timestamp
-     * means that process was concluded - replaying it would ask the participant to redo work the
-     * system already has. If none is open this is a fresh participant.
-     *
-     * THE TRANSCRIPT IS REPLAYED, NOT THE EXTRACTED FIELDS, so the participant sees the
-     * conversation they actually had rather than a pre-filled form. The data needs no restoring
-     * here, because the next payload the server upserts carries it.
+     * The transcript is replayed rather than the extracted fields, so the participant sees the conversation
+     * they actually had.
      */
     const existing = Array.isArray(cfg.existingResponses) ? cfg.existingResponses : [];
     const openRound = existing
@@ -118,20 +104,14 @@
     }
 
     /**
-     * Sends the participant's turn and acts on the reply.
+     * Sends the participant's turn and acts on the reply. There is no access-code step: the token is the only
+     * credential, enforced by `mayUseQuestionnaire` in lib/routes-api.js.
      *
-     * THERE IS NO ACCESS-CODE STEP. The token is the only credential and `beginWithToken`
-     * below is the only way in; `mayUseQuestionnaire` in lib/routes-api.js enforces it.
+     * Scoring uses `toSave` rather than the raw reply, because `toSave` carries the reconciled identity and
+     * any carried-forward process; scoring the raw reply showed a total built from a stub.
      *
-     * SCORING USES `toSave` RATHER THAN THE RAW REPLY, and this matters: `toSave` carries the
-     * reconciled identity and any process carried forward from the round, while the raw reply
-     * is the model's own. Scoring the raw reply showed a total built from a stub while the
-     * full process sat unread beside it in the same round.
-     *
-     * THE INPUT STAYS OPEN WHEN `complete`, because the closing question is answerable: the
-     * model asks "is there another process you would like to improve?" in the SAME reply that
-     * reports completion, so hiding it made rounds 2 and beyond unreachable - the whole point
-     * of the round model.
+     * The input stays open when `complete`, because the model asks the closing question in the same reply that
+     * reports completion, and hiding it would make rounds 2 and beyond unreachable.
      */
     async function send() {
         if (state.waiting) return;
@@ -376,33 +356,19 @@
     }
 
     /**
-     * Gives each process in this reply the identity the round already gave it, and collapses
-     * a reply that describes the SAME process twice.
+     * Gives each process in this reply the identity the round already gave it, and collapses a reply that
+     * describes the same process twice.
      *
-     * THE DEFECT, MEASURED: the server derives a process `id` from its `task`, and THE MODEL
-     * REWORDS THE TASK BETWEEN TURNS - so one process accumulated under several ids and the
-     * score came from one variant while the others scored 0. Two runs of one interview gave
-     * 385 h/wk and 25.5 h/wk depending on how often the model reworded itself.
+     * The server derives a process `id` from its `task` and the model rewords the task between turns, so one
+     * process accumulates under several ids and the score comes from one variant. Every workflow takes the id
+     * of a held process it matches on the exact step-name co-test, and then a reply describing one process
+     * twice is collapsed to the richer entry.
      *
-     * WHAT THIS DOES, and only this: every workflow is matched against each held process on
-     * the exact step-name co-test and takes the matched id; then a reply describing one
-     * process twice is collapsed to the RICHER entry. Entry counts are NOT part of it.
+     * There must be no early return on an empty `held`: the fold below compares entries within this reply, so
+     * returning early would leave the duplicate on the first turn it appears, when the stale copy is not yet
+     * in `held`.
      *
-     * THE HARM DIRECTION, why the matching is per-entry: two genuinely different processes
-     * each matching a DIFFERENT held process keep both ids - the case that breaks if the rule
-     * assumed "one on each side" - while an entry matching nothing keeps its own id.
-     *
-     * THE CO-TEST'S EVIDENCE is in `ai/workflow-identity.js`, which is the SERVER'S
-     * implementation and NOT this one's mirror: it also decides whether a reply is the
-     * round's process at all, while this reattaches an identity and collapses what is here.
-     *
-     * NO EARLY RETURN ON AN EMPTY `held`: it looks like a cheap short-circuit and it is a bug,
-     * because the fold below compares entries WITHIN THIS REPLY and needs no round history. So
-     * returning early would leave the duplicate on the very first turn it appears - exactly when
-     * the stale copy is not yet in `held` and nothing else can catch it.
-     *
-     * EACH ENTRY IS MATCHED ON ITS OWN, so a reply carrying several processes, several wordings
-     * of one process, or both, is handled by the same pass.
+     * The co-test's server-side implementation is in `ai/workflow-identity.js`.
      *
      * @param {Array<object>} workflows The workflows from this reply.
      * @param {Map<string, object>} held The processes the round already has, by id.
@@ -505,14 +471,8 @@
     /**
      * Carries forward any process a completion reply left out.
      *
-     * WHY A PROCESS `id` AND NOT AN INDEX: the payload is a list and the model may reorder it, so an
-     * index would substitute one process's fields for another's. `id` is what the reply itself uses
-     * to say which process it means.
-     *
-     * WHY NOTHING IS EVICTED: a round IS the work of one process, so discarding a finished
-     * process's fields is the failure this exists to prevent.
-     *
-     * A reply with no usable payload comes back unchanged - there is nothing to merge.
+     * Keyed on a process `id` rather than an index, because the model may reorder the list. Nothing is
+     * evicted, because a round is the work of one process.
      *
      * @param {object|null} payload The payload from this reply, if any.
      * @param {Map<string, object>} held The processes the round already has, by id.
@@ -546,23 +506,16 @@
     }
 
     /**
-     * Stores one turn of answers, WITH the conversation that produced them.
+     * Stores one turn of answers, with the conversation that produced them.
      *
-     * EVERY TURN, NOT ONLY THE LAST: it upserts the round the participant is in, and a turn that is
-     * not saved is a turn a closed tab destroys - the interview is long enough that abandoning it is
-     * ordinary. `complete` FINALISES the round and comes from the server's own `status`; the page
-     * only passes that answer back.
+     * Every turn rather than only the last, because a turn that is not saved is a turn a closed tab
+     * destroys. `complete` comes from the server's own `status`.
      *
-     * THE TRANSCRIPT GOES WITH THE PAYLOAD because an answer is only meaningful against its
-     * question: "eight minutes" means one thing asked about duration and another asked about the
-     * invoice count, so the extracted fields alone are text with no referent and the questions -
-     * where the interview's quality lives - are lost with the tab. It is already in
-     * `state.conversation`, so this passes what exists, and the server rewrites its stored copy from
-     * it on each save.
+     * The transcript goes with the payload because an answer is only meaningful against its question, and
+     * the transcript is already in `state.conversation`.
      *
-     * ONLY WHEN THE PAGE CAME FROM AN INVITATION LINK, which is what identifies the participant. A
-     * failure is LOGGED RATHER THAN SHOWN: the analysis is on screen, and an error box would suggest
-     * their answers were lost when they were not.
+     * Only when the page came from an invitation link, which is what identifies the participant, and a
+     * failure is logged rather than shown, because an error box would suggest their answers were lost.
      */
     async function saveResponse(audit, complete) {
         if (!hasToken) return;
@@ -664,25 +617,12 @@
     }
 
     /**
-     * The four states a stored field can be in, and what each READS as.
+     * The four states a stored field can be in, and what each reads as: absent is not measured, prose is the
+     * participant's own words, declined is their refusal, and typed is the value with its unit.
      *
-     * THE BUG THE OWNER SAW: a field answered in words rendered as `[object Object]` people,
-     * because `metaPart` handled absent and assumed the rest was printable.
-     *
-     *   absent     -> not measured
-     *   prose      -> THE PARTICIPANT'S OWN WORDS, `{ said: "..." }`
-     *   declined   -> their refusal, or that they did not say
-     *   typed      -> the value, with its unit
-     *
-     * THE MARKER'S MEANING IS NOT CHANGED HERE. `{ said: "..." }` records an answer that will
-     * not fit its declared type and counts as SUPPLIED, so the interview stops asking; this
-     * only decides how it LOOKS.
-     *
-     * COPIED FROM `views/partials/response-fields.ejs`, restated rather than imported because
-     * a browser script cannot reach a view's locals.
-     *
-     * AN OBJECT THAT IS NEITHER MARKER IS NOT PRINTED, so a marker added later degrades to
-     * "not measured" rather than `[object Object]`.
+     * This decides only how a field looks; the marker's meaning is unchanged. Copied from
+     * `views/partials/response-fields.ejs`, because a browser script cannot reach a view's locals, and an
+     * object that is neither marker is not printed, so a marker added later degrades to "not measured".
      */
     function isProse(value) {
         return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -709,11 +649,9 @@
     }
 
     /**
-     * Whether a factor was answered in words, so no figure exists to multiply.
-     *
-     * THE THREE FACTORS OF THE EFFORT FORMULA, and `timePerPeriod` may hold the either/or
-     * alternative to minutes. Prose in any of them means the product CANNOT be computed - which
-     * is a different statement from a product of zero, and the card was making the second one.
+     * Whether a factor was answered in words, so no figure exists to multiply. The three factors of the effort
+     * formula, with `timePerPeriod` holding the either/or alternative to minutes; prose in any of them means
+     * the product cannot be computed, which is a different statement from a product of zero.
      */
     function effortIsUnmeasurable(workflow) {
         const factors = [workflow.frequencyPerWeek, workflow.minutesPerInstance, workflow.peopleAffected];
@@ -726,16 +664,12 @@
     }
 
     /**
-     * `timePerPeriod` in words, or null when it is not a figure.
+     * `timePerPeriod` in words, or null when it is not a figure. It is an object rather than a number, and
+     * `metaPart` below renders any object as unknown, so without this the card would read "not measured" for
+     * effort while the score used the participant's own number.
      *
-     * THE OTHER HALF OF THE EFFORT PAIR, and it is an OBJECT rather than a number: `{ hours, period }`.
-     * `metaPart` below renders ANY object as unknown, so without this the card showed `not measured`
-     * for effort while the score used the participant's own number.
-     *
-     * THE LINE IS ai/period.js `timePerPeriodIsScorable`: a DESCRIPTION such as "2 hours a day" is an
-     * accepted answer with unknown hours, and scoring treats it as unmeasurable rather than zero, so
-     * it must not read as a measurement here either. The wording matches
-     * views/partials/response-fields.ejs, so the answers view and the analysis agree.
+     * The line is ai/period.js `timePerPeriodIsScorable`: a description is an accepted answer with unknown
+     * hours, treated as unmeasurable rather than zero, so it must not read as a measurement here either.
      *
      * @param {*} value The workflow's `timePerPeriod`.
      * @returns {string|null} For example "2 hours per week", or null when there is no figure.
@@ -767,22 +701,13 @@
     }
 
     /**
-     * Renders one bucket.
+     * Renders one bucket. `mode` decides the number and its label: for "do first" the score is recoverable
+     * time and is summed into the total, while the other two buckets show the raw weekly effort, because
+     * showing it as "recoverable" would claim hours the analysis says cannot be recovered.
      *
-     * `mode` DECIDES THE NUMBER AND ITS LABEL. For "do first" the score is recoverable time and is
-     * summed into the total. The other two buckets do NOT count it, so showing it as "recoverable"
-     * would claim hours this analysis is explicitly saying cannot be recovered - they show the raw
-     * weekly effort instead.
-     *
-     * A ZERO THAT MEANS "NOT COMPUTABLE" MUST NOT BE SHOWN AS A ZERO. The effort formula
-     * multiplies three factors, and the prose marker makes any of them unreadable as a number,
-     * so the product is 0. Printing `0 h/wk effort` says the work takes no time, which is false
-     * and is the damaging half of the defect - the participant described a daily check of 56
-     * servers. THE SCORE IS UNCHANGED: it cannot multiply a sentence, and turning one into a
-     * figure is the guess the marker exists to prevent. Only the label changes.
-     *
-     * AN ABSENT FIELD MEANS NOBODY GAVE A USABLE VALUE, so it is shown as such rather than
-     * printing "undefined" as though it were a reading.
+     * A zero that means "not computable" must not be shown as a zero: the effort formula multiplies three
+     * factors and the prose marker makes any of them unreadable, so the product is 0, and printing `0 h/wk`
+     * would say the work takes no time. Only the label changes; the score cannot multiply a sentence.
      */
     function bucketHtml(cssClass, title, items, mode) {
         if (!items || !items.length) return '';
@@ -812,13 +737,9 @@
     }
 
     /**
-     * Exports the scored analysis.
-     *
-     * This file is the deliverable: it is handed to a client without anyone
-     * present to explain it. An earlier version exported the raw questionnaire
-     * answers under the heading "Analysis", with no score, no bucket, no
-     * ranking and no total, which is a document that looks like the analysis
-     * and is not. It now exports what was actually produced.
+     * Exports the scored analysis, which is the deliverable: it is handed to a client with nobody present to
+     * explain it, so it must contain the score, the bucket, the ranking and the total rather than the raw
+     * answers.
      */
     function downloadMarkdown() {
         if (!state.audit || !state.result) return;
@@ -888,10 +809,8 @@
     }
 
     /**
-     * Opens the conversation without the access-code step, for a page reached
-     * from an invitation link. The token in the page config is already the
-     * credential, and it is sent with each answer, so no separate code is
-     * collected or verified here.
+     * Opens the conversation for a page reached from an invitation link. The token in the page config is
+     * already the credential and is sent with each answer, so no separate code is collected.
      */
     function beginWithToken() {
         $('conversation').classList.remove('hidden');
@@ -916,14 +835,10 @@
         $('actions').classList.remove('hidden');
     }
 
-    // NO UNLOCK LISTENERS: #start-btn and #pass are not rendered and their function is gone,
-    // so a page with a resolved token starts the conversation directly - the only case.
+    // No unlock listeners: a page with a resolved token starts the conversation directly.
     //
-    // THE `#download-md` GUARD IS REQUIRED, NOT DEFENSIVE. `$` is getElementById, so an absent
-    // button made the listener `null.addEventListener` and threw, taking the whole block with
-    // it - `#input`'s Enter key included - so the questionnaire loaded and ignored every answer.
-    // The handler and the string are kept, so bringing the button back is removing `hidden` in
-    // views/audit.ejs and nothing else.
+    // The `#download-md` guard is required rather than defensive: `$` is getElementById, so an absent
+    // button made the listener throw and took the whole block with it, `#input`'s Enter key included.
     document.addEventListener('DOMContentLoaded', () => {
         if (hasToken) beginWithToken();
         $('send-btn').addEventListener('click', send);
