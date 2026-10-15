@@ -213,11 +213,9 @@ test('the bound is on the VALUE, so a fraction just outside is refused', () => {
 });
 
 test('the SCORE is bounded on the SAME 0-100 scale as the terms', () => {
-    // THE OWNER'S DECISION, and it reverses what this test used to assert. The
-    // score WAS unbounded: the prompt said "0 to 100, the same scale as the terms"
-    // while the validator checked only that it was finite, so a model returning 250
-    // had it stored, displayed and ranked by. The prompt is now true rather than
-    // softened, and this pins the bound.
+    // The score must be bounded exactly as the terms are: the prompt says "0 to 100, the same
+    // scale as the terms", and a validator that checked only that the score was finite would let a
+    // model return 250 and have it stored, displayed and ranked by. This pins the bound.
     //
     // `TERM_MIN`/`TERM_MAX` ARE REUSED for both on purpose: a second pair with the
     // same values is how the two get out of step.

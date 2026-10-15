@@ -120,8 +120,8 @@ const STEP = (name) => ({ name, whatHappens: `${name} happens`, decidedHow: 'a r
 // ===========================================================================
 
 test('the SAME task produces the SAME id on consecutive turns', () => {
-    // THE STABILITY PROPERTY, and the reason the defect existed: an id that changes between turns
-    // makes one process look like several. Two separate calls, as two turns would be.
+    // THE STABILITY PROPERTY: an id that changes between turns makes one process look like several.
+    // Two separate calls, as two turns would be.
     const first = withWorkflowIdentity([{ task: 'Triaging overnight complaints' }]);
     const second = withWorkflowIdentity([{ task: 'Triaging overnight complaints' }]);
 
@@ -195,7 +195,7 @@ test('the title is the task, shortened at a word boundary with a visible ellipsi
 // 2. reconcileWorkflowIdentity - THE RULE AND ITS GUARDS
 // ===========================================================================
 
-test('a REWORDED task with a SHARED STEP reattaches the round\'s id - the defect itself', async () => {
+test('a REWORDED task with a SHARED STEP reattaches the round\'s id', async () => {
     // The real case: the model rewords the task, the server derives a new id, and the step the
     // participant described is the same. Without this the two accumulate.
     const client = await loadClient({
@@ -231,10 +231,10 @@ test('the case the fix must NOT catch: a DIFFERENT process that shares no step i
     assert.ok(ids.includes('proc-one'), 'and the first is carried forward rather than replaced');
 });
 
-test('a reply with NO steps is DECLINED, not merged - the case the first attempt got wrong', async () => {
-    // THE FIX'S OWN FIRST ATTEMPT WAS WRONG HERE: it replaced the id, which destroyed a genuinely
-    // new process (caught by test/interview-fixes.test.js). A reply carrying no steps is not
-    // evidence of anything, so it is left exactly as the model sent it.
+test('a reply with NO steps is DECLINED, not merged', async () => {
+    // Replacing the id here would destroy a genuinely
+    // new process. A reply carrying no steps is not evidence of anything, so it is left exactly as
+    // the model sent it.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-one', title: 'One', steps: [STEP('Open the invoice')] }] } },
@@ -285,14 +285,11 @@ test('a merge is LOUD - the console.warn fires, because a silent merge is worse 
 });
 
 test('the rule runs on a MULTI-ENTRY reply - several held, several incoming, both resolved', async () => {
-    // REWRITTEN. It encoded the contract that was replaced - "exactly one on each side" - on the
-    // reasoning that "step sharing is not evidence enough to say WHICH one is being reworded". An
-    // EXACT STEP-NAME MATCH is exactly that evidence, so the guards were the defect: a real reply
-    // carries TWO entries, both guards blocked, and the rule was DEAD CODE on every interview.
-    //
-    // THE TWO CASES BELOW ARE THE BUILDER'S, and both now give the correct answer: a multi-held
-    // reply resolves against whichever held process it shares a step with, and a multi-entry reply
-    // resolves each entry on its own.
+    // An EXACT STEP-NAME MATCH is evidence enough to say WHICH held process is being reworded, so
+    // the rule resolves each entry rather than blocking when there is more than one on either side.
+    // A real reply carries TWO entries, so a rule guarded to a single held process is dead code on
+    // every interview: a multi-held reply resolves against whichever held process it shares a step
+    // with, and a multi-entry reply resolves each entry on its own.
 
     // SEVERAL HELD, ONE INCOMING: p3 shares step S with p1, so it takes p1's id.
     const severalHeld = await loadClient({
@@ -512,22 +509,19 @@ test('a NEWLY NAMED process ALONE is kept - the case that killed the reverted fi
 // 3c. THE REAL PAYLOADS, AGAINST THE CURRENT CONTRACT
 // ===========================================================================
 //
-// READ THIS BEFORE TRUSTING A NUMBER BELOW. The contract changed WHILE THESE TESTS WERE BEING
-// WRITTEN: the by-absence arm was REMOVED from `public/js/audit.js` (see the comment on
-// `reconcileWorkflowIdentity`). It folded an entry carrying nothing into a richer sibling, and it
-// was found to SILENTLY DISCARD A PROCESS THE PARTICIPANT HAD JUST NAMED - the builder measured
-// that no discriminator separates the two cases, because a stale carry-forward beside its own
-// process and a newly named process beside an unrelated one are the SAME SHAPE, and task overlap
-// does not tell them apart.
+// THE CONTRACT, AND WHAT IT DOES TO THE ARTEFACTS. `reconcileWorkflowIdentity` has ONE arm: an
+// exactly equal step name, which the participant actually said twice. An entry carrying nothing is
+// NOT folded into a richer sibling, because no discriminator separates a stale carry-forward beside
+// its own process from a newly named process beside an unrelated one - they are the SAME SHAPE, and
+// task overlap does not tell them apart - so folding it would SILENTLY DISCARD A PROCESS THE
+// PARTICIPANT HAD JUST NAMED.
 //
-// SO ONLY THE POSITIVE ARM REMAINS: an exactly equal step name, which the participant actually
-// said twice. The consequence for the artefacts below is that the two step-less cases are NO
-// LONGER FOLDED - `fuelcard.json` and `onerow.json` stay as they arrive. That is the intended
-// behaviour now, not a regression, and these tests assert it so that re-adding the arm turns them
-// red on purpose.
+// The consequence for the artefacts below is that the two step-less cases are NOT FOLDED:
+// `fuelcard.json` and `onerow.json` stay as they arrive. These tests assert it so that re-adding an
+// absence-based arm turns them red on purpose.
 //
-// ASSERT THE OUTCOME, NOT THE WARNING'S WORDING. An earlier version matched
-// `/described ONE process twice/` on the log line and broke when a second arm with a different
+// ASSERT THE OUTCOME, NOT THE LOG WORDING. A version that matched
+// `/described ONE process twice/` on the log line broke when a second arm logged differently.
 // cause existed. Pinning a log line's wording is the same class of mistake as the source-text
 // match that hid the dead-rule defect: it tests the phrasing rather than the result.
 
@@ -585,17 +579,16 @@ test('the REAL fuel-card reply is LEFT ALONE - its stub carries no steps to co-t
     const workflows = readArtefact(ARTEFACTS.fuelcard.file);
     if (workflows === null) { t.skip(`${ARTEFACTS.fuelcard.file} is not present on this host`); return; }
 
-    // THE PAYLOAD: a 4-key step-less entry beside a 19-key 7-step one - it used to fold, and does
-    // not now. THE COUNT IS THE ASSERTION: if this outcome changes, a test written to explain the
-    // decision has to be updated on purpose, which is the friction wanted when absence-based folding
-    // is considered again.
+    // THE COUNT IS THE ASSERTION: if this outcome changes, a test written to explain the decision
+    // has to be updated on purpose, which is the friction wanted when absence-based folding is
+    // considered again.
     //
     // THE MESSAGE ON EACH ASSERTION SAYS A DECISION, NOT A LAW. "Absence alone is not enough
-    // evidence" is a record of what was decided and measured, not a claim that no better evidence
-    // could fold a step-less carry-forward. A future fix that finds such evidence while still
-    // KEEPING a newly-named process WILL turn this red while being correct - so the messages point
-    // at where the decision and its reasoning live (`ai/audit.js`, "THERE IS NO BY-ABSENCE ARM"),
-    // so whoever hits it reads the four-versus-two word-overlap measurement before trying.
+    // evidence" is a record of what was measured, not a claim that no better evidence could fold a
+    // step-less carry-forward. A future rule that finds such evidence while still KEEPING a
+    // newly-named process WILL turn this red while being correct - so the messages point at where
+    // the reasoning lives (the by-absence note in `ai/audit.js`), so whoever hits it reads the
+    // four-versus-two word-overlap measurement before trying.
     assert.equal(workflows.length, 2, 'the artefact holds two entries');
     assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 1,
         'and exactly one carries no steps');
@@ -612,9 +605,9 @@ test('the NEW artefact: TWO step-less stubs beside one rich entry are ALL KEPT',
     const workflows = readArtefact(ARTEFACTS.onerow.file);
     if (workflows === null) { t.skip(`${ARTEFACTS.onerow.file} is not present on this host`); return; }
 
-    // THE CASE THAT ONCE PRODUCED 3 -> 1 VIA THE BY-ABSENCE ARM, and now stays 3. It is the same
-    // shape as the fuel-card case with one more stub, and it is asserted because the shape is what
-    // the removed arm used to fold - so if that arm is ever restored, this fails and says so.
+    // THE CASE OF AN ABSENCE-BASED ARM: it would fold this to 1, and the shape is why it must not.
+    // It is the same shape as the fuel-card case with one more stub, asserted because the shape is
+    // what an absence-based arm would fold - so if one is restored, this fails and says so.
     assert.equal(workflows.length, 3, 'the artefact holds three entries');
     assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 2,
         'two of them carry no steps');
@@ -705,10 +698,9 @@ test('FINDING: the chain is NOT collapsed in every order - pass 2 is not repeate
         'FINDING: the second entry survives because nothing re-compared it');
 });
 
-test('TWO EMPTY ENTRIES ALONE are BOTH KEPT - the case that must not change', async () => {
+test('TWO EMPTY ENTRIES ALONE are BOTH KEPT', async () => {
     // DELIBERATE: folding them would infer identity from PURE ABSENCE, and two visible rows for two
-    // stubs is the honest reading. Now doubly guaranteed, because the arm that would have folded
-    // them no longer exists.
+    // stubs is the honest reading.
     const e1 = { id: 'e1', title: '1', task: 'a process the participant just named', trigger: 'the phone rings' };
     const e2 = { id: 'e2', title: '2', task: 'another name', trigger: 'a mail arrives' };
 
@@ -718,11 +710,11 @@ test('TWO EMPTY ENTRIES ALONE are BOTH KEPT - the case that must not change', as
     assert.equal(foldedAnything(warnings), false, 'and NOTHING was folded');
 });
 
-test('a NEWLY NAMED process beside a finished one is KEPT - the bug that killed the arm', async () => {
-    // THE CASE THE REMOVED ARM GOT WRONG, and it is now the reason the arm is gone: a participant
+test('a NEWLY NAMED process beside a finished one is KEPT', async () => {
+    // THE CASE AN ABSENCE-BASED ARM GETS WRONG: a participant
     // names a second process, the prompt starts "a fresh matrix from its `task` and `trigger`
-    // onward" so it arrives step-less, and the old arm folded it into the finished sibling - the
-    // new process gone, silently and unrecoverably. It must be KEPT.
+    // onward" so it arrives step-less, and an absence-based fold would swallow it into the finished
+    // sibling - the new process gone, silently and unrecoverably. It must be KEPT.
     const finished = { id: 'finished', title: 'Finished', steps: [STEP('Open the invoice')], frequencyPerWeek: 5 };
     const newlyNamed = { id: 'newly-named', title: 'Onboarding a new supplier', task: 'Onboarding a new supplier', trigger: 'a supplier is agreed' };
 
@@ -735,14 +727,12 @@ test('a NEWLY NAMED process beside a finished one is KEPT - the bug that killed 
 // ===========================================================================
 
 test('an EXHAUSTED turn CARRIES a previously-held process forward, saved AND scored', async () => {
-    // THE REPAIR OF A FINDING I REPORTED, and the name now says the requirement rather than the bug.
-    //
-    // WHAT WAS WRONG. `toSave = isComplete ? narrowed.payload : reconciled` - the CARRY-FORWARD
-    // (`narrowed`, which is `mergeForwardDroppedProcesses`) was applied only when `isComplete` was
-    // true. An exhausted reply arrives as `status: 'asking'` (the evidence cap in `ai/audit-core.js`
-    // returns `status: 'asking', exhausted: true`), so `isComplete` was FALSE on an exhausted turn
-    // and the carried-forward payload was DISCARDED: a process the round already held was dropped
-    // from what was saved and scored, with no warning, because `mergeForwardDroppedProcesses`'s
+    // WHAT MUST HOLD. The CARRY-FORWARD (`narrowed`, which is `mergeForwardDroppedProcesses`) must
+    // apply on an exhausted turn, not only on a complete one. An exhausted reply arrives as
+    // `status: 'asking'` (the evidence cap in `ai/audit-core.js` returns `status: 'asking',
+    // exhausted: true`), so a payload chosen on `isComplete` alone discards the carried-forward
+    // payload: a process the round already held is dropped from what is saved and scored, with no
+    // warning, because `mergeForwardDroppedProcesses`'s work is simply discarded.
     // drop was never applied.
     //
     // IT IS NOW `const toSave = narrowed.payload;` with NO GATE - a turn that saves is a turn whose
@@ -842,7 +832,7 @@ test('BOTH the exhausted and the complete branches score the carried-forward pay
         'the complete branch scores the same set');
 
     // AND THE SAVED PAYLOAD MATCHES THE SCORED ONE, so the visible total cannot disagree with what
-    // was stored - which is the defect this pair of assertions exists to prevent.
+    // was stored.
     for (const client of [exhausted, complete]) {
         assert.deepEqual(lastPostedWorkflows(client).map((w) => w.id), ['proc-full', 'proc-new'],
             'what was saved and what was scored carry the same processes');
@@ -850,13 +840,13 @@ test('BOTH the exhausted and the complete branches score the carried-forward pay
 });
 
 // ===========================================================================
-// 4. THE END-TO-END SHAPE OF THE DEFECT - one process, reworded three times
+// 4. THE END-TO-END SHAPE - one process, reworded three times
 // ===========================================================================
 
-test('the reviewer\'s real case: three rewordings of ONE process end as ONE process', async () => {
-    // The payload the real provider produced, reproduced: the task reworded between turns with the
-    // participant's steps shared across them. Without the fix this is three workflows and a total
-    // computed across all of them (the 385 h/wk versus 25.5 h/wk the owner saw).
+test('three rewordings of ONE process end as ONE process', async () => {
+    // The payload a real provider produces: the task reworded between turns with the
+    // participant's steps shared across them. Without reconciliation this is three workflows and a
+    // total computed across all of them.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'a', audit: { workflows: [{ id: 'going-through-customer-complaints-that-came-in-overnight-and', title: 'A', steps: [STEP('Open the complaint')] }] } },

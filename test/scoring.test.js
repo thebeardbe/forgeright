@@ -308,8 +308,8 @@ test('collapseDuplicates keeps one entry scored on the lower estimate', () => {
 });
 
 test('collapseDuplicates has NO conflictsWith own property on the merged record', () => {
-    // Previously this was set to undefined, which is still an own property and
-    // was read downstream as a marker. It must be absent entirely.
+    // Setting it to undefined leaves an own property, which is read downstream as a marker. It must
+    // be absent entirely.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: 10 }),
         wf({ id: 'b', minutesPerInstance: 60 })
@@ -478,8 +478,7 @@ test('aggregate counts a conflicting pair once, at the lower estimate', () => {
 });
 
 test('aggregate counts a three-record chain as ONE entry', () => {
-    // The bug this guards: a task described by three people was counted three
-    // times, tripling its hours in the headline total.
+    // A task described by three people must count once, or its hours triple in the headline total.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: 10, frequencyPerWeek: 1, peopleAffected: 1, judgementScore: 5 }),
         wf({ id: 'b', conflictsWith: 'c', minutesPerInstance: 60, frequencyPerWeek: 1, peopleAffected: 1, judgementScore: 5 }),
@@ -492,8 +491,8 @@ test('aggregate counts a three-record chain as ONE entry', () => {
 });
 
 test('aggregate flags a conflict when only the frequency disagrees', () => {
-    // The bug this guards: agreeing on minutes but not on frequency produced NO
-    // conflict, so the task was counted twice at the larger number.
+    // Agreeing on minutes but not on frequency must still be a conflict, or the task is counted at
+    // the larger number.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: 30, frequencyPerWeek: 1, peopleAffected: 1, judgementScore: 5 }),
         wf({ id: 'b', minutesPerInstance: 30, frequencyPerWeek: 4, peopleAffected: 1, judgementScore: 5 })
@@ -530,10 +529,9 @@ test('a judgement disagreement is NOT an effort conflict, but IS reported as a b
     // automability differently without disagreeing about how much work it is,
     // so `isConflict` stays false and `differences` stays empty.
     //
-    // But that rating decides the bucket. An earlier version inherited it from
-    // whichever record came first and reported nothing, so the same two answers
-    // produced "do first" or "do not automate" depending on array order. The
-    // disagreement must be surfaced even though it is not an effort conflict.
+    // But that rating decides the bucket. Inheriting it from whichever record came first reports
+    // nothing, so the same two answers produce "do first" or "do not automate" depending on array
+    // order. The disagreement must be surfaced even though it is not an effort conflict.
     const description = describeConflict([
         wf({ id: 'a', judgementScore: 1, minutesPerInstance: 30, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', judgementScore: 5, minutesPerInstance: 30, frequencyPerWeek: 2, peopleAffected: 2 })
@@ -640,7 +638,8 @@ test('describeConflict marks a non-numeric string as unmeasured when nobody answ
 });
 
 test('describeConflict marks a field as unmeasured when every value is zero', () => {
-    // Zero is the absence of a measurement. Reporting it as agreement is the bug.
+    // Zero is the absence of a measurement. Reporting it as agreement would claim a measurement that
+    // nobody made.
     const description = describeConflict([
         wf({ id: 'a', minutesPerInstance: 0, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', minutesPerInstance: 0, frequencyPerWeek: 2, peopleAffected: 2 })
@@ -860,10 +859,9 @@ test('the conflict note is deterministic for the same input', () => {
 });
 
 // --- partial answers must not delete a workflow from the headline -----------
-// The defect this guards: an earlier rule marked a field unmeasured when ANY
-// record in the group omitted it, so one blank answer collapsed the group to a
-// record with no value and a real task contributed ZERO to the client document.
-// A field is unmeasured only when NO record supplies a usable value.
+// A field is unmeasured only when NO record supplies a usable value. Marking it unmeasured when ANY
+// record omitted it collapses the group to a record with no value, and a real task then contributes
+// ZERO to the client document.
 
 test('one blank answer keeps the task in the headline at the usable value', () => {
     // 8 min x 40/week x 3 people / 60 = 16 h/wk. One respondent left the field
@@ -941,7 +939,7 @@ test('partial is empty when every record answered every effort field', () => {
 });
 
 test('findConflicts reports a group where some but not all records omitted a field', () => {
-    // Previously such a group was dropped entirely, so the omission was invisible
+    // Dropping such a group entirely leaves the omission invisible
     // in the client's data-quality panel.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: 8, frequencyPerWeek: 2, peopleAffected: 2 }),
@@ -966,8 +964,8 @@ test('a negative value is unmeasured in describeConflict', () => {
 });
 
 test('a negative value is dropped from the collapsed record, not used as the minimum', () => {
-    // The corrected contract: -5 is missing data, so the only usable value, 10,
-    // is the measurement. Previously -5 was accepted and became the minimum.
+    // -5 is missing data, so the only usable value, 10,
+    // is the measurement.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: -5, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', minutesPerInstance: 10, frequencyPerWeek: 2, peopleAffected: 2 })
@@ -996,8 +994,8 @@ test('a negative value does not reach the conflict note or the headline', () => 
 // --- one rule for "is this a number", shared by both readers -----------------
 
 test('effortHoursPerWeek and the conflict path agree about a null for the SAME workflow', () => {
-    // Previously two readers disagreed about null: the scoring path read it as
-    // absent while the conflict path read it as a measured zero. Now one rule.
+    // One rule for "is this a number", shared by both readers: two readers disagreeing about null
+    // would read it as absent in one path and as a measured zero in the other.
     const withMarker = wf({ id: 'single', conflictsWith: 'other', minutesPerInstance: null, frequencyPerWeek: 2, peopleAffected: 2 });
     const withoutMarker = wf({ id: 'single', minutesPerInstance: null, frequencyPerWeek: 2, peopleAffected: 2 });
 
@@ -1029,10 +1027,10 @@ test('the nullable workflow is scored the same with and without a conflict marke
 });
 
 // --- a missing title must degrade, never throw ------------------------------
-// The boundary (parseModelResponse) now requires a non-empty string title, so a
+// The boundary (parseModelResponse) requires a non-empty string title, so a
 // titleless payload should not reach scoring. Scoring must still not be a crash
-// site if one gets through: a TypeError here used to lose the entire analysis
-// rather than produce one imperfect row. These tests call the pure functions
+// site if one gets through: a TypeError here loses the entire analysis
+// rather than producing one imperfect row. These tests call the pure functions
 // directly, bypassing the boundary on purpose, to pin that second line of
 // defence.
 
@@ -1054,8 +1052,7 @@ test('describeConflict falls back to the id when title is an empty string', () =
 
 test('describeConflict falls back to the id for a whitespace-only title', () => {
     // Whitespace is not a title. A blank heading in a client document is worse
-    // than the internal id, and a whitespace title that reached scoring used to
-    // be carried through as '   '. The fallback trims before deciding.
+    // than the internal id, so the fallback trims before deciding.
     const description = describeConflict([
         { id: 'w1', title: '   ', minutesPerInstance: 10 },
         { id: 'w2', title: '   ', minutesPerInstance: 60 }
@@ -1080,7 +1077,7 @@ test('describeConflict keeps a real title in preference to the id', () => {
 });
 
 test('a titleless pair reaching aggregate directly produces a result, not a TypeError', () => {
-    // The regression: this used to throw and take the whole analysis with it.
+    // A TypeError here takes the whole analysis with it.
     const list = [
         { id: 'a', conflictsWith: 'b', frequencyPerWeek: 2, minutesPerInstance: 10, peopleAffected: 2, judgementScore: 5 },
         { id: 'b', frequencyPerWeek: 2, minutesPerInstance: 60, peopleAffected: 2, judgementScore: 5 }
@@ -1100,9 +1097,9 @@ test('a single titleless workflow reaching aggregate produces a result', () => {
 });
 
 test('a whitespace title reaching aggregate is replaced by the id, not served blank', () => {
-    // The route no longer accepts a whitespace title (validateWorkflows rejects
-    // it), but a direct caller can still reach aggregate. Scoring must not serve
-    // a blank heading: the fallback trims, so the id is used instead.
+    // The route rejects a whitespace title (validateWorkflows), but a direct caller can still reach
+    // aggregate. Scoring must not serve a blank heading: the fallback trims, so the id is used
+    // instead.
     const list = [
         { id: 'a', title: '  ', conflictsWith: 'b', frequencyPerWeek: 2, minutesPerInstance: 10, peopleAffected: 2, judgementScore: 5 },
         { id: 'b', title: '  ', frequencyPerWeek: 2, minutesPerInstance: 60, peopleAffected: 2, judgementScore: 5 }
@@ -1383,9 +1380,8 @@ function mockInvoicePair() {
 }
 
 // --- order independence -----------------------------------------------------
-// The previous determinism test called the SAME array twice, which cannot
-// detect order-dependence: an order-dependent function returns the same wrong
-// answer twice. These tests permute the input instead and assert the scoring
+// Calling the SAME array twice cannot detect order-dependence: an order-dependent function returns
+// the same wrong answer twice. These tests permute the input instead and assert the scoring
 // verdict is identical.
 
 /** Runs aggregate over every permutation of a small list. */

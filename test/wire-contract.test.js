@@ -185,9 +185,9 @@ test('an audit.workflows that is a string, or an empty array, carries no usable 
 });
 
 test('a complete processes wins over an unusable audit, over the wire', () => {
-    // The regression this contract was fixed for: a truthy-but-unusable `audit`
-    // used to win over a good `processes`, so the client scored an empty list and
-    // the participant saw the scoring-failed panel after a successful interview.
+    // A truthy-but-unusable `audit` must not beat a good `processes`: it would make the client
+    // score an empty list, so the participant sees the scoring-failed panel after a successful
+    // interview.
     for (const audit of ['{"workflows":[]}', '"nope"', '{}', '[]']) {
         const body = wire(JSON.stringify({
             status: 'complete',
@@ -372,12 +372,11 @@ test('a real completed turn survives being re-parsed from its own serialisation,
 //   - `public/js/audit.js` is one IIFE with no exports and no seam, so no part of
 //     it can be imported and called directly.
 //
-// What that costs, measured: its payload guard was once `data.audit || ...`, which
+// What that costs, measured: a client payload guard of `data.audit || ...`
 // short-circuits on a truthy-but-unusable `audit` ({} or {workflows: []}) and
-// discards a perfectly good `processes` array beside it. That survived five review
-// rounds, because a hand-copied replica of the expression in a test AGREES WITH
-// ITSELF and certifies nothing. It was found by reading, and the fix was verified
-// by one-off browser run. See the note below; do not re-create the replica.
+// discards a perfectly good `processes` array beside it. A hand-copied replica of the expression in
+// a test AGREES WITH ITSELF and certifies nothing. See the note below; do not re-create the
+// replica.
 //
 // So a change to the client's payload handling is currently unprotected. That is
 // stated here rather than implied away, because a reader who sees only the server
@@ -395,8 +394,8 @@ test('a real completed turn survives being re-parsed from its own serialisation,
 //      the missing piece is a driver rather than a browser.
 //
 // A THIRD THING THAT LOOKS LIKE A WAY AND IS NOT: copying the expression into a
-// test. It is what was here before; it is how the defect above got through. The
-// property this file asserts is what the SERVER must guarantee, asserted on a
-// fresh parse of the serialised form, so that the one place that cannot be tested
-// is also not the only thing standing between a bad body and a blank analysis.
+// test. That is how the failure above gets through: the property this file asserts is what the
+// SERVER must guarantee, asserted on a fresh parse of the serialised form, so that the one place
+// that cannot be tested is also not the only thing standing between a bad body and a blank
+// analysis.
 

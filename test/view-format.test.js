@@ -69,8 +69,8 @@ test('an EMPTY object resolves to null, so `{}` renders as untitled rather than 
 });
 
 test('a workflow with NO `task` keeps a genuine `Untitled answer` fallback', () => {
-    // THE ONE HONEST CASE FOR THE FALLBACK. A workflow can exist with no usable task, and
-    // `Untitled answer` is then correct rather than the accidental case it used to be.
+    // A workflow can exist with no usable task, and
+    // `Untitled answer` is then correct rather than accidental.
     assert.equal(responseTitle({ workflows: [{ trigger: 'x' }] }), 'Untitled answer');
     assert.equal(responseTitle({ workflows: [{ task: '   ' }] }), 'Untitled answer', 'whitespace is not a title');
     assert.equal(responseTitle({ workflows: [{ task: 42 }] }), 'Untitled answer', 'a non-string is not a title');
@@ -101,28 +101,27 @@ test('a malformed entry inside `workflows` is skipped for a usable one', () => {
 
 test('the resolver is READ AT EVERY SITE THAT RENDERS A FIELD, not re-implemented at each', () => {
     // The point of one resolver: a view calls it rather than reaching into a payload shape. A view
-    // that reads `.data.task` again would render every interview as untitled, which is the defect,
-    // so the direct read is asserted ABSENT.
+    // that reads `.data.task` directly renders every interview as untitled, so the direct read is
+    // asserted ABSENT.
     //
-    // THE ROADMAP IS NO LONGER A FIELD SITE (commit a46e9fa): it renders a LINK to each answer
-    // rather than the participant's fields, so it no longer calls the resolver and asserting that
-    // it does would pin a layout that was deliberately removed. The sites are now the two in the
-    // answers view - the title, and the fields partial - which are both asserted.
+    // THE ROADMAP IS NOT A FIELD SITE: it renders a LINK to each answer
+    // rather than the participant's fields, so it does not call the resolver. The sites are the two
+    // in the answers view - the title, and the fields partial - which are both asserted.
     const answers = view('admin-answers.ejs');
     const roadmap = view('admin-roadmap.ejs');
 
     assert.match(answers, /responseTitle\(response\.data\)/, 'the answers title uses the resolver');
     assert.match(answers, /responseWorkflow\(response\.data\)/, 'and the fields partial gets the resolved workflow');
-    // No direct read of the raw payload shape survives IN CODE. Comments that DESCRIBE the old
-    // read are stripped first, because the views document the defect they fix.
+    // No direct read of the raw payload shape survives IN CODE. Comments are stripped first,
+    // because the views document the shape they resolve.
     const stripComments = (text) => text.replace(/<%#[\s\S]*?%>/g, '').replace(/<!--[\s\S]*?-->/g, '');
     assert.equal(/\.data\.task/.test(stripComments(answers)), false, 'no direct `.data.task` read in the answers view');
     assert.equal(/\.data\.task/.test(stripComments(roadmap)), false, 'nor in the roadmap view');
 });
 
 test('the roadmap LINKS to each answer instead of copying its fields', () => {
-    // THE CHANGE THE ESCAPING AND RESOLVER TESTS HAD TO FOLLOW. The roadmap used to render every
-    // participant field inline - seven `words` rows per response - and now links to the answer, so
+    // The roadmap renders a link to the answer rather than every
+    // participant field inline - seven `words` rows per response - so
     // the fields appear in one place rather than two. Both halves of that are asserted, because
     // the link must reach the right answer.
     const roadmap = view('admin-roadmap.ejs');
@@ -168,7 +167,7 @@ test('a valid `open` id opens that answer SERVER-SIDE, and a stale one opens not
 });
 
 test('the placeholder contrast is asserted against the CSS, not a hex', () => {
-    // Commit a46e9fa changed the placeholder colour because it matched entered text. A hex would
+    // A placeholder colour that matches the entered text is unreadable. A hex would
     // be an assertion about a value rather than about the rule, so what is pinned is that a
     // placeholder rule EXISTS and sets a colour distinctly from the input text. The exact value
     // is a design choice and stays in the stylesheet.
@@ -182,15 +181,16 @@ test('the placeholder contrast is asserted against the CSS, not a hex', () => {
 });
 
 // ===========================================================================
-// 2. THE FOUR STATES THROUGH THE PAGE - the states the builder fetched live
+// 2. THE FOUR STATES THROUGH THE PAGE
 // ===========================================================================
 
 /**
  * Renders the answers view's row for one response, using the real template.
  *
  * The template needs a fair amount of surrounding context; rather than reproduce the whole app,
- * this renders the two fragments that carry the defect: the title and the fields partial. The
- * `responseTitle`/`responseWorkflow` helpers are provided as locals exactly as `server.js` does.
+ * this renders the two fragments that carry the field rendering: the title and the fields partial.
+ * The `responseTitle`/`responseWorkflow` helpers are provided as locals exactly as `server.js`
+ * does.
  */
 async function renderRow(data, { submitted = true, empty = false, grouping = null } = {}) {
     const row = {
@@ -230,7 +230,7 @@ test('EMPTY: a finished round with every field declined names itself and tags AL
     return renderRow({ workflows: [allDeclined()] }, { empty: true }).then(({ title, tag, fields }) => {
         assert.match(title, /Untitled answer/, 'the empty round falls back to Untitled answer');
         assert.equal(tag, 'nothing answered', 'and is tagged as such');
-        // EVERY FIELD is tagged now, including `steps`, which used to render nothing - so the
+        // EVERY FIELD is tagged, including `steps`, so the
         // count is the matrix's full field list rather than one fewer.
         const notAnswered = (fields.match(/not answered/g) ?? []).length;
         assert.equal(notAnswered, matrix.ALL_PROCESS_FIELD_NAMES.length,
@@ -238,14 +238,14 @@ test('EMPTY: a finished round with every field declined names itself and tags AL
     });
 });
 
-test('a declined `steps` RENDERS a row and its "not answered" tag - the fix, not the finding', () => {
-    // REWRITTEN. It used to pin the defect: a declined `steps` rendered nothing, because the
-    // partial's steps block required an ARRAY and `{ declined: ... }` fell through it. That was a
-    // gap in the "every field tagged" claim found by counting - 14 tags for 15 fields - and the
-    // field most likely to be visibly refused was the one that vanished.
+test('a declined `steps` RENDERS a row and its "not answered" tag', () => {
+    // A declined `steps` must render a row rather than nothing: the
+    // partial's steps block requires an ARRAY, and `{ declined: ... }` falls through it unless
+    // handled. That would leave a gap in the "every field tagged" claim - 14 tags for 15 fields -
+    // and the field most likely to be visibly refused would be the one that vanishes.
     //
-    // THE FIX RENDERS IT, so the assertion is inverted: the row appears, it carries the tag, and
-    // the count is FIFTEEN. An admin counting tags now finds the whole round.
+    // So the assertion is: the row appears, it carries the tag, and
+    // the count is FIFTEEN. An admin counting tags finds the whole round.
     return ejs.renderFile(
         path.join(PROJECT_ROOT, 'views', 'partials', 'response-fields.ejs'),
         { data: allDeclined() }
@@ -313,7 +313,7 @@ test('ROADMAP: the grouped card resolves its fields too', () => {
 });
 
 test('`Untitled answer` occurs ZERO times across a page of real rounds', async () => {
-    // THE BUILDER'S CLAIM, checked by counting rather than by eye. Three real rounds - grouped,
+    // Checked by counting rather than by eye. Three real rounds - grouped,
     // partial, imported - must produce no fallback title; only the genuinely empty one may.
     const rounds = [
         { data: { workflows: [{ task: 'Sort the mail', trigger: 'x' }] }, submitted: true, empty: false },

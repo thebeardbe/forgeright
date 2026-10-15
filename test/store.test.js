@@ -1002,11 +1002,10 @@ test('an unknown organisation is reported as null, not as an error, for reads', 
 });
 
 test('a read for an unknown organisation returns nothing and does NOT create a file', () => {
-    // The defect: a read for an id belonging to no organisation used to open a
-    // path, which CREATES the file, conjuring an empty tenant. A stale cookie
-    // then got a clean-looking empty organisation, and listOrganisationIds()
-    // could no longer tell a real organisation from one invented by a bad
-    // request.
+    // A read for an id belonging to no organisation must not open a path: opening a path CREATES
+    // the file, conjuring an empty tenant that a stale cookie then reads as a clean-looking empty
+    // organisation, and listOrganisationIds() can no longer tell a real organisation from one
+    // invented by a bad request.
     const orgsDir = path.join(STORE_DIR, 'orgs');
     const filesBefore = fs.readdirSync(orgsDir).filter((n) => n.endsWith('.db'));
 
@@ -1306,9 +1305,9 @@ test('a contending write waits for the lock and then succeeds', async () => {
 
 test('a genuine, unresolvable contention still surfaces as an error', async () => {
     // A lock held for far longer than any sane timeout must fail loudly, not
-    // hang and not be swallowed. This is the guard on the fix: a busy timeout
-    // that turned every contention into a silent success would be worse than
-    // the immediate error it replaced.
+    // hang and not be swallowed. This guards the opposite failure: a busy timeout
+    // that turns every contention into a silent success would be worse than
+    // the immediate error.
     const org = newOrg('Write contention forever');
     const inv = invite(org.id);
 
@@ -1409,14 +1408,14 @@ test('an uppercase stored hash does not resolve, and fails closed', () => {
 // Getting it wrong is invisible until contention, which is why it is tested
 // directly rather than only through a contended write.
 //
-// The defect this covers: `Number('')` is 0, so an EMPTY variable - the usual
-// way to disable one in a .env or a container environment - silently set the
-// wait to zero and reinstated the immediate "database is locked" failure the
+// `Number('')` is 0, so an EMPTY variable - the usual
+// way to disable one in a .env or a container environment - would silently set the
+// wait to zero and reinstate the immediate "database is locked" failure the
 // setting exists to prevent.
 //
 // busy-timeout.js is imported directly because the function is not re-exported
 // through lib/store/index.js, which is a list of operations rather than of
-// configuration readers. It is the module the task named for this behaviour.
+// configuration readers.
 
 const { busyTimeoutMs } = await import('../lib/store/busy-timeout.js');
 
@@ -1512,11 +1511,10 @@ test('the default busy timeout is applied when the variable is unset', () => {
 // ===========================================================================
 //
 // tokenHashesMatch is defined in tokens.js and is not re-exported through the
-// index, so it is imported from the module the task named. The contract chosen
-// (read after the builder landed it): the comparison is EXACT and lowercase hex
-// is the only accepted form. That is a deliberate tightening, not an oversight:
+// index, so it is imported from that module. The contract: the comparison is EXACT and lowercase
+// hex is the only accepted form. That is a deliberate tightening, not an oversight:
 // the end-to-end lookup fails closed on an uppercase row because the SELECT
-// binds a lowercase hash, and this function now agrees with it rather than
+// binds a lowercase hash, so this function agrees with it rather than
 // accepting a form hashToken never writes.
 
 const { tokenHashesMatch } = await import('../lib/store/tokens.js');
@@ -1573,14 +1571,14 @@ test('an uppercase stored hash fails closed end to end, and the outcome matches 
 // 12. WRITE TIMING: WHICH LOCK ERRORS ARE REPORTED
 // ===========================================================================
 //
-// timedWrite wraps the two write operations. The defect this covers: the
-// diagnostic matched the exact string "database is locked", so the other
-// spellings SQLite emits - "database table is locked", different capitalisation,
-// and the driver's numeric code - were not reported, which means the one thing
-// this module exists to report was missed for those forms.
+// timedWrite wraps the two write operations. The diagnostic must match every
+// spelling SQLite emits - "database is locked", "database table is locked", different
+// capitalisation, and the driver's numeric code - because a match on the exact string
+// "database is locked" alone misses those forms, and the one thing
+// this module exists to report is then missed with it.
 //
 // write-timing.js is imported directly, because timedWrite is not re-exported
-// through lib/store/index.js. It is the module the task named for this behaviour.
+// through lib/store/index.js.
 
 const { timedWrite } = await import('../lib/store/write-timing.js');
 
