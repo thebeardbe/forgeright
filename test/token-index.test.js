@@ -1,14 +1,9 @@
 /**
  * Tests for lib/token-index.js: which organisation a participant token belongs to.
  *
- * This is the ROUTING FACT that decides which tenant a participant's link opens.
- * A mutation that returns the wrong organisation here produced a fully green suite
- * (489 tests) with every participant routed to the wrong tenant, because a second
- * layer in resolveParticipant happened to catch it. That mitigation is exactly
- * what a later refactor removes, so the property is pinned here directly.
- *
- * STORE_DIR is set to a temp directory per run, before anything is imported, so
- * data/store/ is never touched.
+ * This is the ROUTING FACT that decides which tenant a participant's link opens. A second layer in
+ * resolveParticipant happens to catch a wrong organisation here, and a later refactor could remove
+ * it, so the property is pinned directly.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,9 +45,7 @@ test('a token resolves to its own organisation and invitation', () => {
 });
 
 test('two organisations: each token resolves to its OWN organisation, never the other', () => {
-    // The property the mutation broke: routeForParticipantToken returning a
-    // different organisation for every token. Both directions are asserted,
-    // because a swap would satisfy one and fail the other.
+    // Both directions, because a swap would satisfy one and fail the other.
     const a = orgWithInvitation('Org A', 'a@orga.example', 'Finance');
     const b = orgWithInvitation('Org B', 'b@orgb.example', 'Ops');
 
@@ -69,8 +62,8 @@ test('two organisations: each token resolves to its OWN organisation, never the 
 });
 
 test('a token cannot be induced to resolve elsewhere by a lookalike value', () => {
-    // Near-misses that must not resolve to A: the raw token against a different
-    // case, a truncated form, and a value that hashes differently.
+    // Near-misses that must not resolve to A: a different case, a truncated form, a different
+    // hash.
     const a = orgWithInvitation('Org A', 'a@orga.example', 'Finance');
 
     for (const bad of [

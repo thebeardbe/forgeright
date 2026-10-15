@@ -110,8 +110,8 @@ test('a complete response whose workflow id is empty or whitespace is an error',
 });
 
 test('a rejected audit does not leak the malformed payload back to the client', () => {
-    // It reaches the browser as a /api/score 400 otherwise, shown as a network
-    // error. The error must be a structured status, not the raw audit.
+    // The error must be a structured status, not the raw audit: it otherwise reaches the browser
+    // as a /api/score 400 shown as a network error.
     const result = parseModelResponse('{"status":"complete","content":"Done","audit":{"workflows":"nope"}}');
     assert.equal(result.status, 'error');
     assert.equal(result.audit, undefined);
@@ -182,10 +182,9 @@ test('a complete response with valid workflow entries is still accepted', () => 
 });
 
 // --- validateWorkflows: the shared rule used by BOTH entry points -----------
-// The model path and POST /api/score both call this. The route takes its payload
-// straight from the client, so a weak rule here is directly reachable over HTTP
-// (it once served a blank heading). Every rejection carries a reason string that
-// is shown to the caller, so the reason is asserted, not just the boolean.
+// The model path and POST /api/score both call this, and the route takes its payload straight from
+// the client, so a weak rule here is directly reachable over HTTP. Every rejection carries a reason
+// string shown to the caller, so the reason is asserted, not just the boolean.
 
 test('validateWorkflows accepts a well-formed payload', () => {
     const result = validateWorkflows([{ id: 'w1', title: 'Invoice entry' }]);
@@ -268,8 +267,8 @@ test('validateWorkflows pluralises the missing-title reason', () => {
 });
 
 test('validateWorkflows checks malformed entries before ids before titles', () => {
-    // The order is observable through the reason. A null entry and a titleless
-    // entry together must report the malformed entry, since it is checked first.
+    // The order is observable through the reason: a null entry beside a titleless one reports the
+    // malformed entry.
     const result = validateWorkflows([null, { id: 'a' }]);
     assert.equal(result.reason, '1 entry is not an object', 'the earliest failing check wins');
 });
@@ -282,9 +281,8 @@ test('validateWorkflows gives no reason when the payload is valid', () => {
 // --- the two entry points agree ---------------------------------------------
 
 test('parseModelResponse rejects the same title shapes validateWorkflows rejects', () => {
-    // Both the model path and the HTTP path must apply one rule. A whitespace
-    // title is rejected at the boundary, so it cannot reach scoring that way;
-    // scoring keeps its own fallback for a direct caller.
+    // A whitespace title is rejected at the boundary; scoring keeps its own fallback for a direct
+    // caller.
     for (const title of ['   ', '', null, 7]) {
         const payload = JSON.stringify({
             status: 'complete',

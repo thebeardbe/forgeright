@@ -64,9 +64,8 @@ function stampedVersion(file) {
 // ===========================================================================
 
 test('a v6-shaped file stamped v5 is refused, and the file is byte-identical', () => {
-    // The file already has every table the schema would add, so this is the case
-    // where the SIZE happened to stay identical even under the old code: the
-    // writing was happening, invisibly to a size check.
+    // The file already has every table the schema would add: the case where SIZE stays identical
+    // even when the writing happens, invisibly to a size check.
     fs.mkdirSync(orgsDir(), { recursive: true });
     const org = store.createOrganisation('Fully shaped');
     const file = fileFor(org.id);
@@ -92,11 +91,9 @@ test('a v6-shaped file stamped v5 is refused, and the file is byte-identical', (
 // ===========================================================================
 
 test('a MINIMAL v5 file missing the v6 tables is refused, and NOTHING is written to it', () => {
-    // THE CENTRAL CASE. A minimal file, holding only schema_meta stamped v5, is the
-    // shape where the old defect was most damaging: the refused open ADDED every v6
-    // table, leaving a file that was v6-SHAPED and stamped 5, so every later open
-    // refused it again and an operator's "delete it to start fresh" destroyed a file
-    // that had already been written to.
+    // THE CENTRAL CASE: a minimal file holding only schema_meta stamped v5. A refused open that
+    // ADDS every v6 table leaves a file that is v6-SHAPED and stamped 5, so every later open refuses
+    // it again.
     fs.mkdirSync(orgsDir(), { recursive: true });
     const orgId = 'minimal-v5-file';
     const file = fileFor(orgId);
@@ -113,8 +110,7 @@ test('a MINIMAL v5 file missing the v6 tables is refused, and NOTHING is written
 
     assert.throws(() => store.getOrganisation(orgId), /schema version/i, 'the open is refused');
 
-    // THE PROPERTY: nothing was written. Asserted by hash, which is
-    // unconditionally reliable, rather than by size, which only happens to hold.
+    // Nothing was written, asserted by hash rather than by size.
     assert.equal(hashOf(file), hashBefore, 'the file is byte-identical after the refused open');
     assert.deepEqual(
         tablesIn(file),
@@ -123,9 +119,7 @@ test('a MINIMAL v5 file missing the v6 tables is refused, and NOTHING is written
     );
     assert.equal(stampedVersion(file), '5', 'the stamp is untouched');
 
-    // The size is reported for the record, but the assertion above is the hash.
-    // A late assertion grows this file 12288 -> 139264 while the v6 tables appear, which is the
-    // change the size check cannot see.
+    // The size is reported for the record; the assertion above is the hash.
     assert.equal(fs.statSync(file).size, sizeBefore, 'and the size is unchanged too, in this case');
 });
 
@@ -168,8 +162,7 @@ test('a v6 file that is simply current opens normally, so the refusal is specifi
 // ===========================================================================
 
 test('the refused file is not left v6-SHAPED AND stamped v5', () => {
-    // The exact end state to prevent: the shape of v6 with the stamp of v5.
-    // Stated as a negative, because that combination is the thing to avoid.
+    // The exact end state to prevent, stated as a negative: the shape of v6 with the stamp of v5.
     const orgId = 'not-half-migrated';
     const file = fileFor(orgId);
     fs.mkdirSync(orgsDir(), { recursive: true });
