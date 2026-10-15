@@ -1,9 +1,7 @@
 /**
- * Loads and validates config/ai-config.json.
- *
- * The provider actually used is chosen by the AI_PROVIDER env var, falling back
- * to the file's defaultProvider. This keeps switching providers a config change
- * rather than a code change.
+ * Loads and validates config/ai-config.json. The provider actually used is chosen by the AI_PROVIDER
+ * env var, falling back to the file's defaultProvider, so switching providers is a config change rather
+ * than a code change.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,8 +30,8 @@ export function loadAiConfig() {
         throw new Error(`ai-config: provider "${requested}" is present but marked inactive.`);
     }
 
-    // Fail loudly at startup for programming/config errors, rather than at the
-    // first question. A missing key with a real provider is a misconfiguration.
+    // Fails loudly at startup rather than at the first question, because a missing key with a real
+    // provider is a misconfiguration.
     if (provider.type !== 'mock' && provider.apiKeyEnv && !process.env[provider.apiKeyEnv]) {
         console.warn(
             `[ai-config] WARNING: AI_PROVIDER is "${requested}" but ${provider.apiKeyEnv} is unset. ` +

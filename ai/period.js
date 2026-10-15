@@ -1,36 +1,20 @@
 /**
  * Periods, and the two questions asked about a `timePerPeriod` value.
  *
- * Extracted from `field-shapes.js`, which had grown past its size budget. This
- * module depends on nothing else in the matrix: it is one conversion table and the
- * predicates that read it, which is what makes the cut clean. `field-shapes.js`
- * re-exports all three, so no existing import path changed.
- *
- * The distinction these predicates exist to protect is between a period that SAYS
- * the work is zero and a period that could not be measured. See
- * `timePerPeriodIsScorable`.
+ * The distinction these predicates exist to protect is between a period that says the work is zero and
+ * a period that could not be measured.
  */
 
 /**
- * Whether a value is the continuous-work shape the prompt asks for.
+ * Whether a value is the continuous-work shape the prompt asks for. Two forms are accepted, because the
+ * participant's own words are a valid answer as well as the structured object:
  *
- * TWO ACCEPTED FORMS, because the participant's own words are a valid answer as
- * well as the structured object:
+ *   { hours: 6, period: "week" }   the shape the prompt documents, convertible to weekly hours
+ *   "2 hours a day"                a description, which answers the field but cannot be converted
  *
- *   { hours: 6, period: "week" }   the shape the prompt documents, convertible to
- *                                  weekly hours by the effort calculation
- *   "2 hours a day"                a description, which answers the field but
- *                                  cannot be converted without parsing prose
- *
- * The structured form is what M1's conversion reads. A description is accepted so
- * that an interview which got a real answer is not told the field is missing, and
- * because the matrix asks for the participant's words rather than a particular
- * encoding. Its hours are read as ZERO by the effort calculation, and that is
- * deliberate and visible: `timePerPeriodIsScorable` says which kind arrived, so a
- * caller can tell "this workflow consumes nothing" from "this description could
- * not be measured".
- *
- * A wrong-typed value that is neither, such as a number or an array, is refused.
+ * A description's hours are read as zero by the effort calculation, which is deliberate: see
+ * `timePerPeriodIsScorable`. A wrong-typed value that is neither, such as a number or an array, is
+ * refused.
  *
  * @param {*} value
  * @returns {boolean}
@@ -43,13 +27,10 @@ export function isPeriod(value) {
 }
 
 /**
- * Whether a `timePerPeriod` can actually be turned into weekly hours.
- *
- * TRUE for the structured shape, FALSE for a description. The distinction exists
- * so a zero effort figure can be read correctly: a scorable period of zero would
- * mean the work consumes nothing, while an unscorable description means the
- * figure is unknown. Collapsing those two is how "we could not measure it" starts
- * reading as "there is nothing here".
+ * Whether a `timePerPeriod` can actually be turned into weekly hours: true for the structured shape,
+ * false for a description. The distinction exists so a zero effort figure can be read correctly, since
+ * a scorable period of zero would mean the work consumes nothing while an unscorable description means
+ * the figure is unknown.
  *
  * @param {*} value
  * @returns {boolean}
@@ -61,10 +42,8 @@ export function timePerPeriodIsScorable(value) {
 }
 
 /**
- * How many of each period fit in a week.
- *
- * The conversion M1 needed. One table, used by the effort calculation, so a period
- * this system cannot read is rejected at the matrix rather than scoring zero.
+ * How many of each period fit in a week, used by the effort calculation, so a period this system cannot
+ * read is rejected at the matrix rather than scoring zero.
  */
 export const PERIODS_IN_WEEK = Object.freeze({
     day: 5,      // A working week, matching how the prompt reads "daily".
