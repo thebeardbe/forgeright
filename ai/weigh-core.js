@@ -1,12 +1,10 @@
 /**
- * Weighing core: workflow 3, one process and its steps, producing one number with the terms behind it
- * and a paragraph explaining it.
+ * Weighing core: workflow 3, one process and its steps, producing one number with the terms behind it and a
+ * paragraph explaining it.
  *
- * The model composes the terms into the number and the code checks and stores them: the composition is
- * provisional and tunable by editing the prompt, while `validateWeighing` in lib/store/weighing.js
- * enforces the shape so a model cannot return a number with no breakdown. The cost is real: two runs can
- * weight the same terms differently, so the number is comparable within one set of processes and not
- * necessarily between runs.
+ * The model composes the terms into the number and the code checks and stores them, so a model cannot
+ * return a number with no breakdown. The composition is provisional and tunable by editing the prompt,
+ * which means two runs can weight the same terms differently.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -24,10 +22,7 @@ const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
 
 const SUPPORTED_LANGS = ['nl', 'en', 'fr'];
 
-/**
- * Loads the weighing prompt, falling back to English then Dutch. It returns null rather than throwing
- * so the caller reports a clean error instead of a stack trace, matching the other two prompts.
- */
+/** Loads the weighing prompt, falling back to English then Dutch, or null. */
 async function loadWeighPrompt(toolId, lang) {
     for (const candidate of [lang, 'en', 'nl']) {
         const file = path.join(PROMPTS_DIR, toolId, `weigh_${candidate}.md`);
@@ -41,11 +36,9 @@ async function loadWeighPrompt(toolId, lang) {
 }
 
 /**
- * The user turn carrying the process to weigh. Only what the weighing needs, and nothing that
- * identifies a person: the participant count is a number, the departments are names, and no response id
- * travels. The steps are included in full, with `needsReasoning` and `decidedHow`, because every step is
- * considered and the flag is where the automation stops. A caller's own totals are not sent, because
- * handing the model a pre-computed total would invite it to copy that.
+ * The user turn carrying the process to weigh. Nothing that identifies a person travels: the participant
+ * count is a number, the departments are names, and no response id. A caller's own totals are not sent,
+ * because handing the model a pre-computed total would invite it to copy that.
  *
  * @param {object} args
  * @param {object} args.process The process row.
@@ -61,8 +54,7 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
     parts.push(`name: ${process.name}`);
     parts.push('');
 
-    // The participant fields, merged across everyone who described it: a merged process has several
-    // responses and the numbers belong to the process.
+    // Merged across everyone who described it: the numbers belong to the process, not one response.
     const merged = mergeParticipants(grouping?.responses ?? []);
     parts.push('## What the participants said');
     parts.push('');
@@ -99,9 +91,8 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
 
 /**
  * A field the participant was asked about and did not answer, labelled for the weighing model. "Not
- * measured" is not "nothing here": a term that could not be measured is unknown, while a genuinely zero
- * term is a fact, and a model reading a raw `{"declined":"I have no idea"}` beside numbers could read
- * the refusal as a figure or ignore the field without knowing why it was empty.
+ * measured" is not "nothing here": a model reading a raw `{"declined":"I have no idea"}` beside numbers
+ * could read the refusal as a figure, or ignore the field without knowing why it was empty.
  *
  * @param {string|null} words What the participant said when declining, if anything.
  * @returns {{declinedToAnswer: true, theySaid: string|null, note: string}}
@@ -118,10 +109,9 @@ function declinedForWeighing(words) {
 }
 
 /**
- * The participant's words, labelled so the weighing model knows they are words. Every other value in
- * this payload is a number, a list or a short phrase, so a bare string in a numeric field reads as a
- * figure: `peopleAffected: "just me"` invites the model to score a count from it. It is a shape rather
- * than a rewrite, so the wording is untouched and the explanation sits beside it.
+ * The participant's words, labelled so the weighing model knows they are words: every other value in this
+ * payload is a number, a list or a short phrase, so a bare string in a numeric field reads as a figure.
+ * The wording is untouched and the explanation sits beside it.
  *
  * @param {string} said The participant's words, already validated as non-empty.
  * @returns {{saidInTheirWords: string, note: string}}
@@ -136,15 +126,12 @@ function proseForWeighing(said) {
 }
 
 /**
- * The participant-supplied fields, folded into one view of the process. Where participants disagree,
- * both values are kept as a list rather than averaged, because averaging would invent a number nobody
- * gave and the disagreement is itself information.
+ * The participant-supplied fields, folded into one view of the process. Where participants disagree, both
+ * values are kept rather than averaged, because averaging would invent a number nobody gave.
  *
- * `data` is in either stored shape and is resolved through `responseWorkflow` before any field is read,
- * so a reader that assumed the flat shape would find no fields and weigh the work as unmeasured. A prose
- * answer is labelled before it reaches the model, because the model decides whether prose is usable
- * rather than this code, and it is not filtered out, because excluding it here would decide on the
- * model's behalf.
+ * `data` must be resolved through `responseWorkflow` before any field is read, or a flat-shape payload
+ * weighs as unmeasured. Prose is labelled rather than filtered out, because the model decides whether it
+ * is usable.
  *
  * @param {Array<object>} responses Responses with `data` parsed.
  * @returns {object}
@@ -170,14 +157,13 @@ function mergeParticipants(responses) {
 
         if (values.length === 0) continue;
 
-        // One participant: the value as given, so the common case reads plainly.
+        // One participant: the value as given.
         if (values.length === 1) {
             merged[field] = values[0];
             continue;
         }
 
-        // Several: distinct values as a list, so a disagreement is visible and no number is invented
-        // by combining them.
+        // Several: distinct values as a list, so a disagreement is visible.
         const distinct = dedupe(values);
         merged[field] = distinct.length === 1 ? distinct[0] : distinct;
     }
@@ -187,9 +173,8 @@ function mergeParticipants(responses) {
 
 /**
  * The steps across every response, merged by name into one sequence. Concatenating them would send each
- * step once per participant, and because `reasoningSteps` is a cost, a model shown the inflated list
- * scores the process lower than its own description supports. It is the same merge the roadmap displays,
- * so the list the model weighs and the list a reader sees are one list, and nothing is dropped because
+ * step once per participant, and because `reasoningSteps` is a cost, the inflated list scores lower than
+ * the description supports. It is the same merge the roadmap displays, and nothing is dropped, because
  * merging by name collapses duplicates rather than intersecting.
  *
  * @param {Array<object>} responses Responses with `data` parsed, in either stored shape.
@@ -261,10 +246,9 @@ export async function runWeighing({
 }
 
 /**
- * Parses a weighing reply out of the model's text. Shape only: the terms and the score are checked by
- * `validateWeighing` in lib/store/weighing.js, so the rules about a missing term and a non-numeric score
- * live in one place. A reply with no JSON is reported as an error with what came back, so an unreadable
- * reply is diagnosable from the log.
+ * Parses a weighing reply out of the model's text, shape only: the terms and the score are checked by
+ * `validateWeighing` in lib/store/weighing.js. A reply with no JSON is reported with what came back, so it
+ * is diagnosable from the log.
  *
  * @param {string} raw
  * @returns {object} The parsed reply, or {status:'error', content, reason}.
