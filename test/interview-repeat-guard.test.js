@@ -569,8 +569,8 @@ test('contrast all three states through the real accessor: in progress, finished
 });
 
 test('the console renders "nothing answered" and withholds the rejudge form on that round', async () => {
-    // THE DEFECT THE CONSOLE FIX ADDRESSES: a finalised empty round rendered as `Untitled answer`
-    // with no tag, and offered a Rejudge button that could only fail. Both halves are read from
+    // A finalised empty round must not render as `Untitled answer`
+    // with no tag, or offer a Rejudge button that can only fail. Both halves are read from
     // the view: the tag must exist for the empty state, and the rejudge form must exclude it.
     const view = fs.readFileSync(path.join(PROJECT_ROOT, 'views', 'admin-answers.ejs'), 'utf8');
 

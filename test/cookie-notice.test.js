@@ -273,8 +273,8 @@ test('the banner is included ONCE per page, from `theme-head`, not duplicated by
     // and two scripts, and the second `getElementById` would attach a second click handler.
     //
     // THE SCRIPT IS COUNTED BY THE BLOCK THAT CARRIES THE BEHAVIOUR, not by occurrences of the key:
-    // the key appears TWICE inside one script (`getItem` and `setItem`), which an earlier version of
-    // this test read as two scripts. The marker used is the click handler, which appears once per
+    // the key appears TWICE inside one script (`getItem` and `setItem`), so counting occurrences
+    // would read it as two scripts. The marker used is the click handler, which appears once per
     // script and nowhere else.
     const res = await request({ path: '/' });
     const banners = (res.text.match(/id="cookie-banner"/g) ?? []).length;

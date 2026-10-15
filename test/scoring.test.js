@@ -1121,9 +1121,9 @@ test('collapseDuplicates carries the fallback title onto the merged record', () 
 // --- reportedBy when a respondent is not named ------------------------------
 // `reportedBy` is optional in the payload. The collapsed record must never
 // carry a bare separator or the literal text "undefined": a respondent who is
-// not named simply contributes no name. An earlier version joined
-// [undefined, undefined] into ' / ' and ['Ann', undefined] into 'Ann / ', both
-// of which render as a stray separator with nobody on one side.
+// not named simply contributes no name. Joining
+// [undefined, undefined] into ' / ' or ['Ann', undefined] into 'Ann / ' renders
+// as a stray separator with nobody on one side.
 test('describeConflict drops the names of respondents that were not named', () => {
     const description = describeConflict([
         { id: 'a', title: 'T', minutesPerInstance: 10 },

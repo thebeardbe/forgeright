@@ -1,11 +1,10 @@
 /**
  * The console resolver, and the four round states it has to render.
  *
- * WHY THIS FILE EXISTS. The view read `response.data.task` while the client saves
- * `{ workflows: [...] }`, so the `task` was undefined for EVERY interview round - the screen an
- * admin opens first showed `Untitled answer` with no fields at all, for every live interview. The
- * two halves are old, and this range's own fix read the right shape two lines above the wrong one,
- * which is how it was found.
+ * WHAT THIS COVERS. The client saves `{ workflows: [...] }`, so a view that reads
+ * `response.data.task` finds `task` undefined for EVERY interview round - the screen an admin opens
+ * first shows `Untitled answer` with no fields at all, for every interview. The resolver reads the
+ * right shape; a direct read beside it is the failure to avoid.
  *
  * ONE RESOLVER RATHER THAN A FALLBACK AT EACH READ SITE, because there are three read sites (the
  * answers title, the answers fields, the roadmap card) and a fallback written three times drifts.

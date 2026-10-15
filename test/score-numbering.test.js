@@ -225,13 +225,12 @@ test('the same number on a DIFFERENT revision is allowed, so the index is per re
 // WHAT IS NOT TESTED, AND WHY
 // ===========================================================================
 //
-// THE RACE ITSELF IS NOT STAGED, deliberately, BUT NOT BECAUSE IT CANNOT BE. An
-// earlier version of this note said a single-process test could not stage it because
-// `node:sqlite` is synchronous on the calling thread. THAT WAS WRONG and it was
-// falsified by running it: three WORKER THREADS in one process, each doing the
-// pre-fix `SELECT MAX` -> `BEGIN IMMEDIATE` -> `INSERT`, produced five duplicate
+// THE RACE ITSELF IS NOT STAGED, deliberately, BUT NOT BECAUSE IT CANNOT BE. A
+// single-process test cannot stage it by relying on `node:sqlite` being synchronous on the calling
+// thread; three WORKER THREADS in one process, each doing an out-of-transaction
+// `SELECT MAX` -> `BEGIN IMMEDIATE` -> `INSERT`, produce five duplicate
 // numbers across 74 rows. Registers return, so threads DO interleave - at the READ,
-// which is the mechanism, and not at lock acquisition as the old note implied.
+// which is the mechanism, and not at lock acquisition.
 //
 // WHAT IS TRUE is narrower and more useful: the interleave cannot be produced
 // THROUGH THE PUBLIC API, because `insertScore` opens the transaction around the read. Staging it

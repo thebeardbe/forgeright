@@ -519,13 +519,12 @@ test('an error with an UNRECOGNISED status falls back to 500 - the safe directio
 });
 
 test('a MALFORMED BODY leaks NOTHING - no message, no stack, no body fragment', async () => {
-    // Kept from the earlier version, which is genuinely about leaking rather than about the status,
-    // so it keeps its fixture and only its status expectation changes. The error is a SyntaxError
-    // from `express.json()`, whose message names the body and whose stack names the file.
+    // The error is a SyntaxError from `express.json()`, whose message names the body and whose stack
+    // names the file.
     //
     // THE MESSAGE IS ASSERTED BY ITS ACTUAL TEXT: on this Node version the parser says "Expected
-    // property name or '}' in JSON at position 1", and an earlier check looked for "Unexpected
-    // token" and would have passed while the message WAS being rendered.
+    // property name or '}' in JSON at position 1", so a check for "Unexpected token" alone would
+    // pass while the real message WAS being rendered.
     const res = await malformedBodyRequest({ accept: 'text/html' });
 
     assert.doesNotMatch(res.text, /Expected property name|Unexpected token|in JSON at position/i,
@@ -537,9 +536,9 @@ test('a MALFORMED BODY leaks NOTHING - no message, no stack, no body fragment', 
 });
 
 test('a DISTINCTIVE secret in the error does not reach the response, while the log has it', async () => {
-    // Kept from the earlier version: this is about LEAKING, not about which status. The fixture is
+    // About LEAKING, not about which status. The fixture is
     // the malformed body because it echoes a body fragment in its message, which is where a secret
-    // would travel - so the status is 400 here, and that is stated rather than asserted as 500.
+    // travels - so the status is 400 here, and that is stated rather than asserted as 500.
     const secret = 'zQX-SECRET-4417';
     const booted = await bootWith();
     try {
