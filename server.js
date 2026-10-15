@@ -156,6 +156,10 @@ app.use((req, res, next) => {
  * router mounted earlier would run first and let a request from an unlisted host
  * reach a route, which is the whole thing this guard exists to stop.
  *
+ * THE LOG NAMES THE HOST AND THE LIST; THE PAGE NAMES NEITHER. An operator reads the log and
+ * can fix it in a minute; a visitor reading the allowed list would be handed this installation's
+ * configuration. See lib/error-page.js for the wording, which says it is a deployment matter.
+ *
  * The raw header is parsed by `hostnameFromHeader`, which handles an IPv6 authority: a
  * bracketed literal yields "[", so an entry could never match however it was written.
  *
@@ -174,10 +178,7 @@ app.use((req, res, next) => {
         `(allowed: ${ALLOWED_HOSTS.join(', ')})`
     );
 
-    // THE LOG NAMES THE HOST AND THE LIST; THE PAGE NAMES NEITHER. An operator reads the log
-    // and can fix this in a minute; a visitor reading the allowed list would be handed this
-    // installation's configuration, and would not know what to do with it anyway. See
-    // lib/error-page.js for the wording, which says it is a deployment matter.
+    // The log names the host and the list; the page names neither. See lib/error-page.js.
     return sendError(req, res, 421);
 });
 

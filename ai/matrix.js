@@ -72,6 +72,11 @@ export function fieldsDeclinedIn(process) {
  * THE EITHER/OR PAIR IS ONE REQUIREMENT, read from `fieldsPresentIn` so both callers agree: a
  * process with `frequencyPerWeek` satisfies the effort need, and reporting `timePerPeriod` missing
  * alongside it would send the interviewer back to ask a question it already has the answer to.
+     *
+     * A DECLINED FIELD IS NOT MISSING. It was asked about and the participant had nothing to give,
+     * so asking again is the loop this system exists to prevent. It is not SUPPLIED either - see
+     * `fieldsDeclinedIn` - and this function answers only "is there a question left to ask here",
+     * which for a declined field is no.
  *
  * @param {object} process
  * @returns {string[]}
@@ -81,10 +86,7 @@ export function fieldsMissingFrom(process) {
     const declined = new Set(fieldsDeclinedIn(process));
     const effortSatisfied = EFFORT_FIELDS.some((field) => present.has(field));
 
-    // A DECLINED FIELD IS NOT MISSING. It was asked about and the participant had nothing to
-    // give, so asking again is the loop this system exists to prevent. It is not SUPPLIED
-    // either - see fieldsDeclinedIn - and this function answers only "is there a question left
-    // to ask here", which for a declined field is no.
+    // A declined field is not missing; see the note above.
     return ALL_PROCESS_FIELD_NAMES.filter((field) => {
         if (EFFORT_FIELDS.includes(field)) return !effortSatisfied && !declined.has(field);
         return !present.has(field) && !declined.has(field);

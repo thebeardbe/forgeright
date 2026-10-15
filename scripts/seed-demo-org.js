@@ -121,13 +121,14 @@ function removePreviousDemos() {
  * THROUGH `orgDbPath`, so the path is checked to be inside the store before anything is
  * removed: a deletion resolving elsewhere would be the worst bug this script could have.
  * The WAL and SHM sidecars go with it, or a later run finds a database that only looks present.
+ *
+ * THE CONNECTION IS CLOSED FIRST, OR THE DELETION IS INVISIBLE TO THIS PROCESS. A re-run failed
+ * with "organisation already exists": the files were unlinked but the OPEN CONNECTION still held
+ * the row, so `createOrganisation` read what had just been removed. The store caches connections
+ * per organisation and a deleted file does not invalidate that. Closing also checkpoints the WAL.
  */
 function removeOrganisationFiles(orgId) {
-    // CLOSE FIRST, OR THE DELETION IS INVISIBLE TO THIS PROCESS. A re-run failed with
-    // "organisation already exists": the files were unlinked but the OPEN CONNECTION
-    // still held the row, so `createOrganisation` read what had just been removed. The
-    // store caches connections per organisation and a deleted file does not invalidate
-    // that. Closing also checkpoints the WAL, so the removal is complete.
+    // Close first; see the note above.
     closeConnection(orgId);
 
     const target = orgDbPath(orgId);
