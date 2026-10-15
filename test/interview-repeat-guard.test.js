@@ -1,24 +1,17 @@
 /**
  * The repeat guard, the narrowed closing matcher, and the derived "nothing answered" console state.
  *
- * WHAT THE GUARD IS FOR. A model can ask the same question turn after turn, byte-identically, and
- * the round never moves: frustration, then abandonment. The guard replaces a repeated question
- * with a fresh one from the open fields.
+ * A model can ask the same question turn after turn, byte-identically, and the round never moves.
+ * The guard replaces a repeated question with a fresh one from the open fields, and marks what it
+ * wrote so a substitute does not become a match target itself - which is why termination is the
+ * property most of this file tests.
  *
- * THE GUARD'S OWN LOOP IS THE INTERESTING PART, and it is why this file is shaped the way it is.
- * A guard that replaces a repeated question with a fixed substitute makes the SUBSTITUTE the
- * question of record, so it matches its own sentence next turn and replaces it again - the loop
- * moves from the model to the gate. The fix marks a substitute so only the model's own repeats are
- * match targets. Termination is therefore the property most of this file tests, because it is the
- * property that loop threatens.
+ * TWO FINDINGS ARE ASSERTIONS ON TODAY'S BEHAVIOUR, NOT PASSING CLAIMS, so a fix turns them red on
+ * purpose.
  *
- * TWO FINDINGS ARE RECORDED AS ASSERTIONS ON TODAY'S BEHAVIOUR, NOT AS PASSING CLAIMS. They are
- * localised with "FINDING" and they assert what the code does, so a fix turns them red on purpose.
- *
- * A NOTE ON WHAT NEEDS A LIVE PROVIDER: the guard's behaviour is testable offline because it runs
- * on the server against a conversation, which is why these are real tests rather than source
- * greps. What is NOT testable offline is whether a real model produces the stalled conversation
- * in the first place, or how often.
+ * A NOTE ON WHAT NEEDS A LIVE PROVIDER: the guard runs on the server against a conversation, so it
+ * is testable offline. What is NOT testable offline is whether a real model produces the stalled
+ * conversation in the first place, or how often.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,10 +24,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.join(__dirname, '..');
 
-// THE STORE IS A SINGLETON THAT CAPTURES STORE_DIR AT FIRST IMPORT, and the store's own path
-// guard refuses a second, different directory rather than opening the wrong database. So the
-// directory is set ONCE for the whole file, before the store is imported, and every store test
-// below shares it. Each test uses its OWN organisation, which is enough isolation.
+// THE STORE CAPTURES STORE_DIR AT FIRST IMPORT, and its path guard refuses a second,
+// different directory. So the directory is set ONCE for the whole file, and each test uses its
+// own organisation for isolation.
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-guard-'));
 process.env.STORE_DIR = STORE_DIR;
 process.env.SESSION_SECRET = 'c'.repeat(64);
@@ -50,10 +42,7 @@ after(() => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
 
-/**
- * A process with only the four required-ish fields typed, so `missing` is a known, non-empty
- * set and there is something for the guard to substitute.
- */
+/** A process with the four required-ish fields typed, so `missing` is a known, non-empty set. */
 const partialProcess = () => ({
     task: 'entering invoices',
     trigger: 'the mail arrives',
@@ -83,10 +72,8 @@ const fullProcess = () => ({
 });
 
 /**
- * Parses one turn with the conversation so far, in the shape the client replays it.
- *
- * `conversation` is a list of `{ content, missing, substituted, exhausted }` for assistant turns,
- * which is exactly what `assistantQuestionsWithOpenCounts` reads.
+ * Parses one turn with the conversation so far, in the shape the client replays it:
+ * `{ content, missing, substituted, exhausted }` per assistant turn.
  */
 function turn(content, conversation = [], { process = partialProcess(), status = 'asking' } = {}) {
     const askedBefore = conversation.map((t) => ({
@@ -109,12 +96,10 @@ test('a repeated question with NO progress is replaced with a question about ano
     const question = 'How do you keep track of it?';
     const conversation = [];
 
-    // Turn 1: the model's question is passed through, because nothing precedes it.
     const first = turn(question, conversation);
     assert.equal(first.content, question, 'the first asking is not a repeat');
     assert.equal(first.substituted, false, 'and is not marked as the gate\'s');
 
-    // Turn 2: the same question, with the same number of fields open. This is the stall.
     const second = turn(question, conversation);
     assert.notEqual(second.content, question, 'the repeat is replaced');
     assert.equal(second.substituted, true, 'and marked as the gate\'s own');
@@ -123,21 +108,17 @@ test('a repeated question with NO progress is replaced with a question about ano
 });
 
 test('A LEGITIMATE SECOND ATTEMPT PASSES THROUGH - the difference between a guard and a wall', () => {
-    // The prompt allows one rephrase, so asking the same field twice is legitimate. It is only a
-    // stall when NOTHING was recorded since. The guard reads `missing` shrinking as that progress,
-    // so a repeat after progress is left alone. This is the line the guard must not cross.
+    // The prompt allows one rephrase, so a repeat after progress is legitimate; only a repeat with
+    // NOTHING recorded since is a stall. The guard reads `missing` shrinking as that progress.
     const question = 'How often does this happen?';
     const conversation = [{ content: question, missing: new Array(12).fill('f'), substituted: false }];
 
-    // NOW there are 10 open fields, so 2 were answered since the question was asked.
     const result = turn(question, conversation);
     assert.equal(result.content, question, 'a repeat after progress is NOT substituted');
     assert.equal(result.substituted, false, 'and is not marked as the gate\'s');
 });
 
 test('the SAME repeat with no progress IS substituted, so progress is the only difference', () => {
-    // The contrast for the test above: identical question, identical conversation, and the ONLY
-    // difference is the open-field count. This is what makes the guard's condition meaningful.
     const question = 'How often does this happen?';
     const withProgress = [{ content: question, missing: new Array(12).fill('f'), substituted: false }];
     const noProgress = [{ content: question, missing: new Array(10).fill('f'), substituted: false }];
@@ -147,13 +128,8 @@ test('the SAME repeat with no progress IS substituted, so progress is the only d
 });
 
 test('TERMINATION: a model stuck on ONE sentence ends the round, with no question repeated', () => {
-    // THE PROPERTY THAT FAILED TWICE. The model sends the same sentence every turn; the guard
-    // substitutes; the substitute becomes the question of record. If the guard matched its own
-    // substitute, it would replace it forever. It does not, because a substitute is marked, so
-    // each turn moves to a field not yet asked and the round terminates.
-    //
-    // Measured here: the model repeats one sentence, and the conversation reaches `exhausted`
-    // with every question distinct. The bound is generous (40 turns; 15 fields exist).
+    // A guard that matched its own substitute would replace its own sentence forever. The mark on a
+    // substitute is what stops that, so each turn moves to a field not yet asked.
     const MODEL_SENTENCE = 'How do you keep track of it?';
     const conversation = [];
     const distinct = new Set();
@@ -199,10 +175,8 @@ test('TERMINATION under an ECHOING model - the case that stresses the substitute
 });
 
 test('an ECHOING model NEVER sends the same question twice in a row, and the round terminates', () => {
-    // The property is NO CONSECUTIVE DUPLICATE. An echoing model sends back whatever it last saw,
-    // so it re-issues the gate's own substitute; the mark on a substitute keeps it from being
-    // matched as if it were the model's, and the conversation still advances to a fresh field
-    // each round rather than circling. The echo still reaches the server; what never reaches the
+    // An echoing model re-issues the gate's own substitute; the mark on a substitute stops it being
+    // matched as if it were the model's. The echo still reaches the server; what never reaches the
     // participant is a pair of consecutive identical sentences.
     const conversation = [];
     const replies = [];
@@ -222,11 +196,8 @@ test('an ECHOING model NEVER sends the same question twice in a row, and the rou
 });
 
 test('and an ECHOING model TERMINATES - the two fixes together, which is where it was fragile', () => {
-    // THE OTHER PROPERTY THE OLD TEST PROTECTED, from the other side. Pinning "no duplicate"
-    // without this would let a fix that never repeats but also never ends pass. So the echo run
-    // must both avoid duplicates AND reach `exhausted` in a bounded number of turns. The builder
-    // measured 12 turns and 12 distinct; the assertions are the bounded end and the distinctness
-    // so a different starting sentence does not make this brittle.
+    // Pinning "no duplicate" alone would let a fix that never repeats but also never ends pass, so
+    // the echo run must both avoid duplicates AND reach `exhausted` bounded.
     const conversation = [];
     const replies = [];
     let incoming = 'How do you keep track of it?';
@@ -245,11 +216,8 @@ test('and an ECHOING model TERMINATES - the two fixes together, which is where i
 });
 
 test('a SUBSTITUTE the model ECHOES is REPLACED, not re-issued - and the round still terminates', () => {
-    // TERMINATION AND NO CONSECUTIVE DUPLICATE, in the same case. A substitute the model echoes
-    // must be REPLACED, so no sentence reaches the participant twice; and the replacement must not
-    // be re-argued on the gate's next turn, so the conversation terminates rather than the gate
-    // replacing its own sentence forever. The mark is carried by the TEXT, so the gate recognises
-    // its own last sentence while an echo of it is still a match target.
+    // The mark is carried by the TEXT, so the gate recognises its own last sentence while an echo
+    // of it is still a match target.
     const substitute = 'Who else is involved in this?';
     const conversation = [{ content: substitute, missing: new Array(10).fill('f'), substituted: true }];
 
@@ -259,12 +227,9 @@ test('a SUBSTITUTE the model ECHOES is REPLACED, not re-issued - and the round s
 });
 
 test('the mark survives a PASS-THROUGH, so the gate never argues with its own next turn', () => {
-    // THE HALF THAT KEEPS TERMINATION. A substitute can be echoed back and, if there is progress,
-    // passed through. The mark must travel with it on the TEXT, so the gate recognises its own
-    // sentence next turn rather than treating it as the model's and substituting again.
+    // The mark must travel with the substitute on the TEXT, so the gate recognises its own sentence
+    // next turn rather than treating it as the model's and substituting again.
     const substitute = 'Who else is involved in this?';
-    // The substitute is the gate's own, and one field has been answered since, so the repeat is a
-    // legitimate pass-through rather than a substitution.
     const conversation = [{ content: substitute, missing: new Array(12).fill('f'), substituted: true }];
 
     const result = turn(substitute, conversation);
@@ -277,11 +242,10 @@ test('the mark survives a PASS-THROUGH, so the gate never argues with its own ne
 // ===========================================================================
 
 test('every-field-asked ENDS the round as `exhausted`, not `nothing_answered`', () => {
-    // The two states are DIFFERENT and this is the whole point of not reusing the other:
     //   nothing_answered  the participant declined EVERYTHING, so there is no evidence
-    //   exhausted         the participant ANSWERED, and the questions simply ran out
+    //   exhausted         the participant ANSWERED, and the questions ran out
     // Reusing nothing_answered here would tell a participant who answered plenty that no answers
-    // were captured - a lie about their own interview.
+    // were captured.
     const MODEL_SENTENCE = 'How do you keep track of it?';
     const conversation = [];
     for (let i = 1; i <= 40; i += 1) {
@@ -289,7 +253,6 @@ test('every-field-asked ENDS the round as `exhausted`, not `nothing_answered`', 
         if (r.exhausted) {
             assert.equal(r.exhausted, true, 'the round is marked exhausted');
             assert.notEqual(r.status, 'nothing_answered', 'and is NOT nothing_answered');
-            // The decline message must not appear: it says no answers were captured.
             assert.equal(/did not manage to capture any answers/.test(r.content), false,
                 'and the participant is not told their answers were not captured');
             return;
@@ -299,9 +262,8 @@ test('every-field-asked ENDS the round as `exhausted`, not `nothing_answered`', 
 });
 
 test('the two terminal states are DISTINCT: exhausted has supplied fields, nothing_answered has none', () => {
-    // Same comparison from the other side. An all-declined round supplies nothing and gets
-    // nothing_answered; an exhausted round supplies what was answered and gets exhausted. The
-    // supplied count is what separates them, and it is asserted for both.
+    // An all-declined round supplies nothing and gets nothing_answered; an exhausted round supplies
+    // what was answered and gets exhausted. The supplied count separates them.
     const allDeclined = {};
     for (const field of matrix.ALL_PROCESS_FIELD_NAMES) allDeclined[field] = { declined: 'no idea' };
     const declinedReply = parseModelResponse(JSON.stringify({
@@ -311,7 +273,6 @@ test('the two terminal states are DISTINCT: exhausted has supplied fields, nothi
     assert.equal(declinedReply.status, 'nothing_answered', 'declining everything: nothing_answered');
     assert.equal(declinedReply.exhausted, undefined, 'and NOT marked exhausted');
 
-    // And the exhausted path: reached via the real guard, which is asserted by the two tests above.
     const conversation = [];
     let exhaustedResult = null;
     for (let i = 1; i <= 40; i += 1) {
@@ -366,12 +327,9 @@ function wasGated(content) {
     return r.content !== content;
 }
 
-// The set below stresses the two patterns that are over-broad in principle - bare `anything else`
-// and bare `shall`/`should`/`may` - with realistic phrasings about THIS process.
-
 test('ordinary questions are NOT gated - stressing the two over-broad patterns', () => {
     const ordinary = [
-        // The two patterns the matcher narrows, with realistic phrasings that are about THIS process.
+        // The two patterns the matcher narrows, phrased about THIS process.
         'Is there anything else you would change about this step?',
         'Is there anything else that regularly goes wrong here?',
         'Is there anything else you do before this starts?',
@@ -392,7 +350,6 @@ test('ordinary questions are NOT gated - stressing the two over-broad patterns',
         'Is there anything else about the timing I should know?',
         'Is there anything else that slows this down?',
         'Is there anything about the process you would change?',
-        // Ordinary questions with no closing flavour.
         'What systems do you use for this?',
         'How often does this happen?',
         'Who else is involved in this process?',
@@ -418,7 +375,7 @@ test('ordinary questions are NOT gated - stressing the two over-broad patterns',
     ];
 
     const wronglyGated = ordinary.filter(wasGated);
-    // REPORT EVERY FALSE POSITIVE by name, so a failure says which phrasing and not just a count.
+    // Name every false positive, so a failure says which phrasing and not just a count.
     assert.deepEqual(wronglyGated, [], `these ordinary questions were wrongly gated: ${JSON.stringify(wronglyGated)}`);
     assert.ok(ordinary.length >= 28, `the set holds at least 28 ordinary questions (checked ${ordinary.length})`);
 });
@@ -451,9 +408,6 @@ test('closing phrasings ARE gated - including ones that quote no prompt verbatim
 });
 
 test('a legitimately-asked question is not gated even when it contains "move on"', () => {
-    // The two patterns in the matcher are over-broad in principle (bare `anything else` and a bare
-    // modal `shall`/`should`/`may`), so both directions are stressed below: a legitimate question
-    // about THIS process must not be gated, and a genuine closing offer must be.
     for (const content of [
         'Would you like to move on to the next step?',
         'Do you want to move on to the steps themselves?',
@@ -461,37 +415,30 @@ test('a legitimately-asked question is not gated even when it contains "move on"
     ]) {
         assert.equal(wasGated(content), false, `"${content}" is about this work and must pass through`);
     }
-    // The closing counterpart, which must be gated.
     assert.equal(wasGated('Shall we move on?'), true, '"Shall we move on?" is a closing offer');
 });
 
 test('FINDING: one ordinary phrasing is still wrongly gated by the anything-else pattern', () => {
-    // A RESIDUAL FALSE POSITIVE: a legitimate question about THIS process being replaced by a
-    // generic one. The pattern is
+    // The pattern is
     // `/\banything else\s+(?:you|we)...\s+(?:like|want|wish|add|cover)\b/`, and `add` has no
     // anchor after it, so:
     //
     //   "Is there anything else you would add to the steps?"   -> about THIS process, GATED
     //   "Is there anything else you would add?"                -> a closing offer, gated
     //
-    // are indistinguishable to the pattern. The first is rarer than the false positives the
-    // narrowing removed, and "add" with a trailing qualifier is exactly how a model phrases a
-    // question about the current steps. RECORDED AS TODAY'S BEHAVIOUR so narrowing it turns this
-    // red on purpose.
+    // are indistinguishable to the pattern. RECORDED AS TODAY'S BEHAVIOUR so narrowing it turns
+    // this red on purpose.
     const aboutThisProcess = 'Is there anything else you would add to the steps?';
     assert.equal(wasGated(aboutThisProcess), true,
         'FINDING: this question about the current steps IS gated');
-    // The unqualified form is genuinely a closing offer, so the pair is the ambiguous one.
     assert.equal(wasGated('Is there anything else you would add?'), true,
         'and the unqualified form is gated too, which is correct');
 });
 
 test('FINDING: a closing offer with the object AFTER the verb is missed', () => {
-    // THE OTHER DIRECTION, and the accepted one: the pattern is allowed to miss a rare closing
-    // phrasing rather than hit a common one. "Would you like to add anything else?" puts `anything
-    // else` after the verb, where none of the subject patterns reach it, so it passes through with
-    // the matrix unsatisfied. This direction is accepted, and recording it pins how far the miss
-    // goes rather than leaving it to be discovered live.
+    // The pattern is allowed to miss a rare closing phrasing rather than hit a common one:
+    // "Would you like to add anything else?" puts `anything else` after the verb, where none of the
+    // subject patterns reach it. RECORDED AS TODAY'S BEHAVIOUR.
     assert.equal(wasGated('Would you like to add anything else?'), false,
         'FINDING: this closing phrasing is NOT gated');
 });
@@ -501,21 +448,14 @@ test('FINDING: a closing offer with the object AFTER the verb is missed', () => 
 // ===========================================================================
 
 test('the console derives `empty` from the ROW - exercised through its real accessor', async () => {
-    // DERIVED, NOT STORED, and the derivation is exactly two conditions: the round is finished
-    // (`submitted_at` set) and NOTHING in its data has a shape the analysis can use.
-    // `fieldsPresentIn` returns nothing for a declined field, which is what makes "no evidence at
-    // all" computable from the row rather than needing a column.
-    //
-    // THE REAL ACCESSOR IS USED, `listResponsesWithGrouping`, rather than a reimplementation of
-    // its rule: it takes a connection, which is reachable through the store's own
-    // `connectionForOrNull`, so the answer comes from the module that renders the console.
+    // DERIVED, NOT STORED, from two conditions: the round is finished (`submitted_at` set) and
+    // NOTHING in its data has a shape the analysis can use.
     const org = store.createOrganisation('Empty org');
     const invitation = store.addInvitation(org.id, { email: 'p@example.test', department: 'Finance' });
 
     const allDeclined = {};
     for (const field of matrix.ALL_PROCESS_FIELD_NAMES) allDeclined[field] = { declined: 'no idea' };
 
-    // Finalise it with an all-declined payload, which is the empty state.
     store.recordTurn(org.id, invitation.token, { data: allDeclined, transcript: [], complete: true });
 
     const db = organisations.connectionForOrNull(org.id);
@@ -527,8 +467,7 @@ test('the console derives `empty` from the ROW - exercised through its real acce
 });
 
 test('contrast all three states through the real accessor: in progress, finished, nothing answered', async () => {
-    // THE PROPERTY THAT MATTERS, side by side: no row looks finished with nothing in it. Three
-    // rounds, three DIFFERENT answers from the same accessor, which is what the console renders.
+    // No row may look finished with nothing in it.
     const org = store.createOrganisation('Three states org');
     const allDeclined = {};
     for (const field of matrix.ALL_PROCESS_FIELD_NAMES) allDeclined[field] = { declined: 'no idea' };
@@ -562,21 +501,16 @@ test('contrast all three states through the real accessor: in progress, finished
     // C: finalised with NO evidence, so empty.
     assert.notEqual(byDept.get('C').submitted_at, null, 'C is finalised');
     assert.equal(byDept.get('C').empty, true, 'C has no evidence, so it is empty');
-    // D: NOT finalised with NO evidence, so NOT empty - the round is unfinished, not empty. This is
-    // the case that proves `empty` needs the `submitted_at` half and not only "no evidence".
+    // D must be NOT empty: `empty` needs the `submitted_at` half, not only "no evidence".
     assert.equal(byDept.get('D').submitted_at, null, 'D is not finalised');
     assert.equal(byDept.get('D').empty, false, 'D is unfinished, so it is NOT empty');
 });
 
 test('the console renders "nothing answered" and withholds the rejudge form on that round', async () => {
-    // A finalised empty round must not render as `Untitled answer`
-    // with no tag, or offer a Rejudge button that can only fail. Both halves are read from
-    // the view: the tag must exist for the empty state, and the rejudge form must exclude it.
     const view = fs.readFileSync(path.join(PROJECT_ROOT, 'views', 'admin-answers.ejs'), 'utf8');
 
     assert.match(view, /response\.empty/, 'the view knows the derived empty state');
     assert.match(view, />nothing answered</, 'and renders the tag');
-    // The rejudge form is gated on there being something to rejudge, not only on being finalised.
     assert.match(view, /if \(response\.submitted_at !== null && !response\.empty\)/,
         'and withholds the rejudge form when there is nothing to rejudge');
 });
@@ -585,19 +519,15 @@ test('the console renders "nothing answered" and withholds the rejudge form on t
 // 5. EXHAUSTION: MONOTONIC, AND PLACED BEFORE THE SUBSTITUTION
 // ===========================================================================
 //
-// THE PLACEMENT IS WHAT MATTERS, more than what the check compares. A check that lives in the
-// `no fresh target` branch never runs when a rotating `missing` keeps offering fresh targets, so
-// the interviewer keeps asking and never closes. The check therefore runs before substitution,
-// on a repeat with no fresh target, so a rotating open set cannot keep it out of reach.
-//
-// So these build conversations where `missing` ROTATES, which is what defeats a check that
-// compares against the open set, and assert the round still closes.
+// The exhaustion check must run BEFORE substitution, or a rotating `missing` keeps offering fresh
+// targets and the check never runs. These build conversations where `missing` ROTATES, which is
+// what defeats a check that compares against the open set.
 
 /**
  * A payload with a chosen number of OPEN fields, so `missing` can be varied turn by turn.
  *
- * The open fields are the tail of the field list, and `frequencyPerWeek` is always supplied while
- * `timePerPeriod` is always left open - so the effort pair is open and the count is controllable.
+ * The open fields are the tail of the field list, with `frequencyPerWeek` always supplied and
+ * `timePerPeriod` always left open, so the effort pair is open and the count is controllable.
  */
 function processWithOpenFields(openCount) {
     const typed = matrix.ALL_PROCESS_FIELD_NAMES
@@ -614,9 +544,8 @@ function processWithOpenFields(openCount) {
 /**
  * Runs a conversation where the model repeats one sentence and `missing` ROTATES every turn.
  *
- * Returns the turn at which the round ended, or null. The rotation is the point: a check that
- * compares against the open SET needs each set to be seen twice before it fires, so a rotating set
- * needs one extra cycle per set - and at a fast rotation the set is never the same twice.
+ * Returns the turn at which the round ended, or null. A check that compares against the open SET
+ * needs each set to be seen twice before it fires, so a rotating set needs one extra cycle per set.
  */
 function runRotating(period, sentence = 'How do you keep track of it?', maxTurns = 200) {
     const conversation = [];
@@ -656,9 +585,9 @@ test('an OSCILLATING `missing` still terminates - the placement fix', () => {
 });
 
 test('a WIDE rotation - the open set different every turn - still terminates within a bounded run', () => {
-    // The harsher rotation: the window slides by a co-prime step so the open SET differs every
-    // turn and does not recur for many turns. This is the shape that makes a check against the
-    // open set need one extra cycle PER SET, and it is bounded here rather than unbounded.
+    // The window slides by a co-prime step, so the open SET differs every turn and does not recur
+    // for many turns: the shape that needs one extra cycle PER SET if the check compares against
+    // the open set, rather than on the first repeat.
     const ALL = matrix.ALL_PROCESS_FIELD_NAMES;
     const payloadFor = (t) => {
         const open = new Set([t % ALL.length, (t + 4) % ALL.length, (t + 9) % ALL.length, (t + 13) % ALL.length]);
@@ -693,38 +622,28 @@ test('a WIDE rotation - the open set different every turn - still terminates wit
 });
 
 test('exhaustion asks whether every question about an OPEN field has been asked', () => {
-    // The DECISION, not the parameter list. Requiring all fifteen was too strong: a field the model
-    // CLAIMS is never offered, so its phrasing never enters the conversation and exhaustion can
-    // never fire - a loop of its own. The monotonic INTENT holds with the open set instead:
-    //   - the set is `FIELD_QUESTIONS` LIMITED TO the currently-open fields, and
-    //   - it is satisfied when every one of those has been asked, and
-    //   - the decision uses it, on a repeat with no fresh target.
+    // The DECISION, not the parameter list. Requiring all fifteen is too strong, because a field
+    // the model CLAIMS is never offered, so its phrasing never enters the conversation and
+    // exhaustion can never fire. The set is `FIELD_QUESTIONS` limited to the open fields,
+    // satisfied when every one of those has been asked.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
 
-    // The helper exists and takes the open fields.
     assert.match(source, /function asksEveryField\(askedQuestions, openFields\)/,
         'the helper takes the asked questions AND the open fields');
-    // The set is the open fields' phrasings, not all fifteen.
     assert.match(source, /const phrasings = openFields\s*\n?\s*\.map\(\(field\) => FIELD_QUESTIONS\[field\]\)/,
         'it maps the OPEN fields to their phrasings');
     assert.match(source, /if \(phrasings\.length === 0\) return false;/, 'and an empty open set is not its call');
     assert.match(source, /return phrasings\.every\(\(phrasing\) => askedQuestions\.has\(phrasing\)\);/,
         'satisfied when every open field\'s question has been asked');
-    // And the decision passes the open fields, on a repeat with no fresh target.
     assert.match(source, /if \(fresh === undefined && asksEveryField\(askedQuestions, computed\.missing\)\)/,
         'the exhaustion branch passes the currently-open fields');
 });
 
 test('the RESIDUAL STALL of requiring all fifteen: the round still ends', () => {
-    // THE CASE THAT PRODUCED A SECOND LOOP: the model claims task/trigger/steps HELD, so those
-    // questions are never offered, their phrasings never enter the conversation, and a check
-    // requiring all fifteen could never fire - the move-on line emitted every turn, indefinitely.
-    // With the open-field relaxation the round ends.
-    //
-    // Driven by the real guard: a payload proving four fields, and a model repeating one question.
-    // The open set is the ten-or-eleven fields the payload does not carry, all of whose questions
-    // are offered by substitution, so `asksEveryField` is satisfied on the open set even though
-    // three of the fifteen questions were never asked at all.
+    // When the model claims task/trigger/steps HELD, those questions are never offered, so a check
+    // requiring all fifteen could never fire. Here the open set is the ten-or-eleven fields the
+    // payload does not carry, so exhaustion fires on the open set even though three of the fifteen
+    // questions were never asked.
     const conversation = [];
     let endedAt = null;
     for (let i = 1; i <= 60; i += 1) {
@@ -733,17 +652,13 @@ test('the RESIDUAL STALL of requiring all fifteen: the round still ends', () => 
     }
 
     assert.notEqual(endedAt, null, 'the round ends rather than emitting the move-on line forever');
-    // Count the questions actually used, to show it is FEWER than fifteen - which is the point:
-    // exhaustion fired without every field question having been asked.
     const asked = new Set(conversation.map((entry) => entry.content));
     assert.ok(asked.size < matrix.ALL_PROCESS_FIELD_NAMES.length,
         `exhaustion fired with fewer than all fifteen questions asked (asked ${asked.size})`);
 });
 
 test('a HEALTHY interview is NOT cut short - exhaustion needs a repeat to trigger', () => {
-    // The guard must not end an interview that is still moving. Two things are asserted: a
-    // conversation of DISTINCT questions never exhausts, and a repeat WITH progress (a legitimate
-    // second attempt) does not either.
+    // A conversation of DISTINCT questions never exhausts, and neither does a repeat WITH progress.
     const conversation = [];
     const asked = [
         'What is the work, in your own words?',
@@ -758,28 +673,16 @@ test('a HEALTHY interview is NOT cut short - exhaustion needs a repeat to trigge
         assert.equal(r.content, question, 'and is passed through unchanged');
     }
 
-    // And a repeat after progress is left alone, which is the legitimate second attempt.
     const repeat = 'How often does this happen?';
     const prior = [{ content: repeat, missing: new Array(12).fill('f'), substituted: false }];
     assert.equal(turn(repeat, prior).exhausted, false, 'a repeat AFTER progress does not exhaust');
 });
 
 test('FINDING: ECHO plus ROTATION produces consecutive duplicates the fixes do not catch', () => {
-    // THE INTERACTION, and it is the thing the brief asked for. The two fixes act on different
-    // paths: the echo fix makes a substitute MATCHABLE again, and the placement fix moves the
-    // exhaustion check ahead of the substitution. Neither handles the case where the model ECHOES
-    // AND the open set ROTATES at the same time.
-    //
-    // The cascade: the model echoes the substitute; the rotation makes a DIFFERENT field the
-    // `fresh` target each turn; a substitute written for field A reappears as the fresh target
-    // for field A when the rotation brings A back, so the gate re-issues a sentence it already
-    // wrote. Measured with an echoing model and a rotation of period 1: the participant sees the
-    // SAME question three times in a row (max run 3), across 25 consecutive duplicate pairs.
-    //
-    // IT STILL TERMINATES, which is why this is a FINDING and not a termination defeat: the round
-    // closes at turn 41. What it costs is the participant's patience - the symptom the guard
-    // exists to remove, surviving in the interaction of the two fixes rather than in either one.
-    // RECORDED AS TODAY'S BEHAVIOUR so a fix turns it red on purpose.
+    // Neither fix handles the model echoing AND the open set rotating at once: a substitute written
+    // for field A reappears as the fresh target when the rotation brings A back, so the gate
+    // re-issues a sentence it already wrote. The round still terminates; what it costs is the
+    // participant's patience. RECORDED AS TODAY'S BEHAVIOUR so a fix turns it red on purpose.
     const { endedAt, replies } = runRotatingEcho(1);
 
     const maxRun = (() => {
