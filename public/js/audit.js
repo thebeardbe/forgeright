@@ -457,8 +457,8 @@
         //
         // THE TWO SITUATIONS ARE THE SAME SHAPE: a stale carry-forward beside its own process, and a
         // newly named process beside an unrelated one, are both an empty entry beside a rich sibling,
-        // and the prompt creates BOTH (line 521 holds the completed process, line 511 starts the new
-        // one with no steps). THE OBVIOUS DISCRIMINATOR - comparing the empty entry's task with its
+        // and the prompt creates BOTH: on a naming turn, under its ONE PROCESS PER ROUND rule, one
+        // entry holds the completed process and another starts the new one with no steps. THE OBVIOUS DISCRIMINATOR - comparing the empty entry's task with its
         // sibling's - WAS TESTED AND DOES NOT WORK: MEASURED, the case the arm was built for shares
         // only FOUR words with its rich sibling while a newly named process in the same domain shares
         // TWO, so any overlap rule low enough to fold the first destroys the second.

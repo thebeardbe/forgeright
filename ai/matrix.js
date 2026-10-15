@@ -143,7 +143,8 @@ export function reconcileMatrix({ processes, claimedHave = null, claimedMissing 
     // because `supplied` is not monotonic: mid-interview both it and `have` believe the model's claim for
     // a field the payload lacks, so re-partitioning the two lists moves both while nothing is recorded.
     // It can shrink, because the model rewrites `processes` each turn, so a reader counting it counts
-    // against a peak.
+    // against a peak. That makes a working run look stalled near the turn cap; NOTES.md M1 records the
+    // rate and why the obvious union fix is a no-op.
     return { have, missing, supplied, evidenced: [...provable], declined: [...declinedEverywhere] };
 }
 
