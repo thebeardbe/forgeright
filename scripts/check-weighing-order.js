@@ -1,25 +1,11 @@
 /**
- * Checks the LIVE model ranks a dominating process above the one it dominates.
+ * Checks the live model ranks a dominating process above the one it dominates.
  *
- * A LIVE CHECK, NOT A TEST. It calls a real provider, so it cannot live in the
- * suite, which has to pass offline and without keys. Run with
- * `node scripts/check-weighing-order.js`.
+ * A live check rather than a test, because it calls a real provider and the suite has to pass offline:
+ * `AI_PROVIDER=deepseek node scripts/check-weighing-order.js`.
  *
- * THE PROPERTY: the prompt says a frequently repeating, simple process scores above a rare,
- * complicated one. It states that as DOMINANCE - if A's reward terms are all at least B's and none
- * of A's costs is worse, A must score higher - and it was measured once in a live conversation at
- * 84 against 18. THIS SCRIPT IS THAT MEASUREMENT MADE REPEATABLE: a model that stopped composing
- * monotonically is the failure the whole ranking rests on, and nothing else would catch it.
- *
- * THE TWO PROCESSES ARE CONSTRUCTED TO DOMINATE, so the expected order does not depend on taste.
- *
- * EXIT CODE IS THE RESULT: 0 when the order is right, 1 when it is not or the weighing failed. A
- * check that prints a warning and passes is a check nobody runs.
- *
- * RUN IT WITH A REAL PROVIDER: `AI_PROVIDER=deepseek node scripts/check-weighing-order.js`. `.env`
- * sets `AI_PROVIDER=mock`, and the mock answers every call with the next interview question - so
- * the default run reports a failed weighing naming nothing useful, which is a property of the mock
- * rather than of the prompt.
+ * The two processes are constructed to dominate, so the expected order does not depend on taste. The exit code
+ * is the result: 0 when the order is right, 1 when it is not or the weighing failed.
  */
 import 'dotenv/config';
 import { runWeighing } from '../ai/weigh-core.js';
@@ -41,11 +27,8 @@ const step = (name, needsReasoning) => ({
 });
 
 /**
- * The process that must score higher: frequent, fast, rule-following, low stakes.
- *
- * Six to eight steps, almost all rules, a low build effort and few departments, so
- * every reward term can be set high and every cost term low without inventing
- * anything a real questionnaire would not say.
+ * The process that must score higher: frequent, fast, rule-following, low stakes, so every reward term can be
+ * set high and every cost term low.
  */
 const QUICK = {
     name: 'Checking a delivery note against the order',
@@ -73,11 +56,8 @@ const QUICK = {
 };
 
 /**
- * The process that must score lower: rare, slow, judgement-heavy, high stakes.
- *
- * THREE judgement steps and three departments, so it is worse on every cost term
- * and no better on any reward term. The dominance is deliberate and total, which is
- * what makes the expected order the prompt's requirement rather than a preference.
+ * The process that must score lower: rare, slow, judgement-heavy, high stakes. Three judgement steps and three
+ * departments make the dominance deliberate and total.
  */
 const SLOW = {
     name: 'Deciding whether to take on a bespoke contract',
@@ -140,19 +120,11 @@ async function weigh(process) {
 }
 
 /**
- * The expected per-term reading of a process, ON THE PROMPT'S OWN 0-100 SCALE.
+ * The expected per-term reading of a process, on the prompt's own 0-100 scale.
  *
- * DERIVED FROM THE RAW FIELDS, NOT HAND-WRITTEN, and that is deliberate: this used
- * to be two literal objects on the old 1-5 scale, so when the scale moved to 0-100
- * they silently became values the prompt would never produce. A dominance check
- * reading stale numbers passes for the wrong reason, which is worse than failing.
- * Deriving them from the same fields the model is given means a scale change moves
- * this with it.
- *
- * These are this script's reading of the ten terms in the direction the prompt
- * defines, normalised to 0-100, and they exist only to confirm the CONSTRUCTION
- * dominates before a model is called. They are not a claim about what the model will
- * return, and nothing here is compared against the reply.
+ * Derived from the raw fields rather than hand-written, so a scale change moves this with it; a dominance check
+ * reading stale literals would pass for the wrong reason. These confirm the construction dominates before a
+ * model is called and are not compared against the reply.
  */
 function expectedTerms(process) {
     const weeklyHours = (process.frequencyPerWeek ?? 0) * (process.minutesPerInstance ?? 0) / 60;

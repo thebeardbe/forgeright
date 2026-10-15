@@ -1,94 +1,54 @@
 /**
- * Turning the illustrative fixture into the responses a demo organisation holds.
+ * Turning the illustrative fixture into the responses a demo organisation holds: a pure transformation,
+ * split out of `seed-demo-org.js`, which keeps the run itself.
  *
- * SPLIT OUT OF `seed-demo-org.js`, which had passed the project's file-size budget. The
- * seam is a real one rather than a mechanical cut: everything here is a PURE
- * TRANSFORMATION of fixture data, and everything left in the seed is the run itself -
- * reading configuration, refusing when the setup is wrong, calling the pipeline, and
- * reporting. The transformation is what a person would want to read on its own.
- *
- * IT ALSO HOLDS THE DEMO'S IDENTITY: the organisation's pinned id, its unmistakable
- * name, the address its admin signs in with, and the markers a previous demo is
- * recognised by. Those belong with the data rather than with the run, and putting them
- * here means the seed reads as a sequence of steps rather than a list of constants.
+ * It also holds the demo's identity - the pinned id, the name, the admin address and the markers a previous
+ * demo is recognised by - so the seed reads as a sequence of steps rather than a list of constants.
  */
 
 /**
- * THE ORGANISATION'S ID, PINNED SO THE FILE NAME IS PREDICTABLE.
+ * The organisation's id, pinned so the file name is predictable. This seed is the one caller needing a fixed
+ * id, because the database is committed and shipped and `DEMO_LOGIN_ORG` in the deployment is a constant;
+ * re-seeding produces the same file rather than a second organisation beside it.
  *
- * `createOrganisation` generates a random UUID by default, and that stays right for every other
- * caller. This seed is the ONE caller needing a fixed id, because the database is COMMITTED and
- * shipped: `DEMO_LOGIN_ORG` in the deployment is a constant; re-seeding produces the SAME file so a
- * rebuild replaces the committed one rather than adding a second organisation beside it; and
- * copying the file needs no rename, because the id is in the name.
- *
- * IT SATISFIES THE STORE'S SAFE-PATH RULE - lowercase letters and hyphens, well under 64 characters
- * - and `assertSafeOrgId` checks it on the same path a generated id takes, before any file is
- * touched. Changing it means re-seeding AND updating `DEMO_LOGIN_ORG`.
+ * It satisfies the store's safe-path rule. Changing it means re-seeding and updating `DEMO_LOGIN_ORG`.
  */
 export const DEMO_ORG_ID = 'example-ltd-demo';
 
 /**
- * The organisation's name, and it does more for the demo's honesty than anything else
- * the console shows.
- *
- * THE CONSOLE HAS NO ILLUSTRATIVE BANNER. The `illustrative` flag is rendered only by
- * the participant client (`public/js/audit.js`), and nothing carries it into the
- * console's process or response views, so the roadmap gives a reader no signal at all
- * that the data is fabricated. The name is therefore the console's only marker, so it
- * carries the marker rather than being a tidy product name.
- *
- * `EXAMPLE Ltd` is the conventional fictitious-company name in English usage, so it
- * reads as illustrative without explanation. The parenthetical says what the data is,
- * because a demo left running is the state in which somebody forgets it is not real.
+ * The organisation's name. The console has no illustrative banner, because the `illustrative` flag is
+ * rendered only by the participant client, so the name is the console's only marker that the data is
+ * fabricated.
  */
 export const ORG_NAME = 'EXAMPLE Ltd (illustrative demo data, not a real client)';
 
 /**
- * The address attached to the demo organisation as its admin.
+ * The address attached to the demo organisation as its admin. The console resolves an organisation from the
+ * signed-in email and `lib/provision.js` creates a new organisation for an unknown address, so signing in
+ * with an address this seed did not register produces an empty organisation beside the seeded one.
  *
- * THE DEMO IS UNREACHABLE WITHOUT THIS, which is not obvious and was found by running
- * it: the console resolves an organisation from the SIGNED-IN EMAIL, and
- * `lib/provision.js` creates a BRAND NEW organisation the first time an address signs
- * in. Signing in with an address this seed did not register therefore produces an
- * empty organisation beside the seeded one, and the roadmap shows nothing.
- *
- * It is a fixed address, and DELIBERATELY DIFFERENT from the demo viewer's
- * `demo-viewer@forgeright.invalid`. That address must have NO `users` row, which is
- * what the read-only guard relies on when a demo session's row is missing; a seed that
- * registered it would create exactly the row that turns a deleted demo row into a
- * writable session.
+ * Deliberately different from the demo viewer's address, which must have no `users` row: registering it
+ * would create the row that turns a deleted demo row into a writable session.
  */
 export const DEMO_ADMIN_EMAIL = 'demo@example.test';
 
 /**
- * How a previous demo organisation is recognised, so a re-run can remove it.
- *
- * MATCHED ON THE NAME rather than an id, because an id changes for a hand-made
- * organisation and the point of a re-run is to find the last one. Both fragments are
- * required, so a hand-made organisation that merely mentions "demo" is not deleted.
+ * How a previous demo organisation is recognised, so a re-run can remove it: matched on the name rather than
+ * an id, with both fragments required, so an organisation that merely mentions "demo" is not deleted.
  */
 export const DEMO_NAME_MARKERS = ['EXAMPLE', 'demo'];
 
 /**
- * The department a fixture response belongs to.
- *
- * NORMALISED FROM `reportedBy`, WHICH IS NOT A DEPARTMENT: the fixture uses it to say
- * WHO gave the estimate, and one value is "Finance (second respondent)". `addResponse`
- * requires a real department name, and the console groups and counts by it, so the
- * parenthetical is dropped rather than stored as a department called "Finance (second
- * respondent)".
+ * The department a fixture response belongs to, normalised from `reportedBy`, which says who gave the
+ * estimate rather than a department: the parenthetical is dropped rather than stored as a department name.
  */
 export function departmentFor(workflow) {
     return String(workflow.reportedBy || 'Unknown').replace(/\s*\(.*\)\s*$/, '').trim();
 }
 
 /**
- * The response data the pipeline reads: the fixture workflow minus its bookkeeping.
- *
- * `reportedBy` and `conflictsWith` are fixture metadata ABOUT who said what. They are
- * not fields the matrix reads, and copying them into a response would put
- * unattributable commentary into the data a reader is shown.
+ * The response data the pipeline reads: the fixture workflow minus its bookkeeping, because `reportedBy` and
+ * `conflictsWith` are metadata about who said what and the matrix does not read them.
  */
 export function responseDataFor(workflow) {
     const { reportedBy, conflictsWith, ...data } = workflow;
@@ -101,30 +61,13 @@ export function demoEmailFor(workflowId) {
 }
 
 /**
- * A synthetic interview transcript for a demo response.
+ * A synthetic interview transcript for a demo response: synthesised for presentation, not captured, so the
+ * demo shows the raw-words view without a real participant.
  *
- * SYNTHESISED FOR PRESENTATION, NOT CAPTURED. A real transcript is the browser's own conversation,
- * stored as the participant answers; this builds one that READS like it, from the fields the
- * fixture already carries, so the demo shows the raw-words view without a real participant. NOTHING
- * HERE IS A RECORD OF ANYTHING A PERSON SAID.
- *
- * IT LIVES HERE RATHER THAN IN `ai/fixtures/mock-audit.js`: that file exists to exercise the
- * pipeline, and demo-presentation concerns must not enter the data the identification and weighing
- * tests run against.
- *
- * THE QUESTIONS ARE THE INTERVIEW'S OWN, taken from the scripted sequence in `ai/adapters/mock.js`:
- * one per turn and never two joined with "and".
- *
- * EVERY PARTICIPANT TURN IS BUILT FROM THE STORED FIELDS - `task`, `trigger`, the steps' `name` and
- * `decidedHow`, `systems`, `handoffTo` and the rest - so the transcript cannot contradict the
- * summary rendered beside it. A demo where the two disagree is worse than no transcript.
- *
- * THE FORMAT-COMMITMENT TURN IS DELIBERATELY ABSENT: `withFormatCommitment` appends it at the
- * PROVIDER call, after the browser has sent its conversation, so it was never part of a stored
- * transcript and adding it would invent a turn the real path cannot produce.
- *
- * LENGTH VARIES BY RESPONSE, because each workflow carries a different number of steps and the
- * question list comes from what it actually has.
+ * Every participant turn is built from the stored fields, so the transcript cannot contradict the summary
+ * rendered beside it. The questions are the interview's own, from the scripted sequence in
+ * `ai/adapters/mock.js`, and the format-commitment turn is absent because it is appended at the provider call
+ * rather than stored.
  *
  * @param {object} workflow One fixture workflow, as `buildMockAudit` returns it.
  * @returns {Array<{role: string, content: string}>} Turns in order, in the shape

@@ -1,42 +1,17 @@
 /**
- * Builds a demo organisation from the illustrative fixture, through the real pipeline.
+ * Builds a demo organisation from the illustrative fixture through the real pipeline: it registers an
+ * organisation in a separate store, inserts the fixture's responses with real invitations, then identifies
+ * and weighs for real.
  *
- * USES THE REAL CODE: it registers an organisation in a SEPARATE store, inserts the
- * fixture's responses with real invitations, then identifies and weighs for real.
- * NOTHING IS PRE-BAKED.
- *
- * THE DATA IS ILLUSTRATIVE, from `ai/fixtures/mock-audit.js`. Deliberately imperfect:
- * two fixture processes describe the SAME work with very different time estimates, so the
- * pipeline has a real disagreement to surface, and another is judgement-heavy and should
- * score low despite high effort.
- *
- * RUN IT WITH A REAL PROVIDER, and it costs real calls:
+ * Requires a real provider and costs real calls:
  *
  *     AI_PROVIDER=deepseek STORE_DIR=data/demo node scripts/seed-demo-org.js
  *
- * `STORE_DIR` IS REQUIRED AND MAY NOT BE THE DEFAULT STORE: this DELETES an organisation to
- * be re-runnable, and the default store is where real data lives. It also sidesteps the
- * pre-v6 files in `data/store/orgs/`, which this code refuses by design. `data/demo` is the
- * COMMITTABLE location - `data/store/orgs/` is gitignored because it holds live data - and
- * the result is meant to be committed so the demo travels with the repository.
+ * `STORE_DIR` is required and may not be the default store, because this deletes an organisation to be
+ * re-runnable. `data/demo` is the committable location and the result is meant to be committed.
  *
- * THE COST IS PRINTED BEFORE ANY CALL: one identification per response, plus at most one
- * weighing per resulting process, since responses describing the same work merge.
- *
- * RE-RUNNABLE MEANS IT DELETES, matching its own organisation by name through `orgDbPath`,
- * which refuses an id resolving outside the store directory.
- *
- * FAILURE IS LOUD AND PARTIAL WORK IS NAMED: a missing key, an unreachable provider or a
- * refused call stops the run with the reason, the organisation id and what was completed.
- *
- * `AI_PROVIDER=mock` CANNOT SEED ANYTHING: the mock answers every call with the next
- * scripted interview question, so identification and weighing cannot work. That is the mock
- * doing its job, and both the startup and per-reply checks say so.
- * `scripts/check-weighing-order.js` handles it the same way.
- *
- * THE READ-ONLY DEMO LINK IS CONFIGURED ELSEWHERE - see the DEMO_LOGIN block in
- * .env.example. A deployment serving the committed database needs NO provider and no API
- * key, because the processes are already grouped and scored.
+ * `AI_PROVIDER=mock` cannot seed anything, because the mock answers every call with the next scripted
+ * interview question.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -116,16 +91,11 @@ function removePreviousDemos() {
 }
 
 /**
- * Deletes one organisation's files.
+ * Deletes one organisation's files, through `orgDbPath` so the path is checked to be inside the store before
+ * anything is removed. The WAL and SHM sidecars go with it.
  *
- * THROUGH `orgDbPath`, so the path is checked to be inside the store before anything is
- * removed: a deletion resolving elsewhere would be the worst bug this script could have.
- * The WAL and SHM sidecars go with it, or a later run finds a database that only looks present.
- *
- * THE CONNECTION IS CLOSED FIRST, OR THE DELETION IS INVISIBLE TO THIS PROCESS. A re-run failed
- * with "organisation already exists": the files were unlinked but the OPEN CONNECTION still held
- * the row, so `createOrganisation` read what had just been removed. The store caches connections
- * per organisation and a deleted file does not invalidate that. Closing also checkpoints the WAL.
+ * The connection is closed first, or the deletion is invisible to this process: the files are unlinked while
+ * the open connection still holds the row, so `createOrganisation` would read what was just removed.
  */
 function removeOrganisationFiles(orgId) {
     // Close first; see the note above.
@@ -319,18 +289,10 @@ function report(orgId, responseCount, identifications, weighings) {
 }
 
 /**
- * Closes every connection, which CHECKPOINTS THE WAL INTO THE DATABASE FILE.
+ * Closes every connection, which checkpoints the WAL into the database file. This is what makes the file
+ * committable: committing the `.db` without its `-wal` sidecar ships a database missing its last writes.
  *
- * THIS IS WHAT MAKES THE FILE COMMITTABLE. The store runs in WAL mode, so while a connection is
- * open the recent writes live in a `-wal` sidecar. Committing the `.db` without it ships a database
- * missing its last writes, and committing both ships two files that must be restored together - a
- * corruption waiting for whoever copies one. Closing folds the WAL back in and removes the
- * sidecars, leaving one self-contained file.
- *
- * RUN WHETHER THE SEED SUCCEEDED OR FAILED: a partial organisation is still worth checkpointing,
- * and a half-written file with a stale WAL is worse than either. The consequence for git is that
- * `data/demo/orgs/` holds exactly one `.db`; the ignore rules for the sidecars exist in case a run
- * is interrupted.
+ * Run whether the seed succeeded or failed, so `data/demo/orgs/` holds exactly one `.db`.
  */
 await main();
 

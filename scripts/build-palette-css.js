@@ -1,10 +1,7 @@
 /**
- * Generates public/css/palette.css from lib/palettes.js.
- *
- * A BUILD STEP rather than a hand-written stylesheet, so the 22 palettes have one home: the data
- * module. Run with `node scripts/build-palette-css.js`.
- *
- * Not part of the request path, and the generated file is committed, so the server never runs this.
+ * Generates public/css/palette.css from lib/palettes.js, so the palettes have one home in the data module.
+ * Run with `node scripts/build-palette-css.js`; the generated file is committed and the server never runs
+ * this.
  */
 import fs from 'node:fs';
 import path from 'node:path';
