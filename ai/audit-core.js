@@ -7,10 +7,9 @@
  *   { status: "complete", content: "<closing line>", have: [], missing: [],
  *     processes: [...], audit: { workflows: [...] } }
  *
- * `HAVE` AND `MISSING` DECIDE WHETHER THE INTERVIEW CONTINUES, NOT `STATUS`: a model that believes
- * it is finished while a field is absent would close early and drop it silently, so the server
- * computes both lists from the processes and compares them with the claim. That contract is what
- * lets the scoring layer stay pure logic - structured data in, never prose to parse.
+ * `HAVE` AND `MISSING` DECIDE WHETHER THE INTERVIEW CONTINUES, NOT `STATUS`. The server
+ * computes both lists and compares the model's claim against them, so a model that believes
+ * it is finished while a field is absent cannot close early and drop it silently.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -28,27 +27,23 @@ const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
 const SUPPORTED_LANGS = ['nl', 'en', 'fr'];
 
 /**
- * The fields that are DERIVED from the payload and must never be asked of the model.
+ * The fields DERIVED from the payload, never asked of the model.
  *
- * `stepsStillNeed` is computed by parseModelResponse from `processes`, and the model's
- * own value for it is deleted on sight. A prompt that DESCRIBED it would invite a model
- * to report it, which is the thing the field exists to prevent: a model claiming what
- * the matrix computed is how a report starts contradicting the data it describes.
- *
- * Kept as a list rather than a single name so the next derived field is added here
- * rather than needing its own guard.
+ * `stepsStillNeed` is computed by `parseModelResponse` from `processes`; the model's own value
+ * is deleted on sight. A prompt that DESCRIBED it would invite the model to report it, and a
+ * model claiming what the matrix computed is how a report starts contradicting its own data.
+ * A list, so the next derived field is added here rather than guarded separately.
  */
 const DERIVED_FIELDS = Object.freeze(['stepsStillNeed']);
 
 /**
  * Removes every derived field from an object graph, at any depth.
  *
- * THE ENFORCEMENT HALF OF `DERIVED_FIELDS`: the payload is persisted verbatim, so a value deleted
- * only at the top level still reaches a caller inside `processes` and from there the participant's
- * saved answers. DEPTH-FIRST AND IN PLACE, and ARRAYS ARE WALKED because the leak found arrived
- * inside one; the recursion terminates because `JSON.parse` output has no cycles.
- *
- * ONE LOG LINE FOR ALL PATHS, because a model repeating the field per process would log every turn.
+ * THE ENFORCEMENT HALF OF `DERIVED_FIELDS`. The payload is persisted verbatim, so a value
+ * deleted only at the top level still reaches a caller inside `processes` and the saved
+ * answers. DEPTH-FIRST, IN PLACE, WALKING ARRAYS - the leak found arrived inside one.
+ * Terminates: `JSON.parse` output has no cycles. ONE LOG LINE FOR ALL PATHS, or a model
+ * repeating the field per process logs every turn.
  *
  * @param {*} value Any part of the parsed reply.
  * @param {string[]} fields The field names to remove.
@@ -120,21 +115,16 @@ async function loadPrompt(toolId, lang) {
 /**
  * The questions this conversation has already asked, each with its open-field count.
  *
- * A `missing` or `evidenced` field is present when the client replayed the server's own reply
- * and absent on a hand-built conversation. An absent count is treated as unknown, which the
- * guard reads as no progress - the safe direction, since it prefers substituting a fresh
- * question over repeating a possibly-stalled one.
+ * THE CONVERSATION IS THE RECORD, not a counter: the client already sends every earlier turn,
+ * and a counter is new state that must survive a reload.
  *
- * THE CONVERSATION IS THE RECORD, not a counter kept across turns: the client already sends every
- * earlier turn, and a counter would be new state that has to survive a page reload.
+ * THE COUNT COMES FROM THE MODEL'S OWN CLAIM, because past turns are not re-matrixed. A model
+ * reporting `missing: []` every stalled turn reports the same count, which is the comparison
+ * the guard needs; a falling count has progressed.
  *
- * THE COUNT COMES FROM THE MODEL'S OWN CLAIM, because the matrix is not run for past turns here. A
- * model reporting `missing: []` every stalled turn reports the same count - exactly the comparison
- * the guard needs - while a count that falls has progressed.
- *
- * IT CANNOT SEE a claim and a payload disagreeing in a way that hides progress, and that direction
- * is safe: the guard substitutes a question about a field that is in fact answered, and the matrix
- * refuses to close while anything is genuinely missing.
+ * An absent `missing`/`evidenced` reads as unknown, i.e. no progress - the safe direction, as
+ * a fresh question beats repeating a stalled one. IT CANNOT SEE a claim and payload disagreeing
+ * so as to hide progress, and that is safe: the matrix refuses to close on anything missing.
  *
  * @param {Array<{role: string, content: string, missing?: string[]}>} messages
  * @returns {Array<{text: string, openCount: number}>}
@@ -725,6 +715,21 @@ const FIELD_QUESTIONS = {
  * Exported so it is unit testable without a provider. Malformed JSON is an expected failure, so it
  * becomes a structured error the UI can show rather than an exception.
  *
+ * WHICH SHAPE IS AUTHORITATIVE IS DECIDED AS `workflowsFrom` DECIDES IT, so the validation and
+ * the payload cannot disagree about which array counts.
+ *
+ * AN EMPTY `audit.workflows` IS PINNED FROM TWO DIRECTIONS. Alone it is unusable - an empty
+ * audit is not a completed audit and the client would score nothing. Beside a good `processes`
+ * array it is merely stale, and `processes` must win, because that is what the interview writes
+ * while `audit` is the older shape it also emits. Emptiness is judged only when there is nothing
+ * better to fall back to.
+ *
+ * EACH SHAPE IS VALIDATED AGAINST ITS OWN REQUIREMENTS. Checking only `status === 'complete'`
+ * against the FINAL payload's requirements killed real interviews: `workflowsFrom` prefers
+ * `processes`, whose field matrix never mentions `id` or `title`, so a finished interview was
+ * refused with "1 entry has no id" - MEASURED on a real deepseek run. `audit.workflows` keeps the
+ * stricter check because it is what the scorer consumes.
+ *
  * THE MATRIX DECIDES COMPLETION. `status` is read for the payload, but whether the interview is
  * over is computed from `processes`: `missing` empty is the only thing that finishes it. A model
  * claiming `complete` with a field absent is downgraded to `asking`, which is the safe direction -
@@ -946,15 +951,7 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
     // stricter check, and `workflowsFrom` resolves the same way so the two cannot disagree.
     //
     if (parsed.status === 'complete') {
-        // WHICH SHAPE IS AUTHORITATIVE, decided the same way `workflowsFrom` decides it,
-        // so the validation and the payload cannot disagree about which array counts.
-        //
-        // AN EMPTY `audit.workflows` IS A SPECIAL CASE, and it is pinned from two
-        // directions. On its own it is unusable - an empty audit is not a completed audit,
-        // and the client would score nothing. But BESIDE a good `processes` array it is
-        // merely stale, and `processes` must win, because that is what the interview
-        // writes while `audit` is the older shape it also emits. So emptiness is judged
-        // only when there is nothing better to fall back to.
+        // Which shape is authoritative; see the note above.
         const processesPresent = Array.isArray(parsed.processes) && parsed.processes.length > 0;
         const auditIsArray = Array.isArray(parsed.audit?.workflows);
         const auditUsable = auditIsArray && parsed.audit.workflows.length > 0;
