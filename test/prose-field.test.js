@@ -1,8 +1,8 @@
 /**
  * A FIELD ANSWERED IN WORDS - on the participant's own card, and in the score they are shown.
  *
- * THE DEFECT, found on a real run. One entry carried
- * `{ "peopleAffected": { "said": "nobody else is involved" } }`, and the card rendered:
+ * THE SHAPE THIS GUARDS. A field can arrive as
+ * `{ "peopleAffected": { "said": "nobody else is involved" } }`, and the card renders
  *
  *   "[object Object] people"   and   "0 h/wk effort"
  *
@@ -196,8 +196,8 @@ test('an ABSENT field renders as ABSENT - not as prose, and not as the word "und
 });
 
 test('a NUMBER still renders as a NUMBER, with its unit', async () => {
-    // The other boundary: the fix must not have made every value prose-ish. A count the participant
-    // gave as a figure is still a figure.
+    // The other boundary: not every value is prose-ish. A count the participant gave as a figure is
+    // still a figure.
     const client = await loadScoringClient();
     const html = await client.render(analysis([scoredWorkflow({ peopleAffected: 3 })]));
 

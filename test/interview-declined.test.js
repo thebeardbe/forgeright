@@ -2,10 +2,9 @@
  * The fourth state (`declined`), the completion gate that reads `supplied`, and the code gate
  * that suppresses a closing question while fields are still open.
  *
- * WHY THIS FILE EXISTS. `{ said: ... }` accepted a refusal as a value, because it checked only
- * that the string was non-empty. A live interview recorded "I have no idea" against seven fields
- * and COMPLETED, so an audit that says nothing read as finished - the shape this project keeps
- * meeting. The fix separates two things the one marker conflated:
+ * WHAT THIS FILE IS ABOUT. `{ said: ... }` accepts a refusal as a value when it checks only that
+ * the string is non-empty, so an interview can record "I have no idea" against seven fields and
+ * COMPLETE - an audit that says nothing reading as finished. Two things the one marker conflates:
  *
  *   have       "do not ask again"
  *   supplied   "the analysis has something to work with"
@@ -13,10 +12,10 @@
  * and the completion gate reads `supplied`. A declined field is in `have` and not in `supplied`,
  * which is the whole point: it stops the interview asking again WITHOUT becoming evidence.
  *
- * TWO DEFECTS FOUND WHILE WRITING THIS FILE ARE RECORDED BELOW AS ASSERTIONS ON THE CURRENT
- * BEHAVIOUR, NOT AS PASSING CLAIMS. They are localised with "KNOWN DEFECT" and they assert what
- * the code DOES today, so they are honest witnesses rather than a green wash. They are the two
- * directions the fourth state pulls in when EVERY field is declined.
+ * TWO LIMITS ARE RECORDED BELOW AS ASSERTIONS ON THE CURRENT BEHAVIOUR, NOT AS PASSING CLAIMS.
+ * They are localised with "KNOWN DEFECT" and they assert what the code DOES today, so they are
+ * honest witnesses rather than a green wash. They are the two directions the fourth state pulls in
+ * when EVERY field is declined.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -92,7 +91,7 @@ const DECLINE = { declined: 'I have no idea' };
 // ===========================================================================
 
 test('the four states: absent blocks, typed completes, said completes, declined refuses', () => {
-    // The table the commit gives, asserted through the gate rather than against the lists.
+    // The four-state table, asserted through the gate rather than against the lists.
     const absent = typedProcess();
     delete absent.frustration;
 
@@ -111,11 +110,10 @@ test('the four states: absent blocks, typed completes, said completes, declined 
 });
 
 test('EVERY field declined -> nothing_answered, and it does NOT claim completion', () => {
-    // THE REVIEWER'S LIVE FAILURE, now ended rather than refused forever. Declining everything
-    // used to be an unbreakable `asking` fixed point: the round neither closed nor moved. It now
-    // ends with a status of its own, and the two halves of that are the whole point - the round
-    // FINISHES, and it does NOT say `complete`, because an instance declaring completion with
-    // zero evidence is exactly what the completion gate exists to refuse.
+    // Declining everything must not be an unbreakable `asking` fixed point: the round neither
+    // closed nor moved. It ends with a status of its own, and the two halves of that are the whole
+    // point - the round FINISHES, and it does NOT say `complete`, because an instance declaring
+    // completion with zero evidence is exactly what the completion gate exists to refuse.
     const result = complete(allDeclinedProcess());
 
     assert.equal(result.status, 'nothing_answered', 'declining everything ends the round honestly');
@@ -191,7 +189,7 @@ test('the stricter direction: a declined value never counts where a typed value 
 });
 
 // ===========================================================================
-// THE ALL-DECLINED ROUND TERMINATES - the fix for the fixed point
+// THE ALL-DECLINED ROUND TERMINATES
 // ===========================================================================
 //
 // The round that could not close or move now ends. `nothing_answered` is a THIRD status beside
@@ -200,9 +198,10 @@ test('the stricter direction: a declined value never counts where a typed value 
 // claiming completion.
 
 test('an all-declined reply ENDS the interview instead of returning the closing line forever', () => {
-    // THE OLD DEFECT: `have` full, `supplied` empty, `missing` empty, so the model had nothing to
-    // ask, the completion gate never opened, and the closing line reached the participant with no
-    // way out. The reply now carries the completed status instead of the model's own content.
+    // `have` full, `supplied` empty, `missing` empty, so there is nothing left to ask and the
+    // completion gate never opens; without the third status the closing line reaches the
+    // participant with no way out. The reply carries the completed status instead of the model's
+    // own content.
     const closing = 'Is there another process you would like to improve?';
     const result = complete(allDeclinedProcess(), { content: closing });
 
@@ -212,8 +211,8 @@ test('an all-declined reply ENDS the interview instead of returning the closing 
 
 test('the participant is TOLD, honestly and without thanking them for answers they did not give', () => {
     // The status is not an error, and not a closed door: the message says what happened. Two
-    // things are asserted because the commit names both - it does not thank them for answers
-    // they did not give, and it says this is not their fault.
+    // things are asserted - it does not thank them for answers they did not give, and it says this
+    // is not their fault.
     const result = complete(allDeclinedProcess());
     const content = result.content;
 
@@ -226,9 +225,8 @@ test('the participant is TOLD, honestly and without thanking them for answers th
 });
 
 test('the reply TERMINATES: repeated turns all return the same finished status, not a forever-asking one', () => {
-    // It WAS a fixed point because every turn was identical `asking` output. It is still a fixed
-    // point in the sense that the status is stable - but the status is now an END, which is the
-    // difference that matters: the client finalises the round and hides the input.
+    // The status is stable across turns, and it is an END rather than an `asking` that never
+    // moves: the client finalises the round and hides the input.
     const statuses = [1, 2, 3].map(() => complete(allDeclinedProcess()).status);
 
     assert.deepEqual(statuses, ['nothing_answered', 'nothing_answered', 'nothing_answered'],
@@ -289,9 +287,9 @@ test('the typed minimum cannot be `declined`, the same as it cannot be `said`', 
 });
 
 test('a malformed declined marker is NOT a marker, each shape checked', () => {
-    // `{declined:"   "}` IS a marker: a wordless refusal, which the commit says is accepted.
-    // The rest are not markers and fall through to the shape check, which refuses them, so the
-    // field stays OPEN rather than silently closed.
+    // `{declined:"   "}` IS a marker: a wordless refusal. The rest are not markers and fall
+    // through to the shape check, which refuses them, so the field stays OPEN rather than silently
+    // closed.
     assert.deepEqual(shapes.declinedIn({ declined: '   ' }), { declined: true, words: null },
         'a whitespace-only refusal is a wordless refusal, not a malformed one');
     assert.deepEqual(shapes.declinedIn({ declined: true }), { declined: true, words: null });
@@ -357,8 +355,8 @@ test('the closing question with `missing` EMPTY passes through untouched', () =>
 });
 
 test('the phrase variants are recognised, not only one exact sentence', () => {
-    // A live run phrased the closing question two different ways in ONE interview, so matching
-    // exact text would have caught neither. Each of these must be replaced.
+    // The closing question is phrased several ways in practice, so matching exact text would catch
+    // only the one quoted. Each of these must be replaced.
     const variants = [
         'Would you like to improve another process?',
         'Is there any other process involved here?',
@@ -371,11 +369,11 @@ test('the phrase variants are recognised, not only one exact sentence', () => {
     }
 });
 
-test('the word-order phrasing that used to escape is now GATED', () => {
-    // THE FIX FOR THE FINDING I REPORTED. The old matcher anchored on word ORDER
-    // (`would you like to <verb>`), so "Anything else you would like to look at?" put `you`
-    // first and matched nothing, and a closing question in that form reached the participant
-    // with the matrix unsatisfied. The matcher now anchors on the SUBJECT wherever it sits.
+test('a closing question with `else` before `you` is GATED - the word order does not matter', () => {
+    // The matcher anchors on the SUBJECT wherever it sits, not on word order. A matcher that
+    // anchored on `would you like to <verb>` would miss "Anything else you would like to look
+    // at?", where `you` comes first, and a closing question in that form would reach the
+    // participant with the matrix unsatisfied.
     const escaped = 'Anything else you would like to look at?';
     const result = complete(partialProcess(), { content: escaped });
 
@@ -384,9 +382,8 @@ test('the word-order phrasing that used to escape is now GATED', () => {
 });
 
 test('all seven closing phrasings are caught, in either word order', () => {
-    // The builder's claim: "all 7 closing phrasings now caught". Each of these is a way a model
-    // has phrased or could phrase the closing question; the word-order pair is included because
-    // the ORDER was the escape.
+    // Each of these is a way a model has phrased or could phrase the closing question; the
+    // word-order pair is included because the ORDER is where a subject-anchored matcher can slip.
     const closings = [
         'Is there another process you would like to improve?',
         "Is there another process you'd like to improve?",
@@ -402,13 +399,11 @@ test('all seven closing phrasings are caught, in either word order', () => {
     }
 });
 
-test('THE ORDINARY WAY THE DEFECT APPEARS: a closing question on an `asking` reply is gated', () => {
-    // THE BUILDER FOUND THE GATE HAD NEVER RUN IN THE COMMON CASE. It sat inside the
-    // "claimed complete and the matrix disagreed" branch, so a model asking the closing question
-    // while reporting **`status: "asking"`** was never checked - which is how the defect appears
-    // in practice: the live interview watched asking it four times was doing exactly that. The
-    // gate now runs at the one place every reply passes through, and this asserts the path that
-    // was actually broken rather than only the reported phrasing.
+test('a closing question on an `asking` reply is also gated', () => {
+    // The gate runs at the one place every reply passes through, not inside the "claimed complete
+    // and the matrix disagreed" branch alone - so a model asking the closing question while
+    // reporting `status: "asking"` is checked too. This asserts that path, not only the reported
+    // phrasing.
     const closing = 'Is there another process you would like to improve?';
     // `have: []` so the matrix is UNSATISFIED and there is an open field to substitute: the
     // replacement only happens when something is missing (there is nothing to ask otherwise).
@@ -425,14 +420,12 @@ test('THE ORDINARY WAY THE DEFECT APPEARS: a closing question on an `asking` rep
 });
 
 test('the over-reach check: 22 ordinary questions, 0 wrongly gated', () => {
-    // THE OBVIOUS OVER-REACH THE BUILDER NAMES: its own first pattern gated "Do you want to
-    // describe the steps in more detail?" - a legitimate question about the CURRENT process -
-    // before it narrowed the verb list and the gap. Replacing a real question is worse than the
-    // escape it fixes, so the check is larger than the one that caught nothing: 17 as the builder
-    // claims, plus five of mine. These share words ("process", "anything", "else", "another",
-    // "describe", "steps") with the closing shapes on purpose.
+    // THE OVER-REACH A NARROWER MATCHER MUST AVOID: a pattern can gate a legitimate question about
+    // the CURRENT process ("Do you want to describe the steps in more detail?") alongside the
+    // closing offers it is meant to catch. Replacing a real question is worse than the escape it
+    // fixes, so the check is wider than the closing set. These share words ("process", "anything",
+    // "else", "another", "describe", "steps") with the closing shapes on purpose.
     const ordinary = [
-        // The builder's set.
         'What systems do you use for this?',
         'How often does this happen?',
         'Who else is involved in this process?',
@@ -461,7 +454,7 @@ test('the over-reach check: 22 ordinary questions, 0 wrongly gated', () => {
         const result = complete(partialProcess(), { content });
         assert.equal(result.content, content, `"${content}" must pass through unchanged`);
     }
-    assert.equal(ordinary.length, 22, 'the claim is pinned to the number checked');
+    assert.equal(ordinary.length, 22, 'the set is pinned to the number checked');
 });
 
 test('the replacement names an OPEN field, not a closed one', () => {
@@ -474,12 +467,10 @@ test('the replacement names an OPEN field, not a closed one', () => {
 });
 
 test('the client renders a replaced question as an ordinary turn and does not stall', async () => {
-    // THE INTENT, WHICH STILL HOLDS: a substituted question is rendered and recorded like any
-    // other analyst turn, so the interview does not stall on it. The line that used to be
-    // asserted here pushed `{ role, content }` and now pushes `{ role, content, substituted,
-    // missing }` - the same turn PLUS the bookkeeping this server needs to terminate the guard.
-    // So this reads the purpose: the content is rendered, and the turn is recorded with its
-    // content, whatever extra fields travel beside it.
+    // A substituted question is rendered and recorded like any other analyst turn, so the
+    // interview does not stall on it. The turn carries `role`, `content` AND the guard's
+    // bookkeeping (`substituted`, `missing`), and this reads the purpose: the content is rendered,
+    // and the turn is recorded with its content, whatever extra fields travel beside it.
     const client = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'js', 'audit.js'), 'utf8');
 
     // The content of every non-error reply is appended and pushed to the conversation.
@@ -581,9 +572,9 @@ test('a wordless refusal renders as "they did not say"', async () => {
     assert.ok(rendered.includes('they did not say'), 'a refusal with no words says so');
 });
 
-test('THE AUTHOR\'S RENDER BUG: a declined value must not render [object Object]', async () => {
-    // The author found this while verifying. It is asserted directly, because "not answered"
-    // reads as a question that was not answered while [object Object] reads as corruption.
+test('a declined value must not render [object Object]', async () => {
+    // Asserted directly for each marker shape, because "not answered" reads as a question that
+    // was not answered while [object Object] reads as corruption.
     const ejs = await import('ejs');
     for (const value of [{ declined: 'I have no idea' }, { declined: true }, { said: 'it depends' }]) {
         const rendered = await ejs.renderFile(path.join(PROJECT_ROOT, 'views', 'partials', 'response-fields.ejs'),
@@ -622,14 +613,11 @@ test('the weighing marker for a `said` value is unchanged', () => {
 });
 
 test('a `declined` value reaches the weighing prompt LABELLED, as declinedToAnswer with a note', () => {
-    // THE FIX FOR THE DEFECT I REPORTED. `mergeParticipants` transformed `proseSaidIn` values
-    // only, so a declined value passed through raw and the weighing model saw
-    // `{"declined":"I have no idea"}` where every other field is a number or a list - the same
-    // bug class as the `said` marker, in the marker whose WHOLE MEANING is "there is nothing
-    // here", so the model could read a refusal as a figure or ignore the field without knowing
-    // why. It now arrives as `declinedToAnswer` with `theySaid` and a note.
-    //
-    // THE NOTE'S ABSENCE WAS THE BUG, so its presence is the assertion.
+    // A refusal must not reach the weighing model raw: `{"declined":"I have no idea"}` sits
+    // where every other field is a number or a list, so the model can read a refusal as a figure
+    // or ignore the field without knowing why - and this is the marker whose WHOLE MEANING is
+    // "there is nothing here". It arrives as `declinedToAnswer` with `theySaid` and a note, so
+    // the note's PRESENCE is the assertion.
     const grouping = {
         responses: [{ responseId: 'r1', department: 'Fin', data: { task: 'invoices', peopleAffected: { declined: 'I have no idea' } } }]
     };
@@ -640,7 +628,7 @@ test('a `declined` value reaches the weighing prompt LABELLED, as declinedToAnsw
     assert.match(message, /NOT a value and NOT a zero/i, 'with a note saying it is neither');
     assert.match(message, /not measured rather than as nothing/i, 'and that unmeasured is not empty');
 
-    // The raw marker must NOT reach the model: that was the defect.
+    // The raw marker must NOT reach the model.
     assert.equal(/"declined":/.test(message), false, 'the raw { declined } object must not appear');
 });
 
@@ -716,12 +704,10 @@ test('the derivation rules, the sweep and the typed minimum are unchanged', () =
 // dynamic and lives here rather than at the top of the file.
 
 test('the client FINALISES the round and DOES NOT SCORE it', () => {
-    // THE INTENT, WHICH STILL HOLDS: a `nothing_answered` reply ends the round (the client
-    // passes `complete: true`) and does NOT go through scoring, because scoring an empty round
-    // would produce a figure from no evidence. The line that used to be asserted here was
-    // `saveResponse(toSave, isComplete || nothingAnswered)` and it now ends `|| exhausted` -
-    // BOTH statuses finalise, neither scores. So the assertion is that the round finalises with
-    // `nothingAnswered` among the conditions, and that no nothing_answered path reaches scoring.
+    // A `nothing_answered` reply ends the round (the client passes `complete: true`) and does NOT
+    // go through scoring, because scoring an empty round would produce a figure from no evidence.
+    // The assertion is that the round finalises with `nothingAnswered` among the conditions, and
+    // that no nothing_answered path reaches scoring.
     const client = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'js', 'audit.js'), 'utf8');
 
     assert.match(client, /const nothingAnswered = data\.status === 'nothing_answered'/,
@@ -730,10 +716,10 @@ test('the client FINALISES the round and DOES NOT SCORE it', () => {
     assert.match(client, /await saveResponse\(toSave, [^)]*nothingAnswered[^)]*\)/,
         'and finalises the round when it arrives');
     // DOES NOT SCORE: the nothing_answered branch RETURNS before the scoring call, so an empty
-    // round cannot reach `runScoring`. This is asserted as ORDER rather than as the text of the
-    // scoring line: the source-text pattern that used to be here pinned `payload` and went stale
-    // when the line changed to `toSave`, which proves nothing about the intent. What the intent
-    // needs is that the `return` precedes scoring, in the branch that handles the empty round.
+    // round cannot reach `runScoring`. Asserted as ORDER rather than as the text of the scoring
+    // line, because a source-text pattern pinned to a local variable name says nothing about the
+    // intent. What the intent needs is that the `return` precedes scoring, in the branch that
+    // handles the empty round.
     const nothingBranch = client.slice(client.indexOf('if (nothingAnswered) {'), client.indexOf('if (exhausted) {'));
     assert.notEqual(nothingBranch, '', 'the nothingAnswered branch exists');
     assert.match(nothingBranch, /return;/, 'and it RETURNS');
@@ -752,8 +738,8 @@ test('the client FINALISES the round and DOES NOT SCORE it', () => {
 
 test('a `nothing_answered` round is FINALISED in the store - the round ends', async () => {
     // `submitted_at` is the store's only way to say a round is finished, and the client sets it
-    // (`complete: true`) for a nothing_answered reply. This asserts the round actually ends, which
-    // is the half of the fix that stops the fixed point: staying open was the trap.
+    // (`complete: true`) for a nothing_answered reply. This asserts the round actually ends: staying
+    // open is the trap the third status closes.
     const fsMod = await import('node:fs');
     const os = await import('node:os');
     const STORE_DIR = fsMod.mkdtempSync(path.join(os.tmpdir(), 'fr-nothing-'));
@@ -789,11 +775,11 @@ test('a `nothing_answered` round is FINALISED in the store - the round ends', as
 });
 
 test('an all-declined round creates NO process, so the roadmap never shows it as scored', async () => {
-    // THE BUILDER'S ESCAPE-HATCH CLAIM, verified: an all-declined round carries no evidence, so
-    // declining everything gains a model exactly what answering nothing gains. A process is only
-    // created by identification, which needs a usable field, so no process exists to appear on the
-    // roadmap. This is asserted through the code path the gate feeds: the reply carries no `audit`
-    // payload, so the client has nothing to score and identification has nothing to group.
+    // An all-declined round carries no evidence, so declining everything gains a model exactly
+    // what answering nothing gains. A process is only created by identification, which needs a
+    // usable field, so no process exists to appear on the roadmap. Asserted through the code path
+    // the gate feeds: the reply carries no `audit` payload, so the client has nothing to score and
+    // identification has nothing to group.
     const allDeclined = allDeclinedProcess();
     const result = complete(allDeclined, { status: 'asking', content: 'Anything else?' });
 

@@ -462,8 +462,8 @@ test('Reset all access with a REAL invitation id succeeds and revokes the tokens
 });
 
 test('Send a link and Reset all access with a FAKE id are refused with 404', async () => {
-    // The reviewer claimed these could never match a real id. They do; this pins
-    // that a fake id is correctly refused, without asserting the buttons broken.
+    // A fake id matches no real invitation, so both routes are correctly refused
+    // with 404 rather than acting on some other row.
     const send = await postForm('/admin/invitations/not-a-real-id/send', cookieA, {});
     const reset = await postForm('/admin/invitations/not-a-real-id/reset', cookieA, {});
 

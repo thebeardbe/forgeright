@@ -343,10 +343,9 @@ test('an unauthenticated POST to a rejudge route redirects rather than acting', 
 // parsed DOM would decode the entities first and see no difference.
 
 test('a <script> in participant text renders entity-escaped, not raw', async () => {
-    // THE ROADMAP NO LONGER RENDERS PARTICIPANT FIELDS (commit a46e9fa): each response is a LINK to
-    // its answer in the answers view rather than seven inline `words` rows repeated per response.
-    // So the task text is not on this page any more, and an assertion that it is would be testing
-    // a layout that was deliberately removed. What MUST still hold on the roadmap is that the
+    // THE ROADMAP RENDERS A LINK TO EACH ANSWER rather than seven inline `words` rows repeated per
+    // response, so the task text is not on this page: an assertion that it is would be testing a
+    // layout the page does not have. What MUST still hold on the roadmap is that the
     // participant-controlled text it DOES render - the department, which comes from the response -
     // is escaped, and that the raw script reaches neither page.
     const roadmap = await request({ path: '/admin/roadmap', cookie: cookieA });
@@ -415,7 +414,7 @@ test('the roadmap shows the score, the terms and the paragraph once weighed', as
     assert.ok(res.text.includes('(high is worse)'), 'cost terms are marked');
 
     // THE OLD HEADING IS GONE, so a stale copy cannot linger beside the new one.
-    assert.equal(res.text.includes('Why it got this weight'), false, 'the old heading no longer appears');
+    assert.equal(res.text.includes('Why it got this weight'), false, 'the wrong heading does not appear');
     // AND `weight` IS STILL THE LABEL next to the number: the owner kept that name on purpose, so
     // the heading was renamed without renaming the metric a reader compares against.
     assert.match(res.text, /<div class="weight-label">weight<\/div>/, 'the `weight` label is unchanged beside the number');

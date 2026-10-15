@@ -133,10 +133,10 @@ test('parseModelResponse is deterministic for the same input', () => {
     assert.deepEqual(parseModelResponse(raw), parseModelResponse(raw));
 });
 
-// --- the boundary requires a title, now -------------------------------
+// --- the boundary requires a title -------------------------------
 // `title` is the heading the client reads. A payload with a valid id but no
-// title used to pass this boundary and crash scoring with a TypeError. It must
-// now be rejected here, as a structured error, not thrown.
+// title must be rejected here as a structured error, not thrown: passing it on
+// crashes scoring with a TypeError.
 
 test('a complete response whose workflow has no title is an error', () => {
     const result = parseModelResponse('{"status":"complete","content":"Done","audit":{"workflows":[{"id":"w1"}]}}');

@@ -296,8 +296,8 @@ test('the demo route logs nothing at startup when the flag is off', async () => 
 // 2. EVERY MUTATING CONSOLE ROUTE IS REFUSED FOR A DEMO SESSION
 // ===========================================================================
 //
-// Found by grepping the console routers, not taken from a list: six POSTs in
-// `lib/auth/console.js` and two in `lib/auth/console-views.js`.
+// A list of the console's mutating routes: six POSTs in `lib/auth/console.js`
+// and two in `lib/auth/console-views.js`.
 
 const MUTATING_ROUTES = [
     ['/admin/organisation/name', { name: 'HACKED' }],
@@ -310,7 +310,7 @@ const MUTATING_ROUTES = [
     ['/admin/roadmap/some-id/rejudge', { reason: 'x' }]
 ];
 
-test('the eight mutating console routes found by grep are all refused for a demo session', async () => {
+test('the eight mutating console routes are all refused for a demo session', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -361,8 +361,8 @@ test('a refused write leaves the stored state EXACTLY as it was', async () => {
     }
 });
 
-test('the specifically dangerous write — renaming the demo organisation — does not change the name', async () => {
-    // The route whose real name is /organisation/name, called out in the commit.
+test('renaming the demo organisation does not change the name', async () => {
+    // The route's real name is /organisation/name.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -397,7 +397,7 @@ test('a refused invitation write does not add an invitation', async () => {
 // 4. AN ORDINARY ADMIN SESSION IS UNAFFECTED
 // ===========================================================================
 //
-// THE REGRESSION THAT WOULD MATTER MOST: a guard that accidentally refuses real
+// THE CASE THAT WOULD MATTER MOST IF IT BROKE: a guard that accidentally refuses real
 // admins. Asserted by making a REAL WRITE succeed, not by the absence of a banner.
 
 test('a real admin session writes successfully, so the guard does not refuse real admins', async () => {
@@ -522,7 +522,7 @@ test('a refused token reveals nothing about whether the demo is configured', asy
 // 6. EXPIRY CANNOT TURN A DEMO SESSION WRITABLE
 // ===========================================================================
 //
-// The commit claims an expired demo row stays read-only. The demo row's `expires_at`
+// An expired demo row must stay read-only. The demo row's `expires_at`
 // is expired directly while the SESSION stays valid, which is the state to attack:
 // if the guard read expiry, it might decide "not a demo any more" and allow a write.
 
@@ -550,8 +550,8 @@ test('an EXPIRED demo row is still read-only, and the write is refused', async (
 
 test('a revoked demo session reaches no console page, only the sign-in form', async () => {
     // The foreign key and the session's own validity are the defences; this asserts
-    // the outcome: a demo cookie whose session is revoked no longer reaches the
-    // console. `GET /admin` serves the SIGN-IN FORM (200) for a request with no valid
+    // the outcome: a demo cookie whose session is revoked reaches no console page.
+    // `GET /admin` serves the SIGN-IN FORM (200) for a request with no valid
     // session, so the distinguishing signal is the console content, not the status.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
@@ -565,7 +565,7 @@ test('a revoked demo session reaches no console page, only the sign-in form', as
         admin.close();
 
         const after = await request(server.port, { path: '/admin', cookie: demo });
-        assert.equal(/read[- ]only/i.test(after.text), false, 'the read-only console no longer renders');
+        assert.equal(/read[- ]only/i.test(after.text), false, 'the read-only console does not render');
 
         // And a protected page redirects rather than rendering.
         const roadmap = await request(server.port, { path: '/admin/roadmap', cookie: demo });
@@ -632,8 +632,8 @@ test('there is no third role: the demo flag rides on the session scope', () => {
  *
  * WHITESPACE-TOLERANT because the SOURCE line-breaks differ between the three places: the
  * banner wraps after "about the" while the console lead wraps after "do by hand". A regex
- * matching one wrapping would count the other as absent - which is how the first version of
- * this test reported one occurrence on a demo page that renders two.
+ * matching one wrapping would count the other as absent, which would count two occurrences
+ * as one on a page that renders both.
  */
 const PRODUCT_SENTENCE = /forgeright interviews your team about the\s+work they do by hand, then ranks\s+what it finds by what is worth automating first/g;
 

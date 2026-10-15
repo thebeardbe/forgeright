@@ -1,8 +1,7 @@
 /**
  * The deploy compose, the mail profile default, and the mock-provider warning.
  *
- * These shipped in commits 7a89196 and 712ffb4 without tests. Several of the claims in
- * those messages are the kind that turn out to be false, so each is checked against the
+ * Several deploy claims are the kind that turn out to be false, so each is checked against the
  * artefact rather than taken on trust.
  *
  * `data/demo` IS NOT TOUCHED: it is the deployable artefact.
@@ -99,8 +98,8 @@ test('the service is named forgeright with a fixed container_name and NO profile
     const text = composeText();
 
     assert.match(text, /container_name:\s*forgeright/, 'container_name is pinned, so nginx can refer to it by name');
-    // `profiles:` would mean the service only starts under a profile, which is what
-    // produced the forgeright-forgeright-1 doubling this commit fixed.
+    // `profiles:` would mean the service only starts under a profile, which causes a
+    // duplicated service name and a `forgeright-forgeright-1` container.
     assert.equal(/^\s*profiles:/m.test(text), false, 'no profiles: a plain `up` starts the one service');
 });
 
@@ -135,16 +134,16 @@ test('TRUST_PROXY is set explicitly, with a default of uniquelocal', () => {
 
     // A DIFFERENT variable name from the one it sets, so `.env` cannot shadow the
     // default. `${TRUST_PROXY:-...}` would read the same variable it writes. Checked on
-    // the ASSIGNMENT only: the string appears in a comment above it explaining why it
-    // was rejected, which is not the bug.
+    // the ASSIGNMENT only: the string appears in a comment above it explaining why, which
+    // is not the bug.
     const assignment = text.split('\n').find((line) => /^\s*TRUST_PROXY:/.test(line));
     assert.ok(assignment, 'there is an uncommented TRUST_PROXY assignment');
     assert.equal(/\$\{TRUST_PROXY:-/.test(assignment), false, 'the default must not read the variable it sets');
 });
 
 test('HOST is forced to 0.0.0.0, because `.env` overrides the image default', () => {
-    // MEASURED by the author: with the `.env` value winning, the app bound to the
-    // CONTAINER's loopback and nothing on proxy-network could connect.
+    // With the `.env` value winning, the app binds to the CONTAINER's loopback and nothing on
+    // proxy-network can connect.
     const text = composeText();
     assert.match(text, /HOST:\s*"0\.0\.0\.0"/, 'the container binds all interfaces');
 });
@@ -155,10 +154,10 @@ test('the external proxy network is used rather than created', () => {
     assert.match(text, /external:\s*true/, 'and marked external, so compose fails clearly if it is missing');
 });
 
-test('THE TRUST PROXY CLAIM: without a trusted proxy, a forwarded HTTPS request is refused', async () => {
-    // The commit says: without TRUST_PROXY the app 308s every admin request and never
-    // sets a cookie. Tested by starting the SAME app twice, with and without the setting,
-    // and sending one genuinely forwarded HTTPS request to each.
+test('THE TRUST PROXY BEHAVIOUR: without a trusted proxy, a forwarded HTTPS request is refused', async () => {
+    // Without TRUST_PROXY the app 308s every admin request and never sets a cookie. Tested by
+    // starting the SAME app twice, with and without the setting, and sending one genuinely
+    // forwarded HTTPS request to each.
 
     /** Starts the server with or without TRUST_PROXY and probes /admin. */
     const probeAdmin = async (trustProxy) => {
@@ -309,7 +308,7 @@ process.stdin.on('end', () => {
 
 test('no source file uses the personal mailbox as a profile DEFAULT', () => {
     // Asserted on the CONSTANT rather than by grepping the file, because the name
-    // legitimately appears in comments explaining what the old default was. A grep would
+    // legitimately appears in comments explaining what the default is. A grep would
     // have to strip both comment styles correctly to be trustworthy; reading the value is
     // exact.
     const proton = fs.readFileSync(path.join(PROJECT_ROOT, 'lib', 'mail', 'proton.js'), 'utf8');
@@ -317,7 +316,7 @@ test('no source file uses the personal mailbox as a profile DEFAULT', () => {
 
     assert.ok(declaration, 'the default profile is declared as a literal');
     assert.equal(declaration[1], 'default', 'the product default is proton-cli\'s own default');
-    assert.notEqual(declaration[1], 'jobsearch', 'and not the machine-specific account it used to be');
+    assert.notEqual(declaration[1], 'jobsearch', 'and not the machine-specific account');
 
     // The fallback actually used must be that same constant, not a second literal.
     const fallback = proton.match(/configured && configured\.trim\(\) !== '' \? configured\.trim\(\) : (\w+)/);

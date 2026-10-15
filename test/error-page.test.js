@@ -1,9 +1,8 @@
 /**
  * The error pages: the format decision, the 500 handler, and what must not leak.
  *
- * WHY THIS FILE EXISTS. `views/error.ejs` and `lib/error-page.js` shipped in d24a280 without a
- * test, which is the gap this file closes. Two claims in that commit are load-bearing enough to
- * be worth stating before any assertion:
+ * WHAT THIS FILE COVERS. `views/error.ejs` and `lib/error-page.js` own two load-bearing rules worth
+ * stating before any assertion:
  *
  *   - THE `Accept` HEADER DECIDES THE FORMAT. A participant's client talks to `/api/chat` and
  *     `/api/score` with `fetch` and would fail PARSING JSON if a page came back, so a 500 would
@@ -22,7 +21,7 @@
  * path" is FALSE for every page, including a plain 404, and a test written that way would either
  * fail wrongly or be weakened until it proved nothing. The leak tests below therefore assert the
  * ABSENCE OF THE ERROR'S OWN CONTENT - the message, the stack frames, the file the throw came
- * from - which is what the commit actually claims.
+ * from - which is the rule being protected.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -198,8 +197,8 @@ after(async () => {
 // ===========================================================================
 
 test('the Accept header decides the format, and the status is correct in every case', async () => {
-    // THE TABLE FROM THE COMMIT, through a real request. A JSON client must never receive a page,
-    // and the status must not be traded for the format.
+    // The decision table, through a real request. A JSON client must never receive a page, and the
+    // status must not be traded for the format.
     const cases = [
         ['application/json', 'application/json'],
         ['application/json, text/plain, */*', 'application/json'],
@@ -229,8 +228,8 @@ test('a BROWSER\'s real Accept header lands on HTML', async () => {
 });
 
 test('the `includes` reasoning holds: a JSON type ANYWHERE in the list wins', async () => {
-    // The commit chose `includes` over equality "because a real client sends a list with quality
-    // values". The reasoning is checked: a media type in the middle of a list, with parameters and
+    // A real client sends a list with quality values, so the check is `includes` rather than
+    // equality. The reasoning is checked: a media type in the middle of a list, with parameters and
     // quality values around it, still selects JSON - which an equality test would refuse.
     const res = await request({
         path: '/definitely-not-a-page',
@@ -283,11 +282,10 @@ test('a JSON error carries the shape a client parses', async () => {
 /**
  * A malformed JSON body, which `express.json()` rejects with `err.status = 400`.
  *
- * THIS IS A CLIENT ERROR, NOT AN UNCAUGHT THROW, and the name says so. The earlier fixture called
- * this an "uncaught throw" and asserted 500, which ENCODED THE BUG: Express attaches 400 to a
- * malformed body, and a handler that answered 500 told the sender "this is a fault on our side,
- * not yours" about a request THEY malformed. Six tests shared that fixture and every one of them
- * wanted the real status, which is 400.
+ * THIS IS A CLIENT ERROR, NOT AN UNCAUGHT THROW, and the name says so. Express attaches 400 to a
+ * malformed body, and a handler that answered 500 would tell the sender "this is a fault on our
+ * side, not yours" about a request THEY malformed. Six tests share this fixture and every one of
+ * them wants the real status, which is 400.
  *
  * SO IT IS USED WHERE THE TEST IS ABOUT A MALFORMED BODY (the status, the wording, the leak and
  * the format), and the genuine-throw fixture below is used where the test is about an uncaught
@@ -329,11 +327,10 @@ async function oversizedBodyRequest(extra = {}) {
  * offline test can come and is stated as such. `status` is what the thrown error carries, which is
  * how the status-resolution cases are built.
  *
- * THE RESOLUTION EXPRESSION IS READ FROM server.js AND EXECUTED, not copied. An earlier version
- * duplicated it (`Number(err.status) || 500`) and went stale the moment the real expression changed
- * - a duplicated expression is the thing that just produced four failures. Reading it means the
- * mirror cannot drift, and the one source assertion below proves it found the real thing rather
- * than silently matching nothing.
+ * THE RESOLUTION EXPRESSION IS READ FROM server.js AND EXECUTED, not copied. A duplicated expression
+ * goes stale the moment the real one changes - the thing that just produced four failures. Reading
+ * it means the mirror cannot drift, and the one source assertion below proves it found the real
+ * thing rather than silently matching nothing.
  */
 
 /**
@@ -419,9 +416,9 @@ test('a MALFORMED BODY is the sender\'s error: 400, with wording about the reque
 });
 
 test('a GENUINE UNCAUGHT THROW with no status is a 500 - the fixture that name really needs', async () => {
-    // REWRITTEN: the source-text assertion is gone and this is now BEHAVIOUR, which is what the
-    // name describes. The real throw path, through the handler body EXECUTED from server.js.
-    // Distinct from the malformed body above: nothing the sender did caused this, so it is 500.
+    // Asserted as BEHAVIOUR, which is what the name describes: the real throw path, through the
+    // handler body EXECUTED from server.js. Distinct from the malformed body above: nothing the
+    // sender did caused this, so it is 500.
     const res = await genuineThrow(undefined);
 
     assert.equal(res.status, 500, 'an uncaught throw with no status is a 500');
@@ -430,12 +427,11 @@ test('a GENUINE UNCAUGHT THROW with no status is a 500 - the fixture that name r
 });
 
 test('an error status is served as itself WITHIN 400-599, and folded to 500 outside it', async () => {
-    // REWRITTEN: it asserted the OLD resolution expression as literal source text. The intent is
-    // now met MORE STRONGLY by asserting the resulting status per case, which is what the name
-    // describes and which survives a change of expression - the thing that just went stale.
+    // Asserted as the resulting status per case, which is what the name describes and which
+    // survives a change of resolution expression.
     //
-    // THE CASES THE BUILDER MEASURED, each asserted as BEHAVIOUR. A numeric string coerces and
-    // passes; a status below 400 or above 599 is not an error status and folds to 500.
+    // A numeric string coerces and passes; a status below 400 or above 599 is not an error status
+    // and folds to 500.
     const served = [[400, 400], [413, 413], [418, 418], [599, 599], ['400', 400]];
     for (const [input, expected] of served) {
         const res = await genuineThrow(input);
@@ -450,19 +446,17 @@ test('an error status is served as itself WITHIN 400-599, and folded to 500 outs
 });
 
 test('a FRACTIONAL status folds to 500 - the case that catches a missing integer test', async () => {
-    // THE GAP A MUTATION FOUND. Removing `Number.isInteger` from the resolution was NOT caught by
-    // this file, because a fractional status like 418.5 passes a bare range check and DOES NOT
-    // throw - measured from the sources rather than by starting a server:
+    // WHAT THE INTEGER TEST IS FOR. A fractional status like 418.5 passes a bare range check and
+    // DOES NOT throw - measured from the sources rather than by starting a server:
     //
     //   - `express/lib/response.js`: `res.status(418.5)` warns via `deprecate` and assigns the
     //     fractional value unchanged; it does not validate.
     //   - Node's `ServerResponse.prototype.writeHead` does `statusCode |= 0`, which TRUNCATES 418.5
     //     to 418, then checks 100-999 - so a fractional status is silently truncated on the wire.
     //
-    // SO THE INTEGER TEST IS NOT ABOUT PREVENTING A CRASH, and saying so is the honest reading:
-    // without it the response is 418 rather than 500, which is a WRONG STATUS served silently
-    // rather than a thrown one. That is the same class as the 200 case - an error answered with a
-    // status the resolution did not choose - so it belongs with it.
+    // SO THE INTEGER TEST IS NOT ABOUT PREVENTING A CRASH: without it the response is 418 rather
+    // than 500, which is a WRONG STATUS served silently rather than a thrown one. That is the same
+    // class as the 200 case - an error answered with a status the resolution did not choose.
     for (const fractional of [400.5, 418.5, 499.99]) {
         const res = await genuineThrow(fractional);
         assert.equal(res.status, 500,
@@ -471,14 +465,13 @@ test('a FRACTIONAL status folds to 500 - the case that catches a missing integer
 });
 
 test('err.status 200 does NOT serve an error page with a SUCCESS status - the worst invisible failure', async () => {
-    // THE CASE THAT MATTERS MOST, and the one neither the reviewer nor the builder had emphasised:
-    // an error page served with a 2xx is a monitor counting a server fault AS A SUCCESS. It is
-    // invisible - no crash, no log, no alert - and it is worse than the RangeError the review
-    // flagged, because that at least produced an error response.
+    // An error page served with a 2xx is a monitor counting a server fault AS A SUCCESS. It is
+    // invisible - no crash, no log, no alert - and worse than a thrown RangeError, which at least
+    // produces an error response.
     //
     // THE PROPERTY IS THAT A SUB-400 STATUS IS FOLDED, not that a particular expression is used.
-    // So this is asserted in a way that would fail if someone relaxed the floor to an integer test
-    // (which would let 200 and 301 through): the assertion is on the RESULTING STATUS.
+    // So this would fail if the floor were relaxed to an integer test (letting 200 and 301
+    // through): the assertion is on the RESULTING STATUS.
     for (const successLike of [200, 201, 204, 301, 302, 304]) {
         const res = await genuineThrow(successLike);
         assert.equal(res.status, 500, `err.status ${successLike} must NOT produce a success status`);
@@ -491,9 +484,6 @@ test('the FLOOR is 400 rather than 100, so an error page cannot carry a 1xx or 2
     // THE REASON FOR THE FLOOR, stated as a behaviour: everything reaching the error middleware is
     // an error, because the throw already happened, so a sub-400 status is nonsense or a bug in
     // whatever attached it. A 3xx from an error page would REDIRECT the client somewhere unrelated.
-    //
-    // The boundary is tested from both sides, so a change to the floor is caught whichever way it
-    // moves.
     assert.equal((await genuineThrow(399)).status, 500, '399 is below the floor and folds');
     assert.equal((await genuineThrow(400)).status, 400, '400 is the floor and is served');
     assert.equal((await genuineThrow(599)).status, 599, '599 is the ceiling and is served');
@@ -507,8 +497,8 @@ test('the FLOOR is 400 rather than 100, so an error page cannot carry a 1xx or 2
 });
 
 test('an OVERSIZED body is a 413, with size wording and NOT the 500 message', async () => {
-    // The second wrong message the fix exposed: an oversized body previously kept 413 but showed
-    // the 500 copy, about a body the sender made too large.
+    // An oversized body keeps 413 but must not show the 500 copy, which is about a fault rather
+    // than a body the sender made too large.
     const res = await oversizedBodyRequest({ accept: 'text/html' });
 
     assert.equal(res.status, 413, 'an oversized body keeps its 413');
@@ -517,9 +507,8 @@ test('an OVERSIZED body is a 413, with size wording and NOT the 500 message', as
 });
 
 test('an error with an UNRECOGNISED status falls back to 500 - the safe direction', async () => {
-    // REWRITTEN: it asserted the old expression in a comment and a stale pattern. Its intent is now
-    // satisfied MORE STRONGLY - the range check folds MORE cases to 500 than `Number(err.status) ||
-    // 500` did, not fewer. Asserted as the resulting status, which is the behaviour the name states.
+    // The range check folds MORE cases to 500 than `Number(err.status) || 500` does, not fewer.
+    // Asserted as the resulting status, which is the behaviour the name states.
     //
     // Claiming a client error for something we threw would send the sender looking for a mistake
     // they did not make, so anything unrecognised reads as a server fault.
@@ -688,10 +677,10 @@ test('the headersSent path hands off to Express rather than throwing a second ti
 // ===========================================================================
 
 test('the 421 HIDES its theme picker, and no other status does - the scoping asserted both ways', async () => {
-    // THE FINDING THE FIX ADDRESSES. The 421 is served precisely because the host was refused, so
-    // every same-host URL is refused with it: MEASURED, `/settings/theme` returns 421 on the
-    // rejected host, so the picker rendered, populated with all 23 options, and submitting it did
-    // nothing - a second dead end for a reader already confused by the first.
+    // The 421 is served precisely because the host was refused, so every same-host URL is refused
+    // with it: `/settings/theme` returns 421 on the rejected host, so the picker renders, populated
+    // with all 23 options, and submitting it does nothing - a second dead end for a reader already
+    // confused by the first.
     //
     // BOTH DIRECTIONS, because the point is that the flag is SCOPED to one status: hiding the
     // picker on a 404 or 500 would be wrong, since those hosts are accepted and the picker works
@@ -828,16 +817,12 @@ test('/api/score with no token still returns 403 JSON', async () => {
 // 7. REACHABILITY - what is not reachable, said rather than claimed
 // ===========================================================================
 
-test('the statuses REACHABLE THROUGH THE ERROR PAGE are the ones I measured, not the ones claimed', async () => {
-    // REWRITTEN, and this one KEEPS a source assertion because its PURPOSE is structural: it is
-    // about which call sites exist, and a call site cannot be observed by behaviour. Only the stale
-    // second assertion is replaced - it pinned the resolution expression, and the expression has
-    // changed twice. What replaces it is behaviour: the handler's resolved status IS reachable, and
-    // `genuineThrow` proves it by driving one through the body executed from server.js.
+test('the statuses REACHABLE THROUGH THE ERROR PAGE are the ones the source has, not the ones claimed', async () => {
+    // A source assertion is KEPT here because its PURPOSE is structural: it is about which call
+    // sites exist, and a call site cannot be observed by behaviour.
     //
-    // ASSERT THE SET I FIND. An earlier version asserted `['404','421','500']`, which the fix
-    // falsified: `err.status` now travels, so a 400 and a 413 reach this page too. The literal set
-    // below is what the code does.
+    // ASSERT THE SET THE SOURCE HAS. `err.status` now travels, so a 400 and a 413 reach this page
+    // too; the literal set below is what the code does.
     const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
     const literal = [...source.matchAll(/sendError\(req, res, (\d+)\)/g)].map((m) => m[1]);
 

@@ -1,13 +1,12 @@
 /**
  * The cookie notice: one partial, every page, and a dismiss control that works wherever it appears.
  *
- * WHAT WAS WRONG, and why the two symptoms were one cause. The banner's markup and script lived
- * INLINE IN `views/admin-login.ejs`. On the other seven pages there was no banner at all, and the
- * owner reported it as "not clickable and should be on all pages" - the working button on the one
- * page is what made an absent banner read as a broken click. It is now a partial included from
+ * WHY IT IS A SHARED PARTIAL, and why the two symptoms were one cause. The banner's markup and
+ * script must not live inline in one page: a page without the partial has no banner at all, and a
+ * banner whose button does nothing reads as a broken click. It is a partial included from
  * `theme-head`, which every page already renders.
  *
- * TWO THINGS NEARLY SHIPPED BROKEN, and they are what this file exists to catch:
+ * TWO THINGS THAT COULD SHIP BROKEN, and they are what this file exists to catch:
  *
  *   1. `.hidden` LIVED ONLY IN `questionnaire.css`. The banner uses it in the markup and on click,
  *      so extracting the markup without moving that rule would have put a VISIBLE banner on the
@@ -385,14 +384,13 @@ test('a THROWING setItem still hides the banner, so the click is not a dead end'
 });
 
 // ===========================================================================
-// 5. THE STYLESHEET - the rule that would have widened the defect
+// 5. THE STYLESHEET - the rule the banner depends on
 // ===========================================================================
 
 test('the `.hidden` rule lives in app.css, which every page loads - NOT in questionnaire.css', () => {
-    // THE RULE THAT NEARLY SHIPPED THE DEFECT WIDER. The banner carries `hidden` in its markup and
-    // adds it on click, and `.hidden` was defined ONLY in `questionnaire.css`, which only the
-    // questionnaire loads. Moving the markup without moving the rule would have shown a visible
-    // banner on every other page WHERE CLICKING DID NOTHING - the owner's report, on nine pages.
+    // The banner carries `hidden` in its markup and adds it on click, so `.hidden` must live in a
+    // stylesheet every page loads. Defined only in `questionnaire.css`, it would leave a visible
+    // banner on every other page WHERE CLICKING DID NOTHING - a broken control, not an absent one.
     const app = fs.readFileSync(path.join(CSS, 'app.css'), 'utf8');
     const questionnaire = fs.readFileSync(path.join(CSS, 'questionnaire.css'), 'utf8');
 
@@ -445,12 +443,12 @@ test('the banner starts HIDDEN in the markup and the script decides when to reve
 //   - There is no DOM or layout engine in this project. `elementFromPoint`, `offsetHeight` and a
 //     computed `padding-bottom` are all layout queries, and a `node:vm` stub can only return the
 //     numbers a test hands it - which is how a test comes to "verify" the very thing it assumed.
-//   - The builder measured this in a browser at four viewports, and THAT is the evidence. What is
-//     asserted here is the MECHANISM: the property is written from the banner's own height, the
-//     body consumes it, and the questionnaire shrinks by it. Whether `max(120px, calc(360px - h))`
-//     clears the input at a given width is a layout question.
+//   - The browser measurement at four viewports is the evidence for the layout; it is not
+//     reproducible here. What is asserted is the MECHANISM: the property is written from the
+//     banner's own height, the body consumes it, and the questionnaire shrinks by it. Whether
+//     `max(120px, calc(360px - h))` clears the input at a given width is a layout question.
 //
-// AND THE TWO HONEST LIMITS THE BUILDER RECORDED, CARRIED HERE SO THEY ARE NOT LOST:
+// AND TWO HONEST LIMITS THIS FILE DOES NOT TEST, RECORDED SO THEY ARE NOT LOST:
 //
 //   1. AT 360x640 AND 320x568 THE INPUT IS STILL COVERED ON ARRIVAL, because the header and the
 //      intro alone exceed the viewport. SCROLLING REACHES IT and typing works, so no participant
