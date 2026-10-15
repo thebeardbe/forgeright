@@ -29,8 +29,12 @@
     /* Placeholder text, distinguishable from what is typed into the field.
        --muted is deliberately almost the same as --ink, because it carries paragraphs, so it is the wrong
        colour here; the palette's dim foreground is too faint on its own at 2.51:1 and 2.30:1, under the
-       3:1 non-text content needs. 60% is the measured mix that clears the floor on both defaults and
-       still reads as distinct from the entered text. */
+       3:1 non-text content needs.
+
+       THE SHIPPED MIX IS 40%, measured worst case 3.31:1 (everforest), which clears the 3:1 floor in all
+       22 palettes while staying clearly dimmer than entered text. A 60% mix also clears the floor
+       (worst 4.37:1, catppuccin-latte) and is the figure this comment used to quote; 40% is the one in
+       the rule below. */
     --placeholder: color-mix(in srgb, var(--o-fg) 40%, var(--o-fg-dim));
 
     /* Lines and interaction */
