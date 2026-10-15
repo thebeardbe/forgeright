@@ -1,12 +1,12 @@
 /**
- * Identification core: workflow 2 - one completed response, and which process it belongs to.
+ * Identification core: workflow 2, one completed response and which process it belongs to.
  *
- * THE MODEL REASONS, THE CODE DECIDES. The model reports `matches`, a confidence and its
- * reasoning; `validateIdentification` in lib/store/processes.js checks the shape and the caller
- * stores what survives. Nothing here scores or ranks - that is workflow 3.
+ * The model reasons and the code decides: the model reports `matches`, a confidence and its reasoning,
+ * `validateIdentification` in lib/store/processes.js checks the shape, and the caller stores what
+ * survives. Nothing here scores or ranks, which is workflow 3.
  *
- * THE SAME TWO HELPERS AS THE INTERVIEW, deliberately unreimplemented: `extractJsonObject` for a
- * reply that arrives as prose, and `withFormatCommitment` for the trailing turn that keeps a long
+ * It uses the same two helpers as the interview, deliberately unreimplemented: `extractJsonObject` for
+ * a reply that arrives as prose, and `withFormatCommitment` for the trailing turn that keeps a long
  * conversation in JSON.
  */
 import fs from 'node:fs/promises';
@@ -23,10 +23,8 @@ const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
 const SUPPORTED_LANGS = ['nl', 'en', 'fr'];
 
 /**
- * Loads the identification prompt, falling back to English then Dutch.
- *
- * Returns null rather than throwing so the caller reports a clean error instead of
- * a stack trace, matching how the interview prompt is loaded.
+ * Loads the identification prompt, falling back to English then Dutch. It returns null rather than
+ * throwing so the caller reports a clean error instead of a stack trace, matching the interview prompt.
  */
 async function loadIdentifyPrompt(toolId, lang) {
     for (const candidate of [lang, 'en', 'nl']) {
@@ -41,24 +39,21 @@ async function loadIdentifyPrompt(toolId, lang) {
 }
 
 /**
- * The user turn carrying the comparison: the new response and the known processes.
- *
- * SENT AS THE USER TURN, not folded into the system prompt: it is the data under comparison and
- * changes per call, while the system prompt states the rules.
- *
- * THE FULL TRANSCRIPTS ARE NOT SENT. They are stored so a person can read them, and several
- * conversations per comparison would be a large cost for text the decision does not use.
+ * The user turn carrying the comparison: the new response and the known processes. It is sent as the
+ * user turn rather than folded into the system prompt, because it is the data under comparison and
+ * changes per call while the system prompt states the rules. The full transcripts are not sent: they
+ * are stored so a person can read them, and several conversations per comparison would be a large cost
+ * for text the decision does not use.
  *
  * @param {object} response The response row, with `data` parsed.
  * @param {Array<object>} knownProcesses Existing processes with their reasoning. Each may carry
- *   `isCurrentHome: true` for the process this response is ALREADY in.
+ *   `isCurrentHome: true` for the process this response is already in.
  * @param {string} [adminReasoning] An admin's argument, when this is a rejudge.
  * @returns {string}
  */
 export function buildComparisonMessage(response, knownProcesses, adminReasoning = null) {
     const parts = [];
 
-    // Raw payload, undecorated; see the note above.
     parts.push('## The new response to identify');
     parts.push('');
     parts.push(JSON.stringify(response.data ?? {}, null, 2));
@@ -72,7 +67,7 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         for (const process of knownProcesses) {
             parts.push(`### ${process.id}`);
             parts.push(`name: ${process.name}`);
-            // Naming the current home stops a rejudge spawning a sibling; see the note above.
+            // Naming the current home stops a rejudge spawning a sibling.
             if (process.isCurrentHome === true) {
                 parts.push('THIS IS WHERE THE RESPONSE IS NOW. It is already in this process, so '
                     + 'matching it here means the grouping does not change.');
@@ -82,7 +77,7 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         }
     }
 
-    // An admin supplies an argument, not a category - which is why the prompt allows a name
+    // An admin supplies an argument rather than a category, which is why the prompt allows a name
     // change and a re-merge at all.
     if (adminReasoning) {
         parts.push('## An admin disagrees with the current grouping, and says why');
@@ -126,11 +121,10 @@ export async function runIdentification({
 
     const message = buildComparisonMessage(response, knownProcesses, adminReasoning);
 
-    // The same guardrail as the interview, for the same reason: this text came from
-    // a participant and is about to be placed in a prompt. The admin's reasoning is
-    // included deliberately, because it is an authorised instruction rather than
-    // participant input, and it is screened like everything else so a compromise of
-    // the admin account is not also an instruction to the model.
+    // The same guardrail as the interview: this text came from a participant and is about to be placed
+    // in a prompt. The admin's reasoning is included deliberately, because it is an authorised
+    // instruction rather than participant input, and it is screened like everything else so a
+    // compromise of the admin account is not also an instruction to the model.
     const cleaned = sanitizeInput(message);
     if (await checkPromptInjection(cleaned)) {
         console.warn('[identify] blocked an input that matched an injection pattern');
@@ -141,8 +135,6 @@ export async function runIdentification({
     }
 
     const raw = await generateText({
-        // The trailing commitment, from the shared helper: without it a model
-        // answers as prose at length. Measured, not assumed.
         messages: withFormatCommitment([{ role: 'user', content: cleaned }]),
         systemInstruction: systemPrompt,
         temperature: 0.2,
@@ -155,16 +147,13 @@ export async function runIdentification({
 }
 
 /**
- * Parses and shape-checks an identification reply.
+ * Parses and shape-checks an identification reply, without which a grouping is stored as the model
+ * worded it. The check is `validateIdentification` in lib/store/processes.js, where the rules about a
+ * real `matches` id and a required `reasoning` live, so there is one definition rather than one per
+ * caller.
  *
- * WITHOUT THIS, A GROUPING IS STORED AS THE MODEL WORDED IT. The check is
- * `validateIdentification` in lib/store/processes.js, which is where the rules
- * about a real `matches` id and a required `reasoning` live, so there is one
- * definition rather than one per caller.
- *
- * A reply with no JSON is reported as an error with what came back, matching the
- * interview's behaviour: an unreadable reply has to be diagnosable from the log,
- * not from a live investigation.
+ * A reply with no JSON is reported as an error with what came back, matching the interview's behaviour,
+ * so an unreadable reply is diagnosable from the log.
  *
  * @param {string} raw
  * @returns {object} The parsed reply, or {status:'error', content, reason}.

@@ -1,24 +1,19 @@
 /**
- * Input guardrails.
+ * Input guardrails: strip control characters and cap length, so an oversized or malformed answer
+ * cannot degrade the conversation, and detect text that is trying to instruct the model rather than
+ * describe a workflow.
  *
- * Two jobs:
- *   1. Strip control characters and cap length, so an oversized or malformed
- *      answer cannot degrade the conversation.
- *   2. Detect text that is trying to instruct the model rather than describe a
- *      workflow.
- *
- * Detection is deliberately conservative. A false positive costs a participant
- * one rephrased answer; a false negative lets injected text into the system
- * prompt's context. The tradeoff is made in that direction on purpose.
+ * Detection is deliberately conservative. A false positive costs a participant one rephrased answer; a
+ * false negative lets injected text into the system prompt's context, and the tradeoff is made in that
+ * direction on purpose.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Overridable so the loader's failure branches (missing file, invalid regex,
-// empty rule set) can be tested against fixtures. Defaults to the shipped file,
-// so behaviour is unchanged when the variable is unset.
+// Overridable so the loader's failure branches can be tested against fixtures; defaults to the shipped
+// file, so behaviour is unchanged when the variable is unset.
 const PATTERNS_PATH = process.env.INJECTION_PATTERNS_PATH
     || path.join(__dirname, 'injection-patterns.json');
 
@@ -40,8 +35,8 @@ export function sanitizeInput(text) {
 }
 
 /**
- * Cyrillic and Greek characters that render like Latin ones. Folding them first
- * stops "іgnore аll previous" from slipping past a plain text match.
+ * Cyrillic and Greek characters that render like Latin ones. Folding them first stops "іgnore аll
+ * previous" from slipping past a plain text match.
  */
 const HOMOGLYPH_MAP = {
     'а': 'a', 'е': 'e', 'о': 'o', 'р': 'p', 'с': 'c', 'у': 'y', 'х': 'x',
@@ -52,8 +47,8 @@ const HOMOGLYPH_MAP = {
 };
 
 /**
- * Normalises text for pattern matching only. Never used on stored or displayed
- * content: the participant's original wording is what gets kept.
+ * Normalises text for pattern matching only. Never used on stored or displayed content: the
+ * participant's original wording is what gets kept.
  * @param {string} text
  * @returns {string}
  */
@@ -76,14 +71,10 @@ const FALLBACK_RULES = {
 };
 
 /**
- * Loads the guardrail rules.
- *
- * Keywords and patterns are kept as separate lists because they are matched
- * differently: a keyword is a literal substring, a pattern is a regular
- * expression. Concatenating them and substring-matching everything silently
- * turns every regex into a literal, which matches nothing. That is a guardrail
- * that reports success while blocking nothing, so the two lists must not be
- * merged here.
+ * Loads the guardrail rules. Keywords and patterns stay separate lists because they are matched
+ * differently: a keyword is a literal substring and a pattern is a regular expression.
+ * Concatenating them and substring-matching everything silently turns every regex into a literal,
+ * which matches nothing, a guardrail that reports success while blocking nothing.
  */
 async function loadRules() {
     if (cachedRules) return cachedRules;
@@ -105,14 +96,14 @@ async function loadRules() {
         try {
             patterns.push(new RegExp(String(source), 'i'));
         } catch (err) {
-            // A broken regex is a config error. Say which one, and keep the rest
-            // working rather than dropping the whole guardrail.
+            // A broken regex is a config error: say which one, and keep the rest working rather than
+            // dropping the whole guardrail.
             console.error(`[security] ignoring invalid injection pattern ${JSON.stringify(source)}:`, err.message);
         }
     }
 
-    // A guardrail that loaded nothing is worse than one that failed loudly: it
-    // would report every input as clean. Fail over to the built-in rules.
+    // A guardrail that loaded nothing would report every input as clean, so fail over to the built-in
+    // rules.
     if (keywords.length === 0 && patterns.length === 0) {
         console.error('[security] injection rules were empty, using built-in fallback');
         cachedRules = FALLBACK_RULES;
