@@ -11,16 +11,11 @@
  *   6. the sign-in response does not depend on whether the address is known
  *   7. a first sign-in is admin; a user added as `user` gets no console
  *
- * SPLIT BY NECESSITY. The redeem-time and enumeration properties can only be
- * proven over HTTP, so those run against a spawned child. The organisation-identity
- * properties (case, whitespace, returning sign-in) are properties of resolveSignIn
- * itself and are tested in-process, because the login route is rate limited to 10
- * per IP per 15 minutes with a hardcoded constant that no environment variable
- * raises, and driving every case over HTTP exhausts that budget and makes the
- * suite fail on 429s rather than on the property under test.
+ * SPLIT BY NECESSITY. The redeem-time properties run against a spawned child; the
+ * organisation-identity properties are tested in-process, because the login route is rate limited
+ * to 10 per IP per 15 minutes and driving every case over HTTP exhausts that budget.
  *
- * Where it matters the assertions inspect the FILES: count organisation databases,
- * read `admin.db` for the users table, rather than inferring from a response.
+ * Where it matters the assertions inspect the FILES rather than inferring from a response.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -77,10 +72,8 @@ function spawnedEnv(port) {
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // NEUTRALISED SO THE SUITE DOES NOT DEPEND ON THE UNTRACKED .env. server.js does
-        // `import 'dotenv/config'` and dotenv fills only ABSENT keys, so a developer's .env with
-        // DEMO_LOGIN=1 was inherited by every spawned server. An empty string is PRESENT and is
-        // therefore left alone, which holds the demo gate closed. See test/demo-login.test.js.
+        // An empty string is PRESENT, so dotenv (which fills only ABSENT keys) leaves it alone,
+        // holding the demo gate closed against an untracked .env. See test/demo-login.test.js.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: ''
@@ -202,9 +195,8 @@ test('requesting a sign-in link creates NO organisation and NO user', async () =
     const { res } = await requestLinkAndReadToken('request-only@provisioning.test');
     assert.equal(res.status, 200, 'the link is sent');
 
-    // ASSERT THE ABSENCE: creating an organisation when a link is merely
-    // REQUESTED would let anyone fill the installation from an address they do
-    // not control.
+    // Creating an organisation when a link is merely REQUESTED would let anyone fill the
+    // installation from an address they do not control.
     assert.equal(organisationFileCount(), orgsBefore, 'requesting a link created no organisation file');
     assert.equal(userRows().length, usersBefore, 'requesting a link created no user row');
 });
@@ -309,9 +301,8 @@ test('an invalid address is refused by the login form and provisions nothing', a
 // IN-PROCESS: ORGANISATION IDENTITY (1, 2, 3, 5)
 // ===========================================================================
 //
-// These are properties of resolveSignIn, and driving each over HTTP would exhaust
-// the login route's hardcoded 10-per-IP rate limit. The store is the same code
-// path the route uses, in the same process, so the property is the same.
+// These are properties of resolveSignIn and driving each over HTTP would exhaust the login route's
+// 10-per-IP rate limit. The store is the same code path the route uses.
 
 test('an unknown address creates an organisation and becomes its admin', () => {
     const result = provision.resolveSignIn('new-address@identity.test');

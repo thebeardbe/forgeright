@@ -15,19 +15,16 @@
  * artefact weighs correctly and the deployed demo looks perfect. The first real client interview is
  * the one that scores zero.
  *
- * THE ROOT CAUSE IS THE SHAPE OF THE COVERAGE, NOT A MISSING ASSERTION. Every existing fixture in
- * both files uses the flat shape, so the nested read is exercised by nobody - and a shape change in
- * one module is invisible to another module's tests. So this file builds ONE workflow in TWO stored
- * shapes and asserts the two produce the SAME result, through EACH reader. That pairing is what
- * catches the failure: it fails the moment either reader stops resolving, whichever shape the rest
- * of the suite happens to use.
+ * THE ROOT CAUSE IS THE SHAPE OF THE COVERAGE. A shape change in one module is invisible to
+ * another module's tests, so every fixture uses the flat shape and the nested read is exercised by
+ * nobody. This file builds ONE workflow in TWO stored shapes and asserts the two produce the SAME
+ * result through EACH reader - a pairing that fails the moment either reader stops resolving.
  *
- * BOTH SHAPES ARE ASSERTED, NOT ONLY THE NESTED ONE. A test that covered only the nested shape
- * would leave the demo path unguarded, and the demo is the deployed artefact - so the flat variant
- * is not legacy here.
+ * BOTH SHAPES ARE ASSERTED, NOT ONLY THE NESTED ONE: the demo path is the deployed artefact, so the
+ * flat variant is not legacy.
  *
- * NO PRODUCTION CODE IS TOUCHED, and `data/demo/` plus `scripts/seed-demo-org.js` are unchanged:
- * the flat shape is deliberate and the committed scores (68, 58, 58, 58, 58, 38, 38) depend on it.
+ * `data/demo/` and `scripts/seed-demo-org.js` are unchanged: the committed scores
+ * (68, 58, 58, 58, 58, 38, 38) depend on the flat shape.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -44,9 +41,8 @@ import { responseWorkflow as reExported } from '../lib/view-format.js';
 /**
  * A workflow as a participant described it, with the fields both readers consume.
  *
- * Three steps, one marked as needing a person, and one touched department - the shape of a real
- * answer rather than a single field. The counts matter: a flat read reports 0 steps and 0
- * departments where the resolved read sees 3 and 1.
+ * Three steps, one needing a person, and one touched department: the counts matter, because a flat
+ * read reports 0 steps and 0 departments where the resolved read sees 3 and 1.
  */
 const WORKFLOW = {
     task: 'entering invoices',
@@ -78,8 +74,7 @@ const nestedResponse = (overrides = {}) => ({
 // ===========================================================================
 
 test('mergeProcessSteps: a NESTED payload yields the participant\'s steps, flags and departments', () => {
-    // A read of `response.data.steps` finds nothing, so a described process merges to zero steps
-    // with every step-derived term unmeasured.
+    // A read of `response.data.steps` finds nothing, so a described process merges to zero steps.
     const merged = mergeProcessSteps([nestedResponse()]);
 
     assert.equal(merged.stepCount, 3, 'three steps are seen, not zero');
@@ -90,9 +85,8 @@ test('mergeProcessSteps: a NESTED payload yields the participant\'s steps, flags
 });
 
 test('mergeProcessSteps: the FLAT payload yields the SAME result as the nested one', () => {
-    // THE PAIRING IS THE POINT. One workflow, two shapes, one answer - so a change that breaks
-    // either read fails here whichever shape the rest of the suite uses. The flat variant is the
-    // DEPLOYED demo artefact rather than a legacy case, so it is asserted rather than tolerated.
+    // THE PAIRING IS THE POINT: one workflow, two shapes, one answer. The flat variant is the
+    // DEPLOYED demo artefact rather than a legacy case.
     const flat = mergeProcessSteps([flatResponse()]);
     const nested = mergeProcessSteps([nestedResponse()]);
 
@@ -104,7 +98,7 @@ test('mergeProcessSteps: the FLAT payload yields the SAME result as the nested o
 
 test('the counts a nested read must produce: 3 steps and 1 department, not 0 and 0', () => {
     // The counts from a real nested payload, pinned. A reader that reintroduced the flat read would
-    // make this 0 and [] while every flat-shape test in merge-steps.test.js still passed.
+    // make this 0 and [] while every flat-shape test still passed.
     const merged = mergeProcessSteps([nestedResponse()]);
 
     assert.notEqual(merged.stepCount, 0, 'not zero steps');
@@ -114,17 +108,14 @@ test('the counts a nested read must produce: 3 steps and 1 department, not 0 and
 });
 
 test('mergeProcessSteps: TWO nested responses merge, so the shape works through the whole loop', () => {
-    // The defect is per-response inside the loop. One response proves the read; two prove it is not
-    // resolved once outside the loop and reused for the next, differently-shaped row.
+    // Per-response inside the loop: two responses prove the shape is not resolved once and reused.
     const second = nestedResponse({ steps: [{ name: 'Book it into the ledger', whatHappens: 'type it in', decidedHow: 'the package validates', needsReasoning: false }] });
 
     const merged = mergeProcessSteps([nestedResponse(), second]);
 
     assert.equal(merged.stepCount, 3, 'the shared step is merged, not duplicated');
-    // BOTH responses came from Finance, so the department is counted TWICE - `describedBy` counts
-    // how many people spoke rather than how many teams the work crosses, and two responses are two
-    // people. This is also the assertion that the two-response path resolves the shape per response
-    // rather than once for the first.
+    // `describedBy` counts how many people spoke rather than how many teams the work crosses, so
+    // both Finance responses count.
     assert.deepEqual(merged.describedBy, [['Finance', 2]]);
 });
 
@@ -165,8 +156,8 @@ function participantFields(message) {
 
 test('mergeParticipants: a NESTED payload reaches the weighing prompt, not an empty section', () => {
     // THE SECOND ROUTE TO ZERO, and the nastier one: an empty prompt section looks like a MODEL
-    // failure rather than a reader failure, so it is investigated in the wrong place. This read
-    // `response.data?.[field]` and found nothing for any of the fourteen fields.
+    // failure, so it is investigated in the wrong place. `response.data?.[field]` finds nothing for
+    // any of the fourteen fields.
     const message = weighingMessage(nestedResponse());
     const fields = participantFields(message);
 
@@ -186,8 +177,7 @@ test('mergeParticipants: the FLAT payload reaches the SAME prompt fields', () =>
 });
 
 test('the participant block carries ALL the fields the participant supplied', () => {
-    // A single-field check would pass on a reader that resolved one field and dropped the rest. Each
-    // field the fixture carries is asserted separately, so a partial resolution fails.
+    // Each field is asserted separately, so a reader that resolved one and dropped the rest fails.
     const fields = participantFields(weighingMessage(nestedResponse()));
 
     assert.equal(fields.task, WORKFLOW.task);
@@ -224,8 +214,8 @@ test('responseWorkflow returns the FIRST workflow of the nested shape', () => {
 });
 
 test('responseWorkflow returns null for `{}`, null, an array, and a non-object', () => {
-    // The cases the old suite covered, re-asserted here so the MOVE did not lose any of them - the
-    // resolver's behaviour is a contract three readers depend on.
+    // The resolver's behaviour is a contract three readers depend on, re-asserted where it now
+    // lives.
     for (const input of [{}, null, undefined, 0, '', false, [{ task: 'bare' }]]) {
         assert.equal(responseWorkflow(input), null, `${JSON.stringify(input)} resolves to null`);
     }
@@ -237,8 +227,8 @@ test('responseWorkflow skips a malformed entry inside `workflows` for a usable o
 });
 
 test('the RE-EXPORT from lib/view-format.js is the same function, so callers are unchanged', () => {
-    // The move is an implementation detail: `server.js` and the views import from `lib/view-format.js`
-    // and must keep working. Identity is the strongest form of that assertion.
+    // `server.js` and the views import from `lib/view-format.js`, so the re-export must be the same
+    // function.
     assert.equal(reExported, responseWorkflow, 'the re-export is the same function object');
     assert.equal(reExported({ workflows: [{ task: 'x' }] }).task, 'x', 'and it resolves');
 });
@@ -248,10 +238,8 @@ test('the RE-EXPORT from lib/view-format.js is the same function, so callers are
 // ===========================================================================
 
 test('BOTH READERS AGREE ABOUT BOTH SHAPES - the shape of the coverage that was missing', () => {
-    // WHY THIS TEST EXISTS. The failure was not a missing assertion inside one reader; it was that
-    // no reader's tests exercised the shape the OTHER module produced. So this asserts the two
-    // shapes produce identical results through BOTH readers AT ONCE - and it fails if either reader
-    // stops resolving, whichever shape the other tests in the suite happen to use.
+    // The two shapes must produce identical results through BOTH readers AT ONCE: the failure was
+    // that no reader's tests exercised the shape the OTHER module produced.
     const nested = {
         merged: mergeProcessSteps([nestedResponse()]),
         fields: participantFields(weighingMessage(nestedResponse()))
@@ -268,9 +256,7 @@ test('BOTH READERS AGREE ABOUT BOTH SHAPES - the shape of the coverage that was 
 });
 
 test('a SHAPE CHANGE IN A RESPONSE IS VISIBLE TO BOTH READERS, not to one', () => {
-    // The generalisation of the root cause: change one field in the payload and BOTH readers must
-    // see the change. If a reader is reading the wrong shape it sees nothing, and this catches it
-    // with a single-field delta rather than a full fixture.
+    // Change one field and BOTH readers must see it: a reader on the wrong shape sees nothing.
     const renamed = nestedResponse({ task: 'a different task' });
 
     const merged = mergeProcessSteps([renamed]);

@@ -1,21 +1,14 @@
 /**
  * The round model, and the split between visible and scored.
  *
- * ONE INVITATION HAS AT MOST ONE OPEN ROUND. `recordTurn` is the single writer that
- * knows the difference between a turn still in progress and one that finished a
- * process, and it has three cases:
+ * ONE INVITATION HAS AT MOST ONE OPEN ROUND. `recordTurn` is the single writer, with three cases:
  *
  *   1. no open round          -> insert a new round (partial, `submitted_at` null)
  *   2. an open round          -> UPDATE it, carrying the transcript
  *   3. `complete: true`       -> update-or-insert and set `submitted_at`
  *
- * The owner's rule: a PARTIAL round is VISIBLE AND NOT SCORED, "partials are not
- * taken into account for sorting and thus scoring neither". The exclusion lives in
- * the analysis query, so a caller cannot forget it.
- *
- * Every test here is mutation-verified in the report.
- *
- * STORE_DIR is a temp directory per run, set before anything is imported.
+ * A PARTIAL round is VISIBLE AND NOT SCORED. The exclusion lives in the analysis query, so a
+ * caller cannot forget it.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -100,10 +93,8 @@ test('a complete turn with NO open round inserts AND finalises in one step', () 
 });
 
 test('a completed round keeps its original instant: markResponseSubmitted is idempotent', async () => {
-    // A ROUND FINALISED TWICE MUST KEEP ITS ORIGINAL INSTANT, or the console's ordering
-    // would depend on when somebody last touched the row. Asserted AT THE LAYER that
-    // owns it, because `recordTurn` does not reach here twice on one round (see the
-    // test below for what a second complete does).
+    // A round finalised twice must keep its original instant, or the console's ordering depends on
+    // when somebody last touched the row.
     const { org, invitation } = orgWithInvitation();
     const db = registry.connectionFor(org.id);
     const invitationId = db.prepare('SELECT id FROM invitation WHERE email = ?').get('p@example.test').id;
@@ -120,11 +111,9 @@ test('a completed round keeps its original instant: markResponseSubmitted is ide
 });
 
 test('a second COMPLETE after a round closed OPENS A NEW round, rather than moving the instant', () => {
-    // WHAT THE CODE ACTUALLY DOES, measured rather than assumed. `recordTurn` looks for
-    // a round with `submitted_at IS NULL`; once the round is closed there is none, so
-    // the next complete turn begins a NEW round with its own timestamp. The original
-    // round's instant is untouched, which is what "does not move submitted_at" means
-    // here - it is not moved, it is a different row.
+    // `recordTurn` looks for a round with `submitted_at IS NULL`; once closed there is none, so the
+    // next complete turn begins a NEW round. The original's instant is untouched because it is a
+    // different row.
     const { org, recordTurn } = orgWithInvitation();
 
     const firstComplete = recordTurn({ data: { n: 1 }, complete: true });
@@ -182,9 +171,8 @@ test('a finalised round and a partial exist side by side, and only the finalised
 // 3. THE TRANSCRIPT ON AN UPDATE
 // ===========================================================================
 //
-// A REAL BUG this guards: `updateResponseData` set `data` but not `transcript`, so
-// progressive saving kept the conversation on the first write and SILENTLY DROPPED it
-// on every update after. Two layers were involved, and the second was the reachable one.
+// `updateResponseData` must write `transcript` as well as `data`, or progressive saving keeps the
+// conversation from the first write and SILENTLY DROPS it on every update after.
 
 test('an update CARRIES the transcript, at the sqlite layer', () => {
     const { org } = orgWithInvitation();
@@ -249,9 +237,7 @@ test('progressive saving through recordTurn accumulates rather than losing the c
 // ===========================================================================
 
 test('addResponse stores a FINALISED round, not a partial', () => {
-    // Its own doc says a second round "adds another response; an earlier round is never
-    // overwritten", which is the language of a COMPLETED round. Storing it as partial
-    // would make it invisible to every analysis path.
+    // A new round finalises: stored as partial it would be invisible to every analysis path.
     const { org, invitation } = orgWithInvitation();
 
     const row = store.addResponse(org.id, invitation.token, { department: 'Finance', data: { seeded: true } });
@@ -277,8 +263,8 @@ test('addResponse is unaffected by an OPEN round: it always inserts a new finali
 // 5. THE COMPLETION GATE WITH A SINGLE-PROCESS PAYLOAD
 // ===========================================================================
 //
-// The fresh-start model depends on `processes.every(...)` judging ONLY what the payload
-// holds, because a fresh round sends one process rather than every process so far.
+// The fresh-start model depends on `processes.every(...)` judging ONLY what the payload holds: a
+// fresh round sends one process rather than every process so far.
 
 const { parseModelResponse } = await import('../ai/audit-core.js');
 const matrix = await import('../ai/matrix.js');

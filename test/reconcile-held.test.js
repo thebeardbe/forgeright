@@ -13,12 +13,11 @@
  * ONE process, described twice in reworded steps, with `frequencyPerWeek` 56 in one entry and 7 in
  * the other because the model had forgotten it had already recorded 56 servers. The prompt states
  * the contract - "`processes` holds the process you are working on NOW, not every process of the
- * interview" (`prompt_en.md` line 515) - and NOTHING enforced it: the only test on the reply's
- * arity anywhere was `length > 0`, which accepts any number.
+ * interview" - and nothing enforced it.
  *
- * THE FIX ENFORCES IT WHERE THE ROUND IS KNOWN. The client sends `roundProcesses` with `/api/chat`
- * - the one fact the reply cannot carry - and `reconcileWithHeld` folds a reply that re-describes
- * the round's process, KEEPING THE ROUND'S RECORDED VALUES.
+ * `reconcileWithHeld` enforces it where the round is known: the client sends `roundProcesses` with
+ * `/api/chat`, the one fact the reply cannot carry, and a reply that re-describes the round's
+ * process is folded KEEPING THE ROUND'S RECORDED VALUES.
  *
  * BOTH DIRECTIONS ARE TESTED, and the second is the harm direction: folding must never discard a
  * process the participant has just named.
@@ -62,9 +61,7 @@ const HELD_FIRST_ENTRY = [
 ];
 
 test('the REAL payload folds to ONE process, keeping the round\'s `frequencyPerWeek` 56', () => {
-    // The two entries are one process described twice, and the value that survives is the ROUND'S
-    // recorded 56 - not the model's re-derived 7, which it produced because it had forgotten it
-    // already recorded 56 servers.
+    // The value that survives is the ROUND'S recorded 56, not the model's re-derived 7.
     const { workflows, folded } = reconcileWithHeld(OWNER_PAYLOAD, HELD_FIRST_ENTRY);
 
     assert.equal(workflows.length, 1, 'the two reworded entries are ONE process');
@@ -85,10 +82,8 @@ test('the surviving entry carries the STEPS and the prose the participant gave',
 });
 
 test('THE HARM DIRECTION: a NEWLY NAMED process beside a finished one still yields TWO', () => {
-    // THE TEST THAT CAUGHT THE IMPLEMENTER'S FIRST ATTEMPT, which folded the step-less entry and
-    // DISCARDED the new process. A participant naming a second process produces `[the finished
-    // process, the new one with NO steps]`, and the entry with no content is the NEW one - the
-    // exact inverse of the by-absence arm that was removed from the client.
+    // A participant naming a second process produces `[the finished process, the new one with NO
+    // steps]`, so the step-less entry is the NEW one and must not be folded away and discarded.
     const finished = {
         id: 'checking-servers',
         task: 'Checking whether servers are up',
@@ -110,9 +105,8 @@ test('THE HARM DIRECTION: a NEWLY NAMED process beside a finished one still yiel
 });
 
 test('the newly named process is kept even though it carries NO steps', () => {
-    // Stated separately because it is the property the first attempt broke: the new process arrives
-    // step-less BY DESIGN ("a fresh matrix from its `task` and `trigger` onward"), so emptiness must
-    // not be read as evidence of being the round's process.
+    // The new process arrives step-less BY DESIGN ("a fresh matrix from its `task` and `trigger`
+    // onward"), so emptiness must not be read as evidence of being the round's process.
     const finished = { id: 'p1', task: 'Checking servers', frequencyPerWeek: 56, steps: [{ name: 'Open the URL' }] };
     const newlyNamed = { id: 'p2', task: 'Onboarding a new supplier', trigger: 'a supplier is agreed' };
 
@@ -177,11 +171,8 @@ test('a malformed reply is not crashed on', () => {
 // ===========================================================================
 
 test('the fold is IDENTITY-WISE on a step name, so a reworded step does not match', () => {
-    // The rule is an EXACT co-test: "Open the URL" and "Open the server URL" are different names.
-    // The owner's payload still folds because THREE of its eight names are exactly equal
-    // ("Log it in Excel" and "Notify IT" differ slightly, but "Check if it is up" vs "Check if the
-    // site loads" do not - the shared names are what carry it). This asserts the boundary: with NO
-    // exactly equal name, nothing folds.
+    // The rule is an EXACT co-test, so with NO exactly equal step name nothing folds. The fixture
+    // folds because three of its step names are exactly equal.
     const held = [{ id: 'p1', task: 'A', steps: [{ name: 'Open the URL' }] }];
     const rewordedOnly = [{ task: 'B', steps: [{ name: 'Open the server URL' }] }];
 
@@ -190,9 +181,9 @@ test('the fold is IDENTITY-WISE on a step name, so a reworded step does not matc
 });
 
 test('the route only reconciles when the client sent a held set, and declines otherwise', () => {
-    // The wiring: `roundProcesses` is the one fact the reply cannot carry, and without it the route
-    // passes the reply through rather than guessing. Asserted from the source, since the client
-    // omitting the field is the case that must not error or crash.
+    // `roundProcesses` is the one fact the reply cannot carry, and without it the route passes the
+    // reply through rather than guessing. Asserted from the source: the client omitting the field is
+    // the case that must not error or crash.
     const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'routes-api.js'), 'utf8');
 
     assert.match(source, /import \{ reconcileWithHeld \} from '\.\.\/ai\/workflow-identity\.js'/,

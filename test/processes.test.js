@@ -348,9 +348,8 @@ test('exactly ONE revision is current, and the current one is the latest', () =>
 });
 
 test('the DATABASE refuses a second current revision, not the code', async () => {
-    // is_current is a PARTIAL UNIQUE INDEX, so the guarantee does not depend on
-    // every writer remembering to clear the previous one. This tries to make two
-    // current and confirms the database rejects it.
+    // is_current is a PARTIAL UNIQUE INDEX, so the guarantee does not depend on every writer
+    // remembering to clear the previous one.
     const { org, response } = orgWithResponse({ task: 'invoices' });
     const first = processes.recordIdentification({
         orgId: org.id,
@@ -473,9 +472,8 @@ test('a rejudge can refine the process NAME without blanking it', () => {
 // 4. NOTHING REACHES THE PARTICIPANT
 // ===========================================================================
 //
-// Asserted as a BOUNDARY, not as intent: the lookup is not exported, and no
-// participant route imports the process module. A grep is the honest form of this
-// test, because it is the property "a route cannot reach it" that is being pinned.
+// Asserted as a BOUNDARY: the lookup is not exported, and no participant route imports the process
+// module. A grep is the honest form, because the property is "a route cannot reach it".
 
 test('groupedProcessForResponse is NOT exported from the process module', async () => {
     const module = await import('../lib/store/processes.js');
@@ -489,10 +487,8 @@ test('the process module exports only the operations the console path needs', as
 });
 
 test('no participant route imports the process module', () => {
-    // The honest form of "a participant cannot ask where their answer was
-    // grouped": the routes a participant reaches do not import it at all. The
-    // console in lib/auth/console.js is the one path that MAY read it, and it is
-    // not a participant route.
+    // The routes a participant reaches do not import it at all. The console in lib/auth/console.js
+    // is the one path that MAY read it, and it is not a participant route.
     const projectRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
     const participantFiles = ['lib/auth/participant-routes.js', 'lib/routes-api.js'];
 

@@ -2,14 +2,10 @@
  * The framework around the interview: the format commitment, the JSON extractor,
  * and the transcript the completed answers carry.
  *
- * These three are load-bearing rather than incidental:
- *
- *   - `ai/format-commitment.js` is a measured framing, so the exact conditions it
- *     wraps under are worth pinning;
- *   - `ai/json-extract.js` parses a real provider's replies out of prose, so it
- *     has to be right rather than merely likely;
- *   - the transcript is the raw evidence the analysis rests on, and the synthetic
- *     format turn must never reach it.
+ *   - `ai/format-commitment.js` is a measured framing, so the conditions it wraps under are pinned;
+ *   - `ai/json-extract.js` parses a real provider's replies out of prose;
+ *   - the transcript is the raw evidence the analysis rests on, and the synthetic format turn must
+ *     never reach it.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -123,9 +119,8 @@ test('an escaped quote inside a string does not end the string early', () => {
 });
 
 test('a brace after an escaped backslash inside a string does not end the run', () => {
-    // The scanner must treat a backslash escape as consuming the next character,
-    // so a `}` that follows an escaped backslash is still inside the string. Using
-    // `\\}` (an escaped backslash, then the brace) keeps the JSON valid.
+    // A backslash escape consumes the next character, so a `}` after an escaped backslash is still
+    // inside the string.
     const raw = '{"status":"asking","content":"a \\\\} b"}';
     assert.deepEqual(
         extractJsonObject(raw),
@@ -134,9 +129,8 @@ test('a brace after an escaped backslash inside a string does not end the run', 
 });
 
 test('two sibling objects: the first WITH a status field wins', () => {
-    // The rule the code implements: each candidate is tried in order and the first
-    // that looks like a payload (has a string `status`) is returned, so a worked
-    // example followed by the answer returns the ANSWER.
+    // Each candidate is tried in order and the first with a string `status` is returned, so a
+    // worked example followed by the answer returns the ANSWER.
     assert.deepEqual(
         extractJsonObject('Shape: {"a":1} Answer: {"status":"asking"}'),
         { status: 'asking' }
@@ -151,9 +145,8 @@ test('two siblings that BOTH have a status field: the FIRST is returned', () => 
 });
 
 test('two siblings with NEITHER having a status field: the first found is returned (the fallback)', () => {
-    // THE FALLBACK, which is the part a reader would get wrong: when nothing looks
-    // like a payload, the first parsed object is returned rather than null, so the
-    // caller can report what is wrong with it instead of "no JSON".
+    // When nothing looks like a payload, the first parsed object is returned rather than null, so
+    // the caller can report what is wrong with it instead of "no JSON".
     assert.deepEqual(extractJsonObject('{"a":1} {"b":2}'), { a: 1 });
 });
 

@@ -6,10 +6,8 @@
  * existing re-identification tests all stay WITHIN one process, so none of them moves one, and a
  * move is the behaviour that needs its own fixture.
  *
- * Every test here is mutation-verified in the report. A test for these behaviours that has never
- * been seen to fail is the failure this file exists to prevent.
- *
- * STORE_DIR is a temp directory per run, set before anything is imported.
+ * Every test here is mutation-verified: a test for these behaviours that has never been seen to
+ * fail is the failure this file exists to prevent.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -228,9 +226,8 @@ test('a NON-MOVING in-place re-identify returns left: null and membership is unc
 });
 
 test('THE INVARIANT FIRES on a forced double link, and the transaction rolls back', () => {
-    // A forced double link: link a response into a second process's current
-    // revision OUTSIDE the guarded path, so the store's assertion has something to
-    // find. Then an identification must throw, and nothing it wrote may survive.
+    // A forced double link outside the guarded path, so the store's assertion has something to
+    // find: an identification must throw and nothing it wrote may survive.
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const two = addResponse({ task: 'two' });
@@ -275,10 +272,9 @@ test('THE INVARIANT FIRES on a forced double link, and the transaction rolls bac
 // 2. THE TRANSACTION JOIN
 // ===========================================================================
 //
-// `writeTransaction` JOINS an enclosing transaction rather than nesting, because
-// `insertRevision` and `insertScore` each open their own BEGIN IMMEDIATE and SQLite
-// refuses a nested one. All five paths are pinned, because the failure to test for
-// is a rollback issued twice or a transaction left open.
+// `writeTransaction` JOINS an enclosing transaction rather than nesting, because `insertRevision`
+// and `insertScore` each open their own BEGIN IMMEDIATE and SQLite refuses a nested one. All five
+// paths are pinned: the failure to test for is a rollback issued twice or a transaction left open.
 
 /** A connection for a throwaway organisation, for the transaction probes. */
 function probeConnection() {
@@ -393,9 +389,8 @@ test('a rollback is never issued twice: a failing COMMIT does not mask the origi
 });
 
 test('an insertRevision inside an outer transaction joins it rather than nesting', () => {
-    // The concrete case the helper exists for: insertRevision opens its own
-    // transaction, and it is called from inside recordIdentification's. A nested
-    // BEGIN would throw "cannot start a transaction within a transaction".
+    // insertRevision opens its own transaction and is called from inside recordIdentification's; a
+    // nested BEGIN would throw "cannot start a transaction within a transaction".
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const created = createProcess(org.id, one.id, 'Joined revision');

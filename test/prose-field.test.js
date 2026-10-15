@@ -17,15 +17,12 @@
  *   an ABSENT field    -> still rendered as absent, NOT as prose and not as words
  *   a NUMBER field     -> still rendered as a number with its unit
  *
- * THE SCORING IS UNCHANGED AND MUST STAY UNCHANGED. It still cannot multiply a sentence: the score
- * stays a real zero and only the LABEL changes. A test that made the client read prose as a figure
- * would be testing the guess the marker exists to avoid, so the last test here pins the opposite -
- * the number the server sent is what is displayed.
+ * THE SCORING IS UNCHANGED. It cannot multiply a sentence: the score stays a real zero and only the
+ * LABEL changes. The last test pins the opposite direction - the number the server sent is what is
+ * displayed.
  *
- * HOW IT IS DRIVEN. `renderAnalysis` lives inside `public/js/audit.js` and is not exported, so the
- * real client is loaded into a `node:vm` sandbox and a `/api/score` result is delivered through the
- * sandbox's `fetch`. The rendered HTML is read from the element the client writes it to, so this is
- * the client's own output rather than a re-implementation of its formatting.
+ * `renderAnalysis` is not exported, so the real client is loaded into a `node:vm` sandbox and a
+ * `/api/score` result is delivered through its `fetch`, so this is the client's own output.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,10 +36,8 @@ const PROJECT_ROOT = path.join(__dirname, '..');
 const CLIENT = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'js', 'audit.js'), 'utf8');
 
 /**
- * Loads the real client and returns a driver that scores a result and reads the rendered HTML.
- *
- * The flow mirrors a real interview: a completed turn is saved, then `/api/score` answers with the
- * analysis, which `renderAnalysis` writes into the results element.
+ * Loads the real client and returns a driver that scores a result and reads the rendered HTML: a
+ * completed turn is saved, then `/api/score` answers with the analysis.
  */
 async function loadScoringClient() {
     const { createContext, runInContext } = await import('node:vm');
@@ -64,9 +59,7 @@ async function loadScoringClient() {
         querySelectorAll: () => []
     };
 
-    // The strings the client renders with, for one language, through the SAME accessor the server
-    // uses (`res.locals.strings = stringsFor(lang)`). Reading the whole `STRINGS` map by mistake is
-    // what made every heading render as "undefined" on the first run of this file.
+    // The strings the client renders with, through the same accessor the server uses.
     const { stringsFor } = await import('../lib/strings.js');
     const strings = stringsFor('en');
 
@@ -111,19 +104,16 @@ async function loadScoringClient() {
 
 /** A scored workflow as the SERVER sends it, with `effortHoursPerWeek` already computed. */
 function scoredWorkflow({ title = 'Checking servers', effort = 0, recoverable = 0, peopleAffected, judgementScore = 3 } = {}) {
-    // `judgementScore` IS ALWAYS SENT BY THE SERVER (`lib/scoring.js` derives it per workflow), so it
-    // is present in this fixture. Omitting it renders "judgement undefined/5" - which is what made
-    // the absent-field test fail on a fixture gap rather than on a rendering defect.
+    // `judgementScore` IS ALWAYS SENT BY THE SERVER, so it is present in this fixture: omitting it
+    // renders "judgement undefined/5".
     return { title, effortHoursPerWeek: effort, recoverableHoursPerWeek: recoverable, peopleAffected, judgementScore };
 }
 
 /**
  * A `/api/score` result wrapping the given workflows.
  *
- * THE WORKFLOWS GO IN `buckets`, because that is where the client renders each card from:
- * `bucketHtml` reads `result.buckets.do_first` (recoverable mode) and `do_later` / `judgement_bound`
- * (effort mode). Putting them only in `scored` renders the total and NO cards, which is how the
- * first version of this file came to assert against an empty render.
+ * THE WORKFLOWS GO IN `buckets`, because `bucketHtml` renders each card from `result.buckets`
+ * (`do_first`, `do_later`, `judgement_bound`). Only in `scored`, the render is a total and NO cards.
  */
 function analysis(scored, { total = 0, workflowCount = scored.length, bucket = 'do_later' } = {}) {
     const buckets = { do_first: [], do_later: [], judgement_bound: [] };
@@ -146,9 +136,8 @@ test('a PROSE `peopleAffected` renders the participant\'s WORDS, not [object Obj
 });
 
 test('the prose words are shown WITHOUT a unit, because a sentence is not "56 servers/wk"', () => {
-    // The same rule stated at the source level: a value in words carries no unit, so `metaPart`
-    // escapes it and appends nothing. Asserted on the client's own code, since the rendered gap
-    // between "the words" and "the words" + a suffix is what this protects.
+    // A value in words carries no unit, so `metaPart` escapes it and appends nothing - asserted on
+    // the client's own code.
     assert.match(CLIENT, /const unknown = value === undefined \|\| value === null \|\| isProse\(value\) \|\| isDeclined\(value\)/,
         'prose is treated as "unknown, in words"');
     assert.match(CLIENT, /unknown\s*\n?\s*\?\s*'<em>' \+ escapeHtml\(text\) \+ '<\/em>'/,
@@ -185,8 +174,7 @@ test('the TOTAL is marked "at least" when any workflow was incomputable', async 
 // ===========================================================================
 
 test('an ABSENT field renders as ABSENT - not as prose, and not as the word "undefined"', async () => {
-    // THE BOUNDARY THAT MATTERS MOST. `fieldText` must not turn a missing field into anything that
-    // reads like an answer: the whole point of distinguishing prose from absence is that a reader
+    // `fieldText` must not turn a missing field into anything that reads like an answer: a reader
     // can tell "they said something in words" from "nobody asked".
     const client = await loadScoringClient();
     const html = await client.render(analysis([scoredWorkflow({ peopleAffected: undefined })]));
@@ -222,10 +210,8 @@ test('a MEASURABLE workload still shows its effort figure, so the label is not a
 // ===========================================================================
 
 test('the client does NOT turn prose into a figure - the number displayed is the server\'s', async () => {
-    // THE GUESS THE MARKER EXISTS TO PREVENT. The server computes the score and cannot multiply a
-    // sentence, so it sends 0; the client must display that 0 (labelled) rather than invent one. A
-    // test that made the client read `{ said: "56 a week" }` as 56 would be testing the inference
-    // the marker was added to avoid.
+    // The server cannot multiply a sentence, so it sends 0; the client must display that 0
+    // (labelled) rather than read `{ said: "56 a week" }` as 56.
     const client = await loadScoringClient();
     const peopleAffected = { said: '56 servers a week, roughly' };
     const html = await client.render(analysis([

@@ -14,18 +14,14 @@
  * `identifyFinishedResponse` is called from `POST /api/response` when the round completes, NOT
  * AWAITED, recorded as `model`, guarded so a response that already has a grouping is declined.
  *
- * HOW THE SUCCESS PATH IS TESTED, SINCE THE MOCK CANNOT IDENTIFY. The mock provider is an INTERVIEW
- * simulator: it answers every call with the next interview question, which is why the seed carries
- * an `assertNotMock`. So a test that drove a real request and asserted a process appeared would pass
- * only if the mock did something it does not do - it would be testing the absence of the feature.
- * Instead the two halves are tested where each is honest:
+ * HOW THE SUCCESS PATH IS TESTED, SINCE THE MOCK CANNOT IDENTIFY. The mock answers every call with
+ * the next interview question, so a test asserting a process appeared would be testing the absence
+ * of the feature. The two halves are tested where each is honest:
  *
- *   - THE EFFECT OF A SUCCESSFUL REPLY is `recordIdentification` with the default `decidedBy`, and
- *     that is exercised directly - it is exactly what `identifyFinishedResponse` does after a good
- *     reply, and it is the part that decides `decidedBy`, the guard, and whether a process exists.
- *   - THE ROUTE WIRING is driven over HTTP against a real server, where the mock FAILS to identify:
- *     that asserts the reply still returns, nothing is created, and the answer stays rejudgeable -
- *     the failure mode the owner was in, which is the direction that must stay recoverable.
+ *   - THE EFFECT OF A SUCCESSFUL REPLY is `recordIdentification` with the default `decidedBy`,
+ *     exercised directly: the part that decides `decidedBy`, the guard, and whether a process exists.
+ *   - THE ROUTE WIRING is driven over HTTP where the mock FAILS to identify: the reply still
+ *     returns, nothing is created, and the answer stays rejudgeable.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,11 +76,9 @@ test('a response WITH a grouping IS already identified - the console reads the s
 });
 
 test('identifyFinishedResponse DECLINES a response that already has a grouping', async () => {
-    // THE GUARD IS REACHABLE RATHER THAN THEORETICAL, and this is the measurement that makes it
-    // necessary: a second `recordIdentification` that does NOT match produces a SECOND process with
-    // the same name, and the identify prompt tells the model to answer `matches: null` when it is
-    // unsure. So a second automatic identification is not harmless - it can duplicate a process the
-    // console has already grouped.
+    // A second `recordIdentification` that does NOT match produces a SECOND process with the same
+    // name, and the prompt tells the model to answer `matches: null` when unsure - so a second
+    // automatic identification can duplicate a process the console has already grouped.
     const { org, response } = finishedRound();
     processes.recordIdentification({ orgId: org.id, responseId: response.id, reply: newProcessReply('Checking servers') });
 
@@ -127,10 +121,8 @@ test('the SAME second call WITH `matches` is idempotent, which is the other half
 // ===========================================================================
 
 test('the identification is recorded as `model`, so the console does not read it as a regrouping', () => {
-    // The seed's own comment names the distinction: the rejudge route "would mark every revision as
-    // an admin correction and require an admin's argument, and a demo should show the ordinary
-    // result rather than a console full of regroupings". Passing `decidedBy: 'admin'` here would
-    // make every live interview a console full of corrections.
+    // Passing `decidedBy: 'admin'` here would make every live interview a console full of admin
+    // corrections.
     const { org, response } = finishedRound();
 
     // The call `identifyFinishedResponse` makes after a good reply: no `decidedBy`, so the default.
@@ -205,9 +197,8 @@ test('the route fires the identification when a round COMPLETES, and not before'
 });
 
 test('the reply is NOT awaited, so the participant is not blocked on a model call', () => {
-    // `void` marks the promise as intentionally not held. The reply is sent first, and the
-    // identification runs after it - the property that keeps a seconds-long model call off the
-    // participant's critical path.
+    // `void` marks the promise as intentionally not held: the reply is sent first, keeping a
+    // seconds-long model call off the participant's critical path.
     const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'auth', 'participant-routes.js'), 'utf8');
 
     assert.match(source, /void identifyFinishedResponse\(/, 'fired with `void`, not `await`');
@@ -225,12 +216,11 @@ test('the identification is given the participant\'s language, from `res.locals`
 });
 
 test('the automatic identification is NOT recorded as an admin correction anywhere it is called', () => {
-    // The one line that decides it, read from the module: `recordIdentification` is called with no
-    // `decidedBy`, which is what makes the default `model` apply.
+    // `recordIdentification` is called with no `decidedBy`, which is what makes the default `model`
+    // apply.
     //
-    // COMMENTS ARE STRIPPED BEFORE THE `decidedBy: 'admin'` CHECK, because this file's own header
-    // DISCUSSES the seed's admin path and a raw search matches that prose - which is how a check
-    // like this comes to fail on the documentation of the thing it is checking.
+    // COMMENTS ARE STRIPPED BEFORE THE `decidedBy: 'admin'` CHECK, because this file's header
+    // DISCUSSES the admin path and a raw search would match that prose.
     const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'auth', 'identify-response.js'), 'utf8');
 
     assert.match(source, /recordIdentification\(\{ orgId, responseId: response\.id, reply \}\)/,

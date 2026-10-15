@@ -41,10 +41,7 @@ function freePort() {
 }
 
 /**
- * Starts the server with a chosen HOST and returns its combined output.
- *
- * @param {string} host The bind address.
- * @returns {Promise<string>} Everything the server printed before it was stopped.
+ * Starts the server with a chosen HOST and returns everything it printed before it was stopped.
  */
 async function startAndCapture(host) {
     const port = await freePort();
@@ -82,8 +79,8 @@ async function startAndCapture(host) {
 // 1. THE DEPLOY COMPOSE
 // ===========================================================================
 //
-// Read as TEXT and validated with `docker compose config`, which parses offline. The
-// file's shape is the claim: one service, no profiles, no published ports.
+// Read as TEXT and validated with `docker compose config`, which parses offline: the file's shape
+// is the claim.
 
 test('docker compose can parse the deploy file', () => {
     // A file that does not parse is not a deploy.
@@ -132,10 +129,8 @@ test('TRUST_PROXY is set explicitly, with a default of uniquelocal', () => {
     const text = composeText();
     assert.match(text, /TRUST_PROXY:\s*"\$\{FORGERIGHT_TRUST_PROXY:-uniquelocal\}"/, 'TRUST_PROXY defaults to uniquelocal');
 
-    // A DIFFERENT variable name from the one it sets, so `.env` cannot shadow the
-    // default. `${TRUST_PROXY:-...}` would read the same variable it writes. Checked on
-    // the ASSIGNMENT only: the string appears in a comment above it explaining why, which
-    // is not the bug.
+    // A DIFFERENT variable name from the one it sets, so `.env` cannot shadow the default.
+    // Checked on the ASSIGNMENT only: the string also appears in a comment above it.
     const assignment = text.split('\n').find((line) => /^\s*TRUST_PROXY:/.test(line));
     assert.ok(assignment, 'there is an uncommented TRUST_PROXY assignment');
     assert.equal(/\$\{TRUST_PROXY:-/.test(assignment), false, 'the default must not read the variable it sets');
@@ -161,9 +156,8 @@ test('THE TRUST PROXY BEHAVIOUR: without a trusted proxy, a forwarded HTTPS requ
 
     /** Starts the server with or without TRUST_PROXY and probes /admin. */
     const probeAdmin = async (trustProxy) => {
-        // A FRESH PORT AND STORE PER PROBE: two servers cannot share a port, and a
-        // shared store means the second can wait on the first's file locks while it is
-        // still shutting down, which the liveness loop then reports as a failure to start.
+        // A FRESH PORT AND STORE PER PROBE: a shared store would make the second server wait on
+        // the first's file locks while it shuts down.
         const probePort = await freePort();
         const probeStore = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-trust-probe-'));
         tempDirs.push(probeStore);
@@ -185,12 +179,9 @@ test('THE TRUST PROXY BEHAVIOUR: without a trusted proxy, a forwarded HTTPS requ
         delete env.TRUST_PROXY;
 
         const child = spawn(process.execPath, [path.join(PROJECT_ROOT, 'server.js')], {
-            // `TRUST_PROXY` IS ALWAYS PASSED, even when testing the unset case, because
-            // `import 'dotenv/config'` loads the repo's `.env` and that file sets
-            // `TRUST_PROXY=127.0.0.1`. An ABSENT variable here is therefore filled in by
-            // dotenv and the "without it" half would silently test the same thing twice.
-            // Passing an empty string keeps the key present so dotenv does not override
-            // it, and `resolveTrustProxy` treats empty as unset.
+            // `TRUST_PROXY` IS ALWAYS PASSED: the repo's `.env` sets it, so an ABSENT variable is
+            // filled in by dotenv and the "without it" half would test the same thing twice. An
+            // empty string keeps the key present, and `resolveTrustProxy` treats empty as unset.
             env: { ...env, TRUST_PROXY: trustProxy ?? '' },
             stdio: ['ignore', 'pipe', 'pipe']
         });
@@ -255,9 +246,8 @@ test('THE TRUST PROXY BEHAVIOUR: without a trusted proxy, a forwarded HTTPS requ
 // ===========================================================================
 
 test('the proton profile falls back to the default when MAIL_PROTON_PROFILE is unset, empty or whitespace', async () => {
-    // The old default was `jobsearch`, somebody's personal mailbox recorded as a
-    // product decision. Whitespace is the case this codebase has got wrong before, so
-    // it is pinned beside the others.
+    // The default must be the product default rather than a personal mailbox, and whitespace is
+    // pinned beside the others.
     const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-proton-bin-'));
     tempDirs.push(bin);
     const argvFile = path.join(bin, 'argv.json');
@@ -307,10 +297,8 @@ process.stdin.on('end', () => {
 });
 
 test('no source file uses the personal mailbox as a profile DEFAULT', () => {
-    // Asserted on the CONSTANT rather than by grepping the file, because the name
-    // legitimately appears in comments explaining what the default is. A grep would
-    // have to strip both comment styles correctly to be trustworthy; reading the value is
-    // exact.
+    // Asserted on the CONSTANT rather than by grepping: the name legitimately appears in comments,
+    // and reading the value is exact.
     const proton = fs.readFileSync(path.join(PROJECT_ROOT, 'lib', 'mail', 'proton.js'), 'utf8');
     const declaration = proton.match(/const DEFAULT_PROFILE = '([^']*)';/);
 
@@ -340,9 +328,8 @@ test('the mock warning is SILENT on loopback', async () => {
 });
 
 test('the mock warning does not fire under npm test', async () => {
-    // The suite runs on 127.0.0.1, so a warning on every run would be noise an operator
-    // learns to skip. This asserts the channel rather than re-running the suite: the
-    // condition excludes every loopback spelling the app accepts.
+    // The suite runs on 127.0.0.1, so a warning on every run would be noise. The condition excludes
+    // every loopback spelling the app accepts.
     const output = await startAndCapture('127.0.0.1');
     assert.equal(/AI_PROVIDER is "mock"/.test(output), false, 'no mock warning on the loopback bind the tests use');
 });

@@ -1,14 +1,11 @@
 /**
  * The step merge: `mergeProcessSteps` in `ai/merge-steps.js`.
  *
- * This rule was previously inline in `views/admin-roadmap.ejs`, where no test
- * could reach it. It decides what the automation boundary is — which is the one
- * thing a reader of the roadmap most needs to be true — so it now has the coverage
- * it never had.
+ * This rule decides what the automation boundary is, which is the one thing a reader of the
+ * roadmap most needs to be true, so it must not live inline in a view where no test can reach it.
  *
- * THE RULE IS NOT RESTATED HERE. Cases are built from the module's own exports and
- * the real fixture where the fixture is the point, so a change to the merge cannot
- * leave these tests asserting a stale copy of it.
+ * THE RULE IS NOT RESTATED HERE: cases are built from the module's own exports and the real
+ * fixture, so a change to the merge cannot leave these tests asserting a stale copy.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -293,9 +290,8 @@ test('the fixture\'s one-account step Query a mismatch survives the merge', () =
 // 2. ONE LIST, NOT TWO DERIVATIONS
 // ===========================================================================
 //
-// The weighing prompt and the roadmap view must show the SAME merged steps. They
-// were two independent derivations before, and a divergence would be invisible:
-// the page showing five steps while the model was shown nine.
+// The weighing prompt and the roadmap view must show the SAME merged steps: two independent
+// derivations would diverge invisibly, the page showing five steps while the model saw nine.
 
 test('the weighing prompt and the view derive the SAME steps for one process', async () => {
     const weighCore = await import('../ai/weigh-core.js');
@@ -348,11 +344,9 @@ test('the merge is pure: no store, no connection, no org id', async () => {
     assert.equal(/requireConnection|new DatabaseSync/.test(source), false, 'no connection is opened');
     // And the only imports are within the ai layer.
     //
-    // THE EXHAUSTIVE LIST, KEPT EXHAUSTIVE. The property is "no dependency outside ai/", and
-    // naming the imports is what makes it exhaustive rather than approximate - an omitted entry
-    // would let a `../lib/` import ride in beside a listed `./matrix.js` and pass. So the list is
-    // updated when the layer gains a module rather than loosened to a prefix check, and
-    // `./response-shape.js` is the resolution helper both readers now share.
+    // THE EXHAUSTIVE LIST, KEPT EXHAUSTIVE: the property is "no dependency outside ai/", and
+    // naming the imports is what makes it exact. An omitted entry would let a `../lib/` import ride
+    // in beside a listed one and pass, so the list is updated when the layer gains a module.
     const imports = [...source.matchAll(/^import .* from '([^']+)'/gm)].map((m) => m[1]);
     assert.deepEqual(imports, ['./matrix.js', './response-shape.js'],
         'the only dependencies are within ai/');
@@ -362,9 +356,9 @@ test('the merge is pure: no store, no connection, no org id', async () => {
 // reasoningBasis SURVIVES THE MERGE — FIRST NON-EMPTY WINS, EITHER ORDER
 // ===========================================================================
 //
-// The quote behind a step's `needsReasoning` flag. This had a bug: the merge
-// carried it only when the FIRST account had one, so a second account's evidence
-// was dropped. Both orders are tested, because that bug was order-dependent.
+// The quote behind a step's `needsReasoning` flag must survive the merge whichever account carries
+// it: carrying it only when the FIRST account had one drops a second account's evidence. Both
+// orders are tested because that failure is order-dependent.
 
 test('the quote survives when the FIRST account has it and the second does not', () => {
     const merged = mergeProcessSteps([

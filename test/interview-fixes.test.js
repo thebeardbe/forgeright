@@ -43,8 +43,8 @@ function completeInterviewProcess(overrides = {}) {
 // ===========================================================================
 //
 // The interview shape (`processes`) carries NEITHER `id` NOR `title` - neither is in the
-// interview's field matrix - so judging it by the final payload's rules rejected a
-// finished interview. The mock never hit it because its fixture happens to carry both.
+// interview's field matrix - so judging it by the final payload's rules rejects a finished
+// interview.
 
 test('an interview completion with the interview shape COMPLETES, even without id and title', () => {
     const process = completeInterviewProcess();
@@ -63,8 +63,8 @@ test('an interview completion with the interview shape COMPLETES, even without i
 });
 
 test('a FINAL payload is still held to the strict id/title rules', () => {
-    // The other direction: `audit.workflows` is what the scorer consumes, so it keeps the
-    // check. A workflow without a title is still refused there.
+    // `audit.workflows` is what the scorer consumes, so a workflow without a title is still
+    // refused there.
     const check = validateWorkflows([{ id: 'w1' }]);
     assert.equal(check.ok, false);
     assert.match(check.reason, /no title/);
@@ -75,12 +75,9 @@ test('a FINAL payload is still held to the strict id/title rules', () => {
 });
 
 test('an interview reply with a malformed process entry CONTINUES rather than erroring', () => {
-    // WHAT THE CODE DOES, measured. The matrix gate runs BEFORE the unreadable-entry
-    // check, and a non-object entry makes the matrix incomplete, so the reply is
-    // downgraded to `asking` and the unreadable check below it is not reached. The
-    // outcome is safe - the interview continues and asks again rather than ending - and
-    // it is pinned as observed. See the report: the unreadable branch is unreachable for
-    // a malformed entry because of this ordering.
+    // The matrix gate runs BEFORE the unreadable-entry check, and a non-object entry makes the
+    // matrix incomplete, so the reply is downgraded to `asking` and the unreadable check is never
+    // reached. The outcome is safe - the interview continues - and pinned as observed.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -103,8 +100,7 @@ test('an empty audit.workflows ALONE is refused', () => {
 });
 
 test('an empty audit.workflows BESIDE good processes is merely stale, and processes win', () => {
-    // THE DISTINCTION THAT BROKE THREE PINNED TESTS when it was first attempted: emptiness
-    // is judged only when there is nothing better to fall back to.
+    // Emptiness is judged only when there is nothing better to fall back to.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -119,8 +115,8 @@ test('an empty audit.workflows BESIDE good processes is merely stale, and proces
 });
 
 test('the two empty-audit cases are DIFFERENT, asserted together', () => {
-    // Same input shape (`audit.workflows: []`), opposite outcomes, because presence of
-    // good `processes` changes whether the emptiness is stale or fatal.
+    // Same input shape, opposite outcomes: good `processes` beside it makes the emptiness stale
+    // rather than fatal.
     const alone = parseModelResponse(JSON.stringify({ status: 'complete', content: 'd', audit: { workflows: [] } }));
     const beside = parseModelResponse(JSON.stringify({
         status: 'complete', content: 'd', processes: [completeInterviewProcess()], audit: { workflows: [] },
@@ -132,8 +128,7 @@ test('the two empty-audit cases are DIFFERENT, asserted together', () => {
 });
 
 test('a bad audit.workflows beside good processes is ALSO superseded, not fatal', () => {
-    // The same rule one step further: a stale array that is not even the right type is
-    // still superseded by usable processes.
+    // A stale array of the wrong type is still superseded by usable processes.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -151,9 +146,9 @@ test('a bad audit.workflows beside good processes is ALSO superseded, not fatal'
 // 2. THE CLOSING QUESTION IS GATED ON `missing`
 // ===========================================================================
 //
-// The sentence existed only inside the complete example, so it was asked whenever a
-// process FELT finished - and it failed both ways: closing with fields missing, and not
-// closing when the matrix was satisfied.
+// The closing sentence must be gated on `missing`: if it stands alone it is asked whenever a
+// process feels finished, closing with fields missing and not closing when the matrix is
+// satisfied.
 
 test('the English prompt gates the closing question on missing being empty', () => {
     const prompt = fs.readFileSync(path.join(PROMPTS_DIR, 'prompt_en.md'), 'utf8');
@@ -188,9 +183,8 @@ test('the OLD unconditional wording is gone from both prompts', () => {
 // 3. THE FRESH-START RULE IS CONDITIONAL ON THE PARTICIPANT
 // ===========================================================================
 //
-// Before the rule, a premature close was harmless because the model carried every field
-// forward. After it, a wrong BELIEF discarded the finished process's fields. So the rule
-// now triggers on the PARTICIPANT confirming, never on the model's own belief.
+// The fresh-start rule must trigger on the PARTICIPANT confirming, never on the model's own
+// belief, or a wrong belief discards the finished process's fields.
 
 test('the English fresh-start rule is conditional on the participant confirming', () => {
     const prompt = fs.readFileSync(path.join(PROMPTS_DIR, 'prompt_en.md'), 'utf8');
@@ -292,8 +286,8 @@ async function loadClient({ replies }) {
 }
 
 test('a completion reply that DROPS a process still POSTS it, carried forward', async () => {
-    // The replies: ask, complete with proc-1, ask, complete with ONLY proc-2. Without the
-    // fix the last POST would carry proc-2 alone and proc-1's answers would be gone.
+    // The replies: ask, complete with proc-1, ask, complete with ONLY proc-2. The last POST must
+    // still carry proc-1, or its answers are gone.
     const client = await loadClient({
         replies: [
             { status: 'asking', content: 'What is the task?' },
@@ -317,8 +311,7 @@ test('a completion reply that DROPS a process still POSTS it, carried forward', 
 });
 
 test('the narrowing is NOT triggered when no process was dropped', async () => {
-    // The control: a reply that keeps everything carries nothing forward, so nothing is
-    // silently accumulated as a duplicate.
+    // The control: a reply that keeps everything carries nothing forward.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-1', title: 'One' }, { id: 'proc-2', title: 'Two' }] } }
@@ -333,10 +326,8 @@ test('the narrowing is NOT triggered when no process was dropped', async () => {
 });
 
 test('a NON-completion reply is saved as it arrived, without carrying anything forward', async () => {
-    // Carrying forward is a completion-claim guard; an ordinary turn's payload is stored
-    // as it came. The asking replies in this harness carry no `audit`, so what is saved is
-    // null rather than a filled payload - the point is that nothing was MERGED IN from the
-    // round, which a completion claim would have done.
+    // Carrying forward is a completion-claim guard: an ordinary turn's payload is stored as it
+    // came, so nothing is MERGED IN from the round.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-1', title: 'One' }] } },
@@ -359,8 +350,8 @@ test('a NON-completion reply is saved as it arrived, without carrying anything f
 // 5. THE stepsStillNeed GUARD IS RECURSIVE
 // ===========================================================================
 //
-// A model-supplied value must not survive at ANY depth: a value deleted only at the top
-// level still reaches a caller inside `processes`, and from there the saved answers.
+// A model-supplied value must not survive at ANY depth: deleting it only at the top level still
+// leaves it inside `processes`, and from there in the saved answers.
 
 test('a model-supplied stepsStillNeed is removed at the TOP level', () => {
     const result = parseModelResponse(JSON.stringify({
@@ -392,8 +383,7 @@ test('a model-supplied stepsStillNeed is removed INSIDE a step, and DEEPER', () 
 });
 
 test('the guard leaves the SERVER-COMPUTED value on the result', () => {
-    // The removal is of what the MODEL sent, not of the derived field itself, which is
-    // computed and returned.
+    // The removal is of what the MODEL sent, not of the derived field, which is computed.
     const process = completeInterviewProcess();
     delete process.steps[0].needsReasoning;
 
@@ -426,15 +416,13 @@ function assertOkNoFieldAtAnyDepth(result, message) {
 test('the answers view has a partial marker, distinct from the identified one', () => {
     const view = fs.readFileSync(path.join(PROJECT_ROOT, 'views', 'admin-answers.ejs'), 'utf8');
 
-    // A partial round is `submitted_at === null`, and the view must say so rather than
-    // presenting it like a finished answer.
+    // A partial round is `submitted_at === null` and must not present like a finished answer.
     assert.match(view, /submitted_at\s*===\s*null|!response\.submitted_at/, 'the view tests submitted_at');
     assert.match(view, /partial/i, 'and names it as partial');
 });
 
 test('each of the three language blocks carries the partial label consistently', async () => {
-    // A string used by the view must exist in all three blocks, or one language renders a
-    // blank label - the drift this project has hit before.
+    // The string must exist in all three blocks, or one language renders a blank label.
     const { stringsFor } = await import('../lib/strings.js');
 
     const langs = ['nl', 'en', 'fr'];

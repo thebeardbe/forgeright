@@ -1,22 +1,18 @@
 /**
  * Tests for the guardrail rule loader's failure branches.
  *
- * `loadRules` in ai/security.js reads its rules from a path that is now
- * overridable via INJECTION_PATTERNS_PATH, defaulting to the shipped
- * ai/injection-patterns.json. That seam exists so these branches are covered:
+ * `loadRules` in ai/security.js reads its rules from a path overridable via INJECTION_PATTERNS_PATH,
+ * defaulting to the shipped ai/injection-patterns.json. That seam covers four branches:
  *
  *   1. the rules file is missing/unreadable  -> built-in fallback
  *   2. a pattern is an invalid regex         -> skipped, the rest keep working
  *   3. both lists are empty                  -> built-in fallback
  *   4. the rules are cached                  -> the file is read once
  *
- * The path is read at module load, so each fixture needs a FRESH process. A
- * single test process would keep whatever it loaded first, and resetPatternCache
- * only re-reads the same path. Every case therefore runs in a child `node`
- * process with INJECTION_PATTERNS_PATH set, and reports its result on stdout.
+ * The path is read at module load, so each fixture runs in a child `node` process with the path set
+ * and reports its result on stdout.
  *
- * Fixtures are written with fs, not a shell heredoc, so backslashes in the regex
- * source are exactly what is intended.
+ * Fixtures are written with fs, not a shell heredoc, so backslashes in the regex source are exact.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -44,11 +40,9 @@ function writeFixture(name, contents) {
 }
 
 /**
- * Runs a snippet in a fresh process with the rules path pointed at `fixture`.
- * The snippet must assign `globalThis.__result`; it is printed as JSON.
+ * Runs a snippet in a fresh process with the rules path pointed at `fixture`. The snippet must
+ * assign `globalThis.__result`, which is printed as JSON.
  *
- * @param {string} fixture Path to a rules file, or a nonexistent path.
- * @param {string} body ESM snippet to run with the security module imported.
  * @returns {{result: *, stderr: string}} The snippet's value and the process stderr.
  */
 function runWithFixture(fixture, body) {
@@ -106,9 +100,8 @@ test('an unreadable (malformed JSON) rules file falls back to the built-in rules
 // --- 2. invalid regex skipped, the rest keep working ------------------------
 
 test('an invalid regex is skipped and the valid rules in the same file still work', () => {
-    // The fixture carries all three concerns at once: one valid keyword, one
-    // valid pattern, and one pattern that does not compile. The bad one must be
-    // dropped without taking the other two with it.
+    // The fixture carries one valid keyword, one valid pattern, and one that does not compile: the
+    // bad one must be dropped without taking the other two with it.
     const fixture = writeFixture('invalid-regex.json', {
         keywords: ['jailbreak'],
         patterns: ['[unterminated', 'reveal\\s+your\\s+prompt']
@@ -151,10 +144,8 @@ test('a rules file with keys present but both lists absent falls back', () => {
 // --- 4. the rules are cached: the file is read once -------------------------
 
 test('the rules file is read once and the result is cached', () => {
-    // The fixture first carries a rule that matches; the probe confirms it. Then
-    // the file is overwritten, in the SAME process, with a ruleset that matches
-    // nothing. If the cache works, the original verdict stands; a fresh read
-    // would flip it.
+    // A rule that matches, confirmed; then the file is overwritten in the SAME process with a
+    // ruleset that matches nothing. The cached verdict stands where a fresh read would flip.
     const fixture = writeFixture('cacheable.json', {
         keywords: [],
         patterns: ['reveal\\s+your\\s+prompt']

@@ -1,20 +1,14 @@
 /**
  * The admin console is scoped to the session, never to the request.
  *
- * THE PROPERTY, which is the one mistake in this area that shows a client another
- * client's data: a console route learns its organisation from the session, and
- * NEVER from a parameter, a query string, a body field or a path segment.
- * `scopeForSession` is meant to be the only place that happens; this file tests
- * that it is.
+ * THE PROPERTY: a console route learns its organisation from the SESSION, never from a parameter, a
+ * query string, a body field or a path segment. `scopeForSession` is meant to be the only place that
+ * happens; this file tests that it is.
  *
- * INSPECT THE FILES, NOT THE STATUS CODE. A console action that returns 302 while
- * writing to the wrong organisation is exactly the failure this section exists to
- * catch, and only reading the organisation databases sees it.
+ * INSPECT THE FILES, NOT THE STATUS CODE: a console action that returns 302 while writing to the
+ * wrong organisation is the failure this exists to catch, and only reading the databases sees it.
  *
- * Follows the spawned-server pattern: own temp STORE_DIR, every environment
- * variable pinned, child stopped in cleanup. Sessions are obtained by signing in
- * through the real route, which consumes the login rate limit, so the number of
- * sign-ins is kept small and deliberate.
+ * Sign-ins go through the real route and consume the login rate limit, so they are kept few.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -64,10 +58,8 @@ function spawnedEnv(port) {
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // NEUTRALISED SO THE SUITE DOES NOT DEPEND ON THE UNTRACKED .env. server.js does
-        // `import 'dotenv/config'` and dotenv fills only ABSENT keys, so a developer's .env with
-        // DEMO_LOGIN=1 was inherited by every spawned server. An empty string is PRESENT and is
-        // therefore left alone, which holds the demo gate closed. See test/demo-login.test.js.
+        // An empty string is PRESENT, so dotenv (which fills only ABSENT keys) leaves it alone,
+        // holding the demo gate closed against an untracked .env. See test/demo-login.test.js.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: ''
@@ -206,9 +198,8 @@ const tokenCountIn = (orgId) => inOrgFile(orgId, (db) => db.prepare('SELECT COUN
 // ===========================================================================
 
 test('a forged organisation id in the QUERY on GET /admin is ignored by the listing', async () => {
-    // The console's own GET must ignore a tenant in the query for what it LISTS,
-    // not only for what it writes. A route that trusted the query here would show
-    // B's invitations to A.
+    // The console's own GET must ignore a tenant in the query for what it LISTS: trusting it here
+    // would show B's invitations to A.
     const res = await request({ path: `/admin?organisationId=${ORG_B}&orgId=${ORG_B}&id=${ORG_B}`, cookie: cookieA });
 
     assert.equal(res.status, 200);
@@ -414,10 +405,8 @@ test('an unauthenticated request to every console sub-route redirects to the sig
 // ===========================================================================
 
 test('a `user`-role session cannot reach ANY console route, even by guessing the URL', async () => {
-    // Section 3 covered the sign-in redirect. This covers the routes themselves:
-    // a `user` who is signed in must be refused by the guard, not merely steered
-    // away from a link. The account is created through the console route, so it
-    // belongs to A without importing the store into this process.
+    // A signed-in `user` must be refused by the guard, not merely steered away from a link. The
+    // account is created through the console route, so it belongs to A.
     await postForm('/admin/users', cookieA, { email: 'limited@scope.test', role: 'user' });
     const cookieLimited = await signIn('limited@scope.test');
 

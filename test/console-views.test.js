@@ -1,17 +1,14 @@
 /**
  * The two console views: reachability, scoping and escaping.
  *
- * The store's scoping is tested elsewhere (test/console-scope.test.js,
- * test/processes.test.js). THIS is the route layer, which is where a missing
- * scoping check would live, and where the templates turn stored text into HTML.
+ * THE ROUTE LAYER: where a missing scoping check would live, and where the templates turn stored
+ * text into HTML. The store's own scoping is tested elsewhere.
  *
- * Follows the spawned-server pattern: own temp STORE_DIR, every environment
- * variable pinned as the child's WHOLE environment, child stopped in cleanup. Data
- * is written through the real store API in this process, against the same
- * STORE_DIR the child reads.
+ * Data is written through the real store API in this process, against the same STORE_DIR the child
+ * reads.
  *
- * ASSERTIONS ARE MADE ON THE RENDERED BYTES, which is the only honest way to test
- * escaping: a DOM comparison would decode entities first and see no difference.
+ * ASSERTIONS ARE MADE ON THE RENDERED BYTES, the only honest way to test escaping: a DOM
+ * comparison would decode entities first and see no difference.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -68,10 +65,8 @@ function spawnedEnv(port) {
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // NEUTRALISED SO THE SUITE DOES NOT DEPEND ON THE UNTRACKED .env. server.js does
-        // `import 'dotenv/config'` and dotenv fills only ABSENT keys, so a developer's .env with
-        // DEMO_LOGIN=1 was inherited by every spawned server. An empty string is PRESENT and is
-        // therefore left alone, which holds the demo gate closed. See test/demo-login.test.js.
+        // An empty string is PRESENT, so dotenv (which fills only ABSENT keys) leaves it alone,
+        // holding the demo gate closed against an untracked .env. See test/demo-login.test.js.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: ''
@@ -117,8 +112,7 @@ const postForm = (urlPath, cookie, form) => request({ method: 'POST', path: urlP
 let child;
 let childOutput = '';
 
-// Sign-in and the seed data happen inside before(): they make HTTP requests to the
-// child, and top-level code would run before the server is listening.
+// Sign-in and seed data happen in before(): top-level code would run before the server listens.
 let cookieA;
 let cookieB;
 let ORG_A;
@@ -231,8 +225,8 @@ test('the answers view renders 200 for a signed-in admin', async () => {
 });
 
 test('the answers view shows a response that has NOT been identified, as "not yet read"', async () => {
-    // A response nobody has grouped has NO grouping rather than an empty one, which
-    // is what lets the view say so instead of rendering a blank card.
+    // A response nobody has grouped has NO grouping rather than an empty one, so the view can say
+    // so instead of rendering a blank card.
     const invitation = store.addInvitation(ORG_A, { email: 'unread@example.test', department: 'Finance' });
     store.addResponse(ORG_A, invitation.token, { department: 'Finance', data: { task: 'an unread answer' } });
 
@@ -246,9 +240,8 @@ test('the answers view shows a response that has NOT been identified, as "not ye
 // 3. SCOPED — THE ROUTE LAYER
 // ===========================================================================
 //
-// The store's scoping is tested elsewhere. This is the ROUTE layer: a route that
-// read an organisation or an id from the request would be the one mistake that
-// shows a client another client's data, and a missing check would live here.
+// The ROUTE layer: a route that read an organisation or an id from the request would show a client
+// another client's data, and a missing check would live here.
 
 test("A's roadmap with B's organisation id in the query leaks NOTHING of B's", async () => {
     for (const query of [`organisationId=${ORG_B}`, `orgId=${ORG_B}`, `organisationId=${ORG_B}&orgId=${ORG_B}`]) {
@@ -339,8 +332,7 @@ test('an unauthenticated POST to a rejudge route redirects rather than acting', 
 // 3. ESCAPED — THE INJECTION SURFACE
 // ===========================================================================
 //
-// The participant controls this text. Asserted on the rendered BYTES: comparing a
-// parsed DOM would decode the entities first and see no difference.
+// The participant controls this text; the rendered BYTES are asserted, not a parsed DOM.
 
 test('a <script> in participant text renders entity-escaped, not raw', async () => {
     // THE ROADMAP RENDERS A LINK TO EACH ANSWER rather than seven inline `words` rows repeated per
@@ -353,8 +345,7 @@ test('a <script> in participant text renders entity-escaped, not raw', async () 
     assert.equal(roadmap.text.includes('<script>alert(1)</script>'), false, 'no raw script tag reaches the roadmap');
     assert.equal(roadmap.text.includes('<script>alert(4)</script>'), false, 'nor from a step decidedHow');
 
-    // And the text IS escaped where it is now rendered: the answers view, which the roadmap links
-    // to. This is the same assertion, moved to the page that holds the text.
+    // The text IS escaped where it is rendered: the answers view, which the roadmap links to.
     const answers = await request({ path: '/admin/answers', cookie: cookieA });
     assert.equal(answers.text.includes('<script>alert(1)</script>'), false, 'no raw script tag reaches the answers view');
     assert.ok(answers.text.includes('&lt;script&gt;alert(1)&lt;/script&gt;'), 'the task is escaped on the answers view');
@@ -362,8 +353,7 @@ test('a <script> in participant text renders entity-escaped, not raw', async () 
 });
 
 test('an onerror attribute in participant text renders escaped', async () => {
-    // The step's `whatHappens` is participant text. It lived on the roadmap until a46e9fa moved
-    // the fields to the answers view, so it is asserted where it is now rendered.
+    // The step's `whatHappens` is participant text, asserted where it is rendered.
     const res = await request({ path: '/admin/answers', cookie: cookieA });
 
     assert.equal(res.text.includes('<img src=x onerror=alert(3)>'), false, 'no raw img tag reaches the page');
@@ -415,8 +405,7 @@ test('the roadmap shows the score, the terms and the paragraph once weighed', as
 
     // THE OLD HEADING IS GONE, so a stale copy cannot linger beside the new one.
     assert.equal(res.text.includes('Why it got this weight'), false, 'the wrong heading does not appear');
-    // AND `weight` IS STILL THE LABEL next to the number: the owner kept that name on purpose, so
-    // the heading was renamed without renaming the metric a reader compares against.
+    // `weight` is STILL THE LABEL next to the number, renamed heading and all.
     assert.match(res.text, /<div class="weight-label">weight<\/div>/, 'the `weight` label is unchanged beside the number');
 });
 
@@ -461,9 +450,8 @@ test('the attribution lookup is still not exported anywhere', () => {
 });
 
 test('the console views do not render a participant email or an invitation id', async () => {
-    // The attribution guarantee at the view layer: the store omits the join, so
-    // there is nothing for the template to render even by accident. The seeded
-    // participant addresses are what would leak if it did.
+    // The attribution guarantee at the view layer: the store omits the join, so there is nothing
+    // for the template to render even by accident.
     const res = await request({ path: '/admin/answers', cookie: cookieA });
     assert.equal(res.text.includes('@views.test') && res.text.includes('p-'), false, 'no participant address is rendered');
     assert.equal(/invitation/i.test(res.text) && /[0-9a-f]{8}-[0-9a-f]{4}/.test(res.text), false, 'no invitation id is rendered');
@@ -561,8 +549,7 @@ test('each entry carries what the collapsed and expanded views need', async () =
 });
 
 test('a process with a grouping but no weighing renders the "no weight" branch', async () => {
-    // The template has a distinct branch for this, so the page is honest about why
-    // there is no number rather than showing a zero.
+    // A distinct branch, so the page says why there is no number rather than showing a zero.
     const org = store.createOrganisation('No weight org');
     const { processId } = addProcess(org.id, { task: 'unweighed', name: 'Never Weighed' });
 

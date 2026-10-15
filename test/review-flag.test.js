@@ -1,20 +1,16 @@
 /**
  * The review flag, and the assumption it rests on.
  *
- * `needsReviewFromRevisions` in `lib/store/process-membership.js` answers: "was this
- * process BORN from an unsure split, and has nobody settled that since?" It reads
- * the HISTORY, because reading only the current revision is wrong in both directions:
+ * `needsReviewFromRevisions` in `lib/store/process-membership.js` answers: "was this process BORN
+ * from an unsure split, and has nobody settled that since?" It reads the HISTORY, because reading
+ * only the current revision is wrong in both directions:
  *
- *   - false positive: a low-confidence MERGE is flagged and labelled "split while
- *     unsure", sending a reader after a split that did not exist;
- *   - false negative: an ordinary model merge CLEARS the flag, which is worse than the
- *     false positive, because it removes the only mechanism the unsure-split path has
- *     for being noticed.
+ *   - false positive: a low-confidence MERGE is flagged "split while unsure", sending a reader
+ *     after a split that did not exist;
+ *   - false negative: an ordinary model merge CLEARS the flag, which is worse, because it removes
+ *     the only mechanism the unsure-split path has for being noticed.
  *
- * The derivation rests on REVISION 1 BEING THE CREATION, so that assumption is
- * tested across the four writers rather than left as a comment.
- *
- * STORE_DIR is a temp directory per run, set before anything is imported.
+ * The derivation rests on REVISION 1 BEING THE CREATION, tested across the four writers.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -54,9 +50,9 @@ test('born low and nothing since → FLAGGED', () => {
 });
 
 test('born low then a MODEL merge → STILL FLAGGED', () => {
-    // This was the FALSE NEGATIVE: every identification writes a new current
-    // revision carrying that response's confidence, so an ordinary merge cleared the
-    // flag while the original question stayed open.
+    // The FALSE NEGATIVE: every identification writes a new current revision carrying that
+    // response's confidence, so an ordinary merge would clear the flag while the question stays
+    // open.
     const result = needsReviewFromRevisions([rev(1, 'low', 'model'), rev(2, 'high', 'model')]);
     assert.equal(result.needsReview, true, 'a model revision must not clear the flag');
 });
@@ -136,10 +132,9 @@ test('an admin revision does not clear it when it comes BEFORE the creation posi
 // THE ASSUMPTION: ONLY A CREATION WRITES REVISION 1
 // ===========================================================================
 //
-// The flag reads a creation from POSITION, because `nextRevision` is MAX+1 per
-// process. That holds only while revision 1 is the first write a process ever had.
-// This section tries to break it and then pins it, so the assumption is a test
-// rather than a comment.
+// The flag reads a creation from POSITION, because `nextRevision` is MAX+1 per process. That holds
+// only while revision 1 is the first write a process ever had, so the section tries to break it and
+// then pins it.
 
 /** An organisation with an invitation and a way to add responses. */
 function orgWithInvitation() {
@@ -249,9 +244,7 @@ test('an ADMIN move does not rewrite the source\'s revision 1 either', () => {
 });
 
 test('across every writer, revision 1 is ALWAYS the creation for every process in the organisation', () => {
-    // The assumption stated as one assertion over a run that exercises all four
-    // writers: for every process, the lowest revision is 1 and was written by the
-    // create path.
+    // For every process, the lowest revision is 1 and was written by the create path.
     const { org, addResponse } = orgWithInvitation();
     const responses = [1, 2, 3, 4, 5].map((n) => addResponse({ task: `t${n}` }));
 
@@ -276,19 +269,14 @@ test('across every writer, revision 1 is ALWAYS the creation for every process i
 });
 
 test('CAN a non-creation write revision 1? Only by breaking the store\'s own invariants', () => {
-    // THE ATTEMPT, recorded rather than hidden. Two hand-forced states DO make a
-    // non-creation write revision 1, because `nextRevision` is MAX+1:
+    // Two hand-forced states DO make a non-creation write revision 1:
     //
     //   1. deleting a process's revision 1, after which a merge writes revision 1;
-    //   2. inserting a `process` row directly with no revision, then identifying
-    //      into it, which writes revision 1 with `created: false`.
+    //   2. inserting a `process` row directly with no revision, then identifying into it.
     //
-    // NEITHER IS REACHABLE. No code path deletes a revision, and the schema's own
-    // `INSERT INTO process` lives only inside `insertProcess`, which is called only
-    // from the create branch of `recordIdentification`. So for every sequence the
-    // public writers can produce, revision 1 is the creation and the flag's
-    // assumption holds. The limit is recorded in the function's doc comment; this
-    // test pins that the reachable surface has no path to it.
+    // NEITHER IS REACHABLE: no code path deletes a revision, and `INSERT INTO process` lives only
+    // inside `insertProcess`, called only from the create branch. So for every sequence the public
+    // writers can produce, revision 1 is the creation.
     const { org, addResponse } = orgWithInvitation();
     const db = registry.connectionFor(org.id);
     const one = addResponse({ task: 'one' });
