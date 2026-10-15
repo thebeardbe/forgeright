@@ -1,9 +1,8 @@
 /**
  * Tests for the scoring and aggregation layer.
  *
- * Written from the documented model in README.md / ARCHITECTURE.md and the
- * source in lib/scoring.js. Expectations are stated as literals or plainly
- * derived values; none are computed by calling the code under test.
+ * Written from the documented model in README.md / ARCHITECTURE.md. Expectations are literals or
+ * plainly derived values; none is computed by calling the code under test.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -104,8 +103,7 @@ test('automabilityFactor rounds a fractional judgement score rather than default
 });
 
 test('automabilityFactor clamps rather than defaulting for non-numeric judgement', () => {
-    // A missing judgement score is currently scored as if it were 3 (0.60).
-    // This asserts the implemented default explicitly so it cannot drift.
+    // A missing judgement score is scored as if it were 3 (0.60); pinned so it cannot drift.
     assert.equal(automabilityFactor(wf({ judgementScore: undefined })), RULES_FACTOR[3]);
     assert.equal(automabilityFactor(wf({ judgementScore: 'high' })), RULES_FACTOR[3]);
 });
@@ -216,8 +214,8 @@ test('findConflicts ignores workflows with no conflictsWith marker', () => {
 });
 
 test('findConflicts treats every respondent reporting zero as unmeasured, not a conflict', () => {
-    // Zero is the absence of a measurement, not an agreement. It is surfaced by
-    // findConflicts (as unmeasured) rather than silently dropped.
+    // Zero is the absence of a measurement, not an agreement: surfaced by findConflicts
+    // (as unmeasured) rather than silently dropped.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: 0 }),
         wf({ id: 'b', minutesPerInstance: 0 })
@@ -231,16 +229,15 @@ test('findConflicts treats every respondent reporting zero as unmeasured, not a 
 // --- findConflictGroups: undirected, chained, and dangle-tolerant ---------
 
 test('findConflictGroups counts a marker on EITHER side of a pair', () => {
-    // The marker is on b, pointing back at a. The old one-directional lookup
-    // ignored this and left both records separate.
+    // A one-directional lookup ignores a marker on b pointing back at a, leaving both separate.
     const groups = findConflictGroups([wf({ id: 'a' }), wf({ id: 'b', conflictsWith: 'a' })]);
     assert.equal(groups.length, 1);
     assert.deepEqual(groups[0].map((w) => w.id).sort(), ['a', 'b']);
 });
 
 test('findConflictGroups follows a chain of three records into ONE group', () => {
-    // a -> b -> c. Three people describing the same task are one group, not
-    // three entries and not two pairs.
+    // a -> b -> c: three people describing the same task are one group, not three entries and not
+    // two pairs.
     const groups = findConflictGroups([
         wf({ id: 'a', conflictsWith: 'b' }),
         wf({ id: 'b', conflictsWith: 'c' }),
@@ -296,9 +293,8 @@ test('collapseDuplicates keeps one entry scored on the lower estimate', () => {
     assert.equal(entry.hasConflict, true);
     assert.deepEqual(entry.conflictIds, ['a', 'b']);
     assert.equal(typeof entry.conflictNote, 'string');
-    // The note is read by the CLIENT, so it names the field in words and
-    // carries units. It must not pin one exact sentence: see the note-format
-    // tests at the end of this file for the behaviour being asserted.
+    // The note is read by the CLIENT, so it names the field in words and carries units. See the
+    // note-format tests at the end of this file.
     assert.ok(!entry.conflictNote.includes('minutesPerInstance'), entry.conflictNote);
     assert.ok(entry.conflictNote.includes('Time for one instance'), entry.conflictNote);
     assert.ok(entry.conflictNote.includes('min'), entry.conflictNote);
@@ -335,9 +331,8 @@ test('collapseDuplicates takes the MINIMUM per field across three records', () =
 });
 
 test('collapseDuplicates DELETES a field only when NO record supplies a usable value', () => {
-    // A field is unmeasured only when every record omits it. Here frequency is
-    // usable on b, so it is NOT deleted: one blank answer must not delete a
-    // whole workflow from the headline.
+    // A field is unmeasured only when every record omits it. Here frequency is usable on b, so it
+    // is NOT deleted: one blank answer must not delete a whole workflow from the headline.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: 10, frequencyPerWeek: 'lots' }),
         wf({ id: 'b', minutesPerInstance: 60, frequencyPerWeek: 4 })
@@ -354,8 +349,7 @@ test('collapseDuplicates DELETES a field only when NO record supplies a usable v
 });
 
 test('collapseDuplicates DELETES a field when no record supplies a usable value', () => {
-    // Every value is non-numeric, so there is nothing to measure. The field is
-    // dropped rather than carrying a fabricated zero into the score.
+    // Every value is non-numeric, so the field is dropped rather than scored as a fabricated zero.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: 'lots', frequencyPerWeek: 4 }),
         wf({ id: 'b', minutesPerInstance: 'about an hour', frequencyPerWeek: 4 })
@@ -380,9 +374,9 @@ test('collapseDuplicates normalises numeric strings before taking the minimum', 
 });
 
 test('collapseDuplicates uses the real value beside a null, and records the null as partial', () => {
-    // FIXED (was: Number(null) === 0 gave the merged record a fabricated 0).
-    // A null is not a measurement, but the other record's 10 min is, so the
-    // field is kept at 10 and the null record is noted as partial.
+    // Number(null) === 0 would give the merged record a fabricated 0. A null is not a
+    // measurement, but the other record's 10 min is, so the field is kept at 10 and the null
+    // record is noted as partial.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: null }),
         wf({ id: 'b', minutesPerInstance: 10 })
@@ -395,8 +389,8 @@ test('collapseDuplicates uses the real value beside a null, and records the null
 });
 
 test('collapseDuplicates deletes a null field ONLY when no record supplies a value', () => {
-    // Both records omit the value: nothing to measure, so the field is dropped
-    // rather than scored as a fabricated zero.
+    // Both records omit the value: nothing to measure, so the field is dropped rather than
+    // scored as a fabricated zero.
     const list = [
         wf({ id: 'a', conflictsWith: 'b', minutesPerInstance: null }),
         wf({ id: 'b', minutesPerInstance: undefined })
@@ -525,13 +519,12 @@ test('describeConflict reports a people-only disagreement as a conflict', () => 
 });
 
 test('a judgement disagreement is NOT an effort conflict, but IS reported as a bucket disagreement', () => {
-    // judgementScore is not part of the effort comparison: two people can rate
-    // automability differently without disagreeing about how much work it is,
-    // so `isConflict` stays false and `differences` stays empty.
+    // judgementScore is not part of the effort comparison: two people can rate automability
+    // differently without disagreeing about how much work it is, so `isConflict` stays false and
+    // `differences` stays empty.
     //
-    // But that rating decides the bucket. Inheriting it from whichever record came first reports
-    // nothing, so the same two answers produce "do first" or "do not automate" depending on array
-    // order. The disagreement must be surfaced even though it is not an effort conflict.
+    // But that rating decides the bucket, and inheriting it from whichever record came first makes
+    // the same two answers produce "do first" or "do not automate" depending on array order.
     const description = describeConflict([
         wf({ id: 'a', judgementScore: 1, minutesPerInstance: 30, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', judgementScore: 5, minutesPerInstance: 30, frequencyPerWeek: 2, peopleAffected: 2 })
@@ -541,8 +534,6 @@ test('a judgement disagreement is NOT an effort conflict, but IS reported as a b
     assert.deepEqual(description.unmeasured, []);
     assert.deepEqual(description.bucketDisagreements, [{ field: 'judgementScore', values: [1, 5] }]);
 
-    // And it must reach the client: findConflicts reports a group whose only
-    // problem is a bucket-field disagreement.
     const reported = findConflicts([
         wf({ id: 'a', conflictsWith: 'b', judgementScore: 1, minutesPerInstance: 30, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', judgementScore: 5, minutesPerInstance: 30, frequencyPerWeek: 2, peopleAffected: 2 })
@@ -553,9 +544,9 @@ test('a judgement disagreement is NOT an effort conflict, but IS reported as a b
 });
 
 test('describeConflict treats an ABSENT field beside a usable one as PARTIAL, not unmeasured', () => {
-    // One respondent answered 10 min, the other left it blank. That is a
-    // measurement with a note, not an unmeasured field: marking it unmeasured
-    // is what silently deleted a whole workflow from the headline.
+    // One respondent answered 10 min, the other left it blank: a measurement with a note, not an
+    // unmeasured field. Marking it unmeasured is what silently deleted a whole workflow from the
+    // headline.
     const description = describeConflict([
         wf({ id: 'a', minutesPerInstance: undefined }),
         wf({ id: 'b', minutesPerInstance: 10 })
@@ -578,8 +569,8 @@ test('describeConflict marks a field unmeasured when NO record supplies a usable
 });
 
 test('describeConflict does not treat a NULL beside a real value as a measured zero', () => {
-    // FIXED (was: Number(null) === 0, so a null beside a real value was read as
-    // a 100% conflict). null is missing data; the 10 min stands on its own.
+    // Number(null) === 0 would read a null beside a real value as a 100% conflict; null is
+    // missing data, and the 10 min stands on its own.
     const description = describeConflict([
         wf({ id: 'a', minutesPerInstance: null }),
         wf({ id: 'b', minutesPerInstance: 10 })
@@ -599,8 +590,8 @@ test('describeConflict marks a NULL as unmeasured when no record has a usable va
 });
 
 test('describeConflict does not treat an EMPTY STRING beside a real value as a measured zero', () => {
-    // Number('') === 0 (fixed to use measuredNumber). An empty answer is missing
-    // data, so the real 10 min is the measurement and the blank is partial.
+    // Number('') === 0 would misread a blank answer; the real 10 min is the measurement and the
+    // blank is partial.
     const description = describeConflict([
         wf({ id: 'a', minutesPerInstance: '' }),
         wf({ id: 'b', minutesPerInstance: 10 })
@@ -690,10 +681,9 @@ test('aggregate is deterministic for the same input', () => {
 });
 
 // --- the conflict note is client-facing copy --------------------------------
-// The note appears in the analysis panel and in the downloadable Markdown,
-// with nobody present to explain it. It must therefore read as a sentence:
-// a human label, values with units, and no database field name. It is NOT
-// pinned verbatim, so a copy edit does not break the suite.
+// It appears in the analysis panel and the downloadable Markdown, with nobody present to explain
+// it, so it must read as a sentence: a human label, values with units, and no database field name.
+// NOT pinned verbatim, so a copy edit does not break the suite.
 
 /** Three people describing one task, disagreeing on every effort term. */
 function threeWayDisagreement() {
@@ -719,9 +709,9 @@ test('describeConflict note names the field in words and carries the unit', () =
 });
 
 test('the note never leaks a raw camelCase field name', () => {
-    // Pins the class of defect, not one copy edit: any client-facing sentence
-    // carrying an internal identifier fails, whichever field it came from.
-    // "x per week" is set apart by spaces, so it is not camelCase.
+    // Pins the class of defect, not one copy edit: any client-facing sentence carrying an internal
+    // identifier fails, whichever field it came from. "x per week" is set apart by spaces, so it is
+    // not camelCase.
     const conflict = describeConflict(threeWayDisagreement());
     assert.ok(conflict.isConflict, 'the fixture must actually disagree');
     assert.doesNotMatch(conflict.note, CAMEL_CASE, conflict.note);
@@ -754,8 +744,8 @@ test('the note labels frequency and people distinctly, each with its unit', () =
 });
 
 test('the partial note is a human-readable sentence with no field name', () => {
-    // One respondent left time blank, the other answered. The note must name
-    // the field in words and carry no raw camelCase identifier.
+    // One respondent left time blank, the other answered: the note names the field in words and
+    // carries no raw camelCase identifier.
     const description = describeConflict([
         wf({ id: 'a', minutesPerInstance: undefined, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', minutesPerInstance: 10, frequencyPerWeek: 2, peopleAffected: 2 })
@@ -770,8 +760,8 @@ test('the partial note is a human-readable sentence with no field name', () => {
 });
 
 test('the unmeasured note is a human-readable sentence with no field name', () => {
-    // Nobody answered, so the field is unmeasured. The note uses the label
-    // lower-cased mid-sentence, so it must be read case-insensitively.
+    // Nobody answered, so the field is unmeasured; the note lower-cases its label mid-sentence, so
+    // it must be read case-insensitively.
     const description = describeConflict([
         wf({ id: 'a', minutesPerInstance: undefined, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', minutesPerInstance: 'n/a', frequencyPerWeek: 2, peopleAffected: 2 })
@@ -784,8 +774,8 @@ test('the unmeasured note is a human-readable sentence with no field name', () =
 });
 
 test('the partial note names every field some respondent left blank', () => {
-    // a left frequency and time blank; b answered both. Both fields are PARTIAL
-    // (a usable value exists), so the note names both in words.
+    // a left frequency and time blank; b answered both. Both fields are PARTIAL (a usable value
+    // exists), so the note names both in words.
     const description = describeConflict([
         wf({ id: 'a', frequencyPerWeek: 'lots', minutesPerInstance: 'about half an hour', peopleAffected: 2 }),
         wf({ id: 'b', frequencyPerWeek: 2, minutesPerInstance: 15, peopleAffected: 2 })
@@ -829,8 +819,8 @@ test('the note of a three-way disagreement lists every disagreement', () => {
 });
 
 test('a note without units reads as a sentence, not a percentage alone', () => {
-    // Whichever fields disagree, each reported value is followed by its unit,
-    // so "8 vs 22" cannot be read as counts of people.
+    // Whichever fields disagree, each reported value is followed by its unit, so "8 vs 22" cannot
+    // be read as counts of people.
     const note = describeConflict([
         wf({ id: 'a', minutesPerInstance: 8, frequencyPerWeek: 2, peopleAffected: 2 }),
         wf({ id: 'b', minutesPerInstance: 22, frequencyPerWeek: 2, peopleAffected: 2 })
@@ -902,9 +892,7 @@ test('the partial record is recorded, and the note names the field', () => {
     assert.equal(description.isConflict, false);
     assert.deepEqual(description.unmeasured, []);
     assert.deepEqual(description.partial, [{ field: 'minutesPerInstance', missing: 1 }]);
-    // Deliberately NOT pinned verbatim: this is client-facing copy and a copy
-    // edit must not fail the suite. The sibling test above asserts the same
-    // behaviour the same way.
+    // Deliberately NOT pinned verbatim: client-facing copy, so a copy edit must not fail the suite.
     assert.ok(description.note.includes('Only one respondent gave'), description.note);
     assert.ok(description.note.toLowerCase().includes('time for one instance'), description.note);
     assert.ok(description.note.includes('scored on that single answer'), description.note);
@@ -1027,12 +1015,9 @@ test('the nullable workflow is scored the same with and without a conflict marke
 });
 
 // --- a missing title must degrade, never throw ------------------------------
-// The boundary (parseModelResponse) requires a non-empty string title, so a
-// titleless payload should not reach scoring. Scoring must still not be a crash
-// site if one gets through: a TypeError here loses the entire analysis
-// rather than producing one imperfect row. These tests call the pure functions
-// directly, bypassing the boundary on purpose, to pin that second line of
-// defence.
+// The boundary (parseModelResponse) requires a non-empty string title, so a titleless payload
+// should not reach scoring. These tests call the pure functions directly, bypassing the boundary on
+// purpose, to pin that scoring is not a crash site if one gets through.
 
 test('describeConflict falls back to the id when title is absent', () => {
     const description = describeConflict([
@@ -1051,8 +1036,8 @@ test('describeConflict falls back to the id when title is an empty string', () =
 });
 
 test('describeConflict falls back to the id for a whitespace-only title', () => {
-    // Whitespace is not a title. A blank heading in a client document is worse
-    // than the internal id, so the fallback trims before deciding.
+    // Whitespace is not a title: a blank heading in a client document is worse than the internal
+    // id, so the fallback trims before deciding.
     const description = describeConflict([
         { id: 'w1', title: '   ', minutesPerInstance: 10 },
         { id: 'w2', title: '   ', minutesPerInstance: 60 }
@@ -1119,11 +1104,8 @@ test('collapseDuplicates carries the fallback title onto the merged record', () 
 });
 
 // --- reportedBy when a respondent is not named ------------------------------
-// `reportedBy` is optional in the payload. The collapsed record must never
-// carry a bare separator or the literal text "undefined": a respondent who is
-// not named simply contributes no name. Joining
-// [undefined, undefined] into ' / ' or ['Ann', undefined] into 'Ann / ' renders
-// as a stray separator with nobody on one side.
+// The collapsed record must never carry a bare separator or the literal text "undefined": a
+// respondent who is not named simply contributes no name.
 test('describeConflict drops the names of respondents that were not named', () => {
     const description = describeConflict([
         { id: 'a', title: 'T', minutesPerInstance: 10 },
@@ -1181,11 +1163,10 @@ test('both named respondents yield both names separated by a slash', () => {
 });
 
 // --- a conflict can push a task out of the headline -------------------------
-// Documented in ARCHITECTURE.md: when the two estimates straddle the do-first
-// threshold, counting the lower one can drop the task into do_later and hence
-// out of the headline total, even though the higher estimate would have been do
-// first. The conflict is still reported. This is intended behaviour, pinned
-// here so it is a decision rather than an accident.
+// Documented in ARCHITECTURE.md: when the two estimates straddle the do-first threshold, counting
+// the lower one can drop the task into do_later and hence out of the headline total, even though
+// the higher estimate would have been do first. The conflict is still reported. Pinned here so it
+// is a decision rather than an accident.
 
 test('a disagreement across the threshold drops the task out of the headline total', () => {
     // a: 4 * 40 * 1 / 60 = 2.67 h -> do first (>= 2.0)
@@ -1206,8 +1187,8 @@ test('a disagreement across the threshold drops the task out of the headline tot
 });
 
 test('the same task would have reached the headline without the disagreement', () => {
-    // Control for the test above: the higher estimate alone is do first and does
-    // contribute, which is exactly the inflation the lower-estimate rule avoids.
+    // Control for the test above: the higher estimate alone is do first and does contribute,
+    // which is the inflation the lower-estimate rule avoids.
     const result = aggregate([
         wf({ id: 'a', frequencyPerWeek: 4, minutesPerInstance: 40, peopleAffected: 1, judgementScore: 5, title: 'Task' })
     ]);
@@ -1216,13 +1197,11 @@ test('the same task would have reached the headline without the disagreement', (
 });
 
 // --- bucket fields: judgement and step-consistency are compared, not inherited
-// The N1 defect: `judgementScore` and `stepsConsistent` were not compared inside
-// a group, and `collapseDuplicates` spread `group[0]` to get them. Groups are
-// built in arrival order, so the verdict came from whichever record the model
-// emitted first: the same two answers produced "do_later" or "judgement_bound"
-// depending on order alone. `judgementScore` is the discriminator the tool
-// exists to weight, so silently inheriting it is the worst form of "a plausible
-// number that does not mean what its label says".
+// `judgementScore` and `stepsConsistent` are not part of the effort comparison, and spreading
+// `group[0]` to get them makes the verdict depend on which record the model emitted first: the same
+// two answers gave "do_later" or "judgement_bound" by order alone. `judgementScore` is the
+// discriminator the tool exists to weight, so inheriting it silently is the worst form of "a
+// plausible number that does not mean what its label says".
 
 test('describeConflict reports a steps-consistency disagreement as a bucket disagreement', () => {
     const description = describeConflict([
@@ -1267,8 +1246,8 @@ test('a bucket field present on only one record is not a disagreement', () => {
 });
 
 test('findConflicts reports a group whose ONLY disagreement is a bucket field', () => {
-    // Effort fields all agree, so there is no effort conflict. Before N1 this
-    // group was dropped entirely and the inherited rating was never questioned.
+    // Effort fields all agree, so there is no effort conflict, and the rating is questioned rather
+    // than inherited.
     const reported = findConflicts([
         wf({ id: 'a', conflictsWith: 'b', judgementScore: 1, stepsConsistent: false, frequencyPerWeek: 2, minutesPerInstance: 30, peopleAffected: 2 }),
         wf({ id: 'b', judgementScore: 5, stepsConsistent: true, frequencyPerWeek: 2, minutesPerInstance: 30, peopleAffected: 2 })

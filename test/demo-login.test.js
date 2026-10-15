@@ -1,20 +1,16 @@
 /**
  * The read-only demo link: the guard and the refusal.
  *
- * `GET /admin/demo?token=...` signs someone into a FIXED demo organisation with a
- * session flagged read-only. It goes to a prospective client outside the owner's
- * control, so it is treated as untrusted from the start.
+ * `GET /admin/demo?token=...` signs someone into a FIXED demo organisation with a session
+ * flagged read-only. The link goes to a prospective client outside the owner's control, so it is
+ * treated as untrusted.
  *
- * FIXTURE: A SEEDED STORE BUILT IN THIS PROCESS, not `scripts/seed-demo-org.js`. That
- * script needs a live provider (the mock is an interview simulator and cannot
- * identify or weigh), and it DELETES an organisation, so it must never be pointed at
- * the default store. This file builds the same shape through the public store API:
- * one organisation with one invitation, response, process and weighing, which is all
- * the demo route needs to have an organisation to show.
+ * FIXTURE: A SEEDED STORE BUILT IN THIS PROCESS, not `scripts/seed-demo-org.js`, which needs a
+ * live provider and DELETES an organisation. This file builds the same shape through the public
+ * store API: one organisation with one invitation, response, process and weighing.
  *
- * STORE_DIR is a temp directory per run, set before anything is imported. Each test
- * spawns its own server, because the demo route is registered at startup from the
- * environment and the flag has to be set before the process starts.
+ * Each test spawns its own server, because the demo route is registered at startup from the
+ * environment.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,8 +54,7 @@ function seedStore() {
         reply: { score: 42, terms: Object.fromEntries(weighing.TERMS.map((term) => [term, 50])), reasoning: 'a demo paragraph' }
     });
 
-    // Also seed a real admin, so an ordinary session can be tested against the same
-    // store without a second organisation.
+    // A real admin too, so an ordinary session can be tested against the same store.
     const db = new DatabaseSync(path.join(dir, 'admin.db'));
     db.prepare('INSERT OR REPLACE INTO users (id, organisation_id, email, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run('real-admin', org.id, 'real@admin.test', 'admin', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
@@ -106,19 +101,11 @@ async function startServer(demoEnv = {}) {
             STORE_DIR,
             AI_PROVIDER: 'mock',
             MAIL_SENDER: 'console',
-            // THE DEMO KEYS ARE SET TO EMPTY STRINGS RATHER THAN OMITTED, and that is what makes
-            // this suite REPRODUCIBLE. `server.js` does `import 'dotenv/config'`, and `dotenv`
-            // fills only ABSENT keys - so a developer's untracked `.env` containing
-            // `DEMO_LOGIN=1` and `DEMO_LOGIN_ORG=...` was being inherited by every spawned server,
-            // and the three tests below that assert the flag is OFF failed with "DEMO_LOGIN_ORG
-            // names no organisation in this store", because their temp STORE_DIR has no such
-            // organisation. The failure was in this file, unrelated to whatever change was being
-            // tested, and the message pointed at the code rather than at the `.env`.
-            //
-            // AN EMPTY STRING DEFEATS IT: measured against dotenv directly, a key that IS PRESENT
-            // (even as '') is left alone, while an absent one is filled. So `DEMO_LOGIN: ''` holds
-            // the gate `process.env.DEMO_LOGIN !== '1'` closed however the developer's `.env` reads.
-            // `...demoEnv` below still overrides these for the tests that ENABLE the flag.
+            // THE DEMO KEYS ARE SET TO EMPTY STRINGS RATHER THAN OMITTED, which is what makes the
+            // suite reproducible. `dotenv` fills only ABSENT keys, so a developer's untracked
+            // `.env` with `DEMO_LOGIN=1` would be inherited by every spawned server. A key that IS
+            // PRESENT (even as '') is left alone, so `DEMO_LOGIN: ''` holds the gate closed however
+            // the `.env` reads. `...demoEnv` below still overrides these where the flag is ENABLED.
             DEMO_LOGIN: '',
             DEMO_LOGIN_ORG: '',
             DEMO_LOGIN_TOKEN: '',
@@ -256,10 +243,10 @@ test('with the flag unset, /admin/demo behaves as an UNKNOWN console path', asyn
 });
 
 test('with the flag unset, a CORRECT token still does not sign anyone in', async () => {
-    // THE DECISIVE ASSERTION, and stronger than "same as an unknown path": with the
-    // flag off but DEMO_LOGIN_ORG and DEMO_LOGIN_TOKEN set, a correct token must set
-    // NO cookie. A route registered unconditionally would sign the holder in, which
-    // a status-code comparison would miss because both paths 302 when signed out.
+    // Stronger than "same as an unknown path": with the flag off but DEMO_LOGIN_ORG and
+    // DEMO_LOGIN_TOKEN set, a correct token must set NO cookie. A route registered unconditionally
+    // would sign the holder in, and both paths 302 when signed out, so a status comparison would
+    // miss it.
     const server = await startServer({ DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const res = await request(server.port, { path: `/admin/demo?token=${DEMO_TOKEN}` });
@@ -325,8 +312,7 @@ test('the eight mutating console routes are all refused for a demo session', asy
 });
 
 test('a GET on the console still WORKS for a demo session, so the refusal is by method', async () => {
-    // Read-only means it can look. A guard that refused GETs too would make the demo
-    // link useless rather than safe.
+    // Read-only means it can look: a guard that refused GETs too would make the link useless.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -342,8 +328,8 @@ test('a GET on the console still WORKS for a demo session, so the refusal is by 
 // 3. NOTHING CHANGED AFTER A REFUSED WRITE
 // ===========================================================================
 //
-// THE ASSERTION THAT MATTERS MOST: a guard that refuses the RESPONSE but leaves a
-// write half-done would pass a status-code check. The state is read directly.
+// A guard that refuses the RESPONSE but leaves a write half-done would pass a status-code check,
+// so the state is read directly.
 
 test('a refused write leaves the stored state EXACTLY as it was', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
@@ -423,8 +409,7 @@ test('a real admin console page carries no read-only banner or demo tag', async 
         const page = await request(server.port, { path: '/admin', cookie: admin });
 
         assert.equal(page.status, 200);
-        // The demo scope is what raises a read-only notice; an ordinary session has
-        // none. Asserted on the specific phrasing the demo page uses.
+        // The demo scope raises a read-only notice; an ordinary session has none.
         assert.equal(/read[- ]only/i.test(page.text), false, 'an ordinary session sees no read-only notice');
         assert.equal(/demo session/i.test(page.text), false, 'and no demo-session tag');
     } finally {
@@ -433,8 +418,7 @@ test('a real admin console page carries no read-only banner or demo tag', async 
 });
 
 test('the demo banner IS shown on a demo session, so the absence above is meaningful', async () => {
-    // The control for the two assertions above: if the banner were never rendered at
-    // all, their absence would prove nothing.
+    // The control: if the banner were never rendered, its absence would prove nothing.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -469,9 +453,8 @@ test('the correct token matches', () => {
 });
 
 test('a wrong-length value does not throw, so the length is never compared first', () => {
-    // The classic version of this bug: comparing lengths before hashing, so
-    // `timingSafeEqual` throws on a mismatch and the expected length leaks. Both
-    // sides are hashed here, so every length takes the same path.
+    // Both sides are hashed before comparing, so a length mismatch cannot leak through
+    // `timingSafeEqual` throwing.
     for (const length of [0, 1, 23, 24, 31, 32, 33, 64, 1000]) {
         assert.doesNotThrow(() => demoTokenMatches('x'.repeat(length), DEMO_TOKEN), `length ${length} must not throw`);
     }
@@ -500,17 +483,15 @@ test('a WRONG and a MISSING token are indistinguishable over HTTP', async () => 
 });
 
 test('a refused token reveals nothing about whether the demo is configured', async () => {
-    // The refusal page must not say the demo exists. Asserted by rendering the same
-    // page with the demo configured and with it absent, from a signed-out request.
+    // The refusal page must not say the demo exists, asserted with the demo configured and absent.
     const configured = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     const unconfigured = await startServer();
     try {
         const configuredBody = await request(configured.port, { path: `/admin/demo?token=${'z'.repeat(32)}` });
         const unconfiguredOut = await request(unconfigured.port, { path: `/admin/demo?token=${'z'.repeat(32)}` });
 
-        // The unconfigured path takes the session gate's redirect (no route), the
-        // configured one gives the refusal page. The point is that a REFUSED token on a
-        // configured server says nothing about the demo in its body.
+        // The unconfigured path redirects (no route); a REFUSED token on a configured server must
+        // say nothing about the demo in its body.
         assert.equal(/configured|enabled|demo exists/i.test(configuredBody.text), false, 'the refusal does not confirm the demo exists');
     } finally {
         await configured.stop();
@@ -522,9 +503,8 @@ test('a refused token reveals nothing about whether the demo is configured', asy
 // 6. EXPIRY CANNOT TURN A DEMO SESSION WRITABLE
 // ===========================================================================
 //
-// An expired demo row must stay read-only. The demo row's `expires_at`
-// is expired directly while the SESSION stays valid, which is the state to attack:
-// if the guard read expiry, it might decide "not a demo any more" and allow a write.
+// The demo row's `expires_at` is expired directly while the SESSION stays valid: if the guard read
+// expiry, it might decide "not a demo any more" and allow a write.
 
 test('an EXPIRED demo row is still read-only, and the write is refused', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
@@ -549,10 +529,8 @@ test('an EXPIRED demo row is still read-only, and the write is refused', async (
 });
 
 test('a revoked demo session reaches no console page, only the sign-in form', async () => {
-    // The foreign key and the session's own validity are the defences; this asserts
-    // the outcome: a demo cookie whose session is revoked reaches no console page.
-    // `GET /admin` serves the SIGN-IN FORM (200) for a request with no valid
-    // session, so the distinguishing signal is the console content, not the status.
+    // A demo cookie whose session is revoked reaches no console page. `GET /admin` serves the
+    // SIGN-IN FORM (200) without a valid session, so the signal is the console content.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -580,10 +558,8 @@ test('a revoked demo session reaches no console page, only the sign-in form', as
 // ===========================================================================
 
 test('a demo session whose scope carries the ADMIN role is STILL refused writes', async () => {
-    // The demo scope's synthetic user has role ADMIN (see scopeForSession). The guard
-    // never reads role, so the person's role cannot bypass it. Asserted end to end:
-    // the demo session reaches the console (so it IS treated as an admin for reading)
-    // and is still refused a write.
+    // The demo scope's synthetic user has role ADMIN. The guard never reads role, so the role
+    // cannot bypass it: the session reaches the console for reading and is still refused a write.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -605,8 +581,7 @@ test('a demo session whose scope carries the ADMIN role is STILL refused writes'
 });
 
 test('there is no third role: the demo flag rides on the session scope', () => {
-    // No new role was added for the demo, so nothing can check a role to decide
-    // read-only. Asserted on the exported role set rather than by reading code.
+    // No new role was added for the demo, asserted on the exported role set.
     const users = fs.readFileSync(path.join(__dirname, '..', 'lib', 'users.js'), 'utf8');
     const roles = users.match(/ROLES\s*=\s*Object\.freeze\(\{([^}]*)\}/);
     assert.ok(roles, 'ROLES is declared as a frozen object');
@@ -619,21 +594,16 @@ test('there is no third role: the demo flag rides on the session scope', () => {
 // 6. THE COPY, COUNTED - the product sentence and the pages that carry it
 // ===========================================================================
 //
-// The owner asked for a sentence saying WHAT the application is rather than only how to
-// navigate it. It now appears on the console lead, the roadmap lead, and the demo banner -
-// and the banner is DELIBERATELY not centralised, so the sentence appears TWICE on a demo
-// session: once in the banner and once in the page lead, because the banner's job is to
-// explain the demo's safety while the leads explain the product.
+// The product sentence appears on the console lead, the roadmap lead, and the demo banner, and the
+// banner is DELIBERATELY not centralised - so it appears TWICE on a demo session: the banner
+// explains the demo's safety while the leads explain the product.
 //
-// THE COUNT IS ASSERTED so a future reader does not add a de-duplication "fix": two
-// occurrences on a demo session is the design, not repetition.
+// THE COUNT IS ASSERTED so a future reader does not add a de-duplication "fix".
 
 /** The product sentence, as it appears in the leads and the banner.
  *
- * WHITESPACE-TOLERANT because the SOURCE line-breaks differ between the three places: the
- * banner wraps after "about the" while the console lead wraps after "do by hand". A regex
- * matching one wrapping would count the other as absent, which would count two occurrences
- * as one on a page that renders both.
+ * WHITESPACE-TOLERANT because the SOURCE line-breaks differ between the three places, so a regex
+ * matching one wrapping would count the other as absent.
  */
 const PRODUCT_SENTENCE = /forgeright interviews your team about the\s+work they do by hand, then ranks\s+what it finds by what is worth automating first/g;
 
@@ -659,8 +629,7 @@ test('the product sentence appears ONCE on an ordinary console and roadmap page'
 });
 
 test('the product sentence appears TWICE on a demo session - the banner AND the lead, by design', async () => {
-    // THE DELIBERATE DOUBLE. A de-duplication "fix" that removed one would be a change to the
-    // design, so the count is asserted rather than left implicit.
+    // The deliberate double: a de-duplication "fix" would be a change to the design.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -677,8 +646,8 @@ test('the product sentence appears TWICE on a demo session - the banner AND the 
 });
 
 test('the roadmap renders TWO lead paragraphs, and the console has a lead where it had none', async () => {
-    // The roadmap's lead is two paragraphs now (what forgeright is, then what the page shows).
-    // The console gained a lead paragraph it did not have, so its own copy is not bare.
+    // The roadmap lead is two paragraphs (what forgeright is, then what the page shows), and the
+    // console has its own lead paragraph.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
@@ -737,8 +706,8 @@ test('`weight` is STILL the label beside the number - the metric was not renamed
 });
 
 test('the console creation date still renders formatted, and is escaped', async () => {
-    // The removal of the developer sentence must not have taken the date with it. `shortInstant`
-    // renders `YYYY-MM-DD HH:MM UTC`, and the value is escaped by the template.
+    // `shortInstant` renders `YYYY-MM-DD HH:MM UTC`; removing the developer sentence must not have
+    // taken the date with it.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
@@ -755,9 +724,8 @@ test('the console creation date still renders formatted, and is escaped', async 
 });
 
 test('no em dash (U+2014) appears on any rendered console page', async () => {
-    // House style: no em dash in user-facing copy. En-dash ranges are allowed, so only U+2014 is
-    // refused. Asserted on the rendered pages rather than the sources, since the copy is what a
-    // reader sees.
+    // House style: no em dash (U+2014) in user-facing copy; en-dash ranges are allowed. Asserted on
+    // the rendered pages rather than the sources.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');

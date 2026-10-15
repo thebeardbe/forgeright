@@ -1,19 +1,15 @@
 /**
  * Participant route isolation, at the HTTP level.
  *
- * Section 1 (test/token-index.test.js) proves the routing FUNCTION resolves a
- * token to its own organisation. This proves the ROUTES use it correctly, which is
- * where a wiring mistake would live: the organisation a participant's answer lands
- * in must come from the token and from nothing else.
+ * Section 1 (test/token-index.test.js) proves the routing FUNCTION resolves a token to its own
+ * organisation; this proves the ROUTES use it: the organisation a participant's answer lands in
+ * must come from the token and from nothing else.
  *
- * VERIFY BY INSPECTING THE FILES, NOT BY TRUSTING A STATUS CODE. The whole point
- * of this suite is that a 200 can come from the wrong place, so after each write
- * the organisation databases are opened directly and the answer is located in one
- * of them.
+ * VERIFY BY INSPECTING THE FILES, NOT BY TRUSTING A STATUS CODE, because the whole point of this
+ * suite is that a 200 can come from the wrong place.
  *
- * Follows test/routes.test.js: the server is spawned as a child on a free port,
- * with its OWN temp STORE_DIR and every environment variable pinned rather than
- * inherited from .env or the developer's shell.
+ * The server is spawned as a child on a free port with its own temp STORE_DIR and every
+ * environment variable pinned rather than inherited.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,9 +29,8 @@ const SERVER = path.join(__dirname, '..', 'server.js');
 
 const ALLOWED_HOST = 'allowed.example.test';
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-participant-routes-'));
-// The test process imports the store in-process to create the organisations and
-// to inspect the files, and the spawned server reads the SAME directory. Both
-// must agree, so the env var is set here as well as in the child's environment.
+// Set here as well as in the child's environment: the test process imports the store in-process to
+// create and inspect, and the spawned server reads the SAME directory.
 process.env.STORE_DIR = STORE_DIR;
 process.env.SESSION_SECRET = 'a'.repeat(64);
 
@@ -54,11 +49,8 @@ function freePort() {
 const PORT = await freePort();
 
 /**
- * Every environment variable the spawned server reads, pinned. The child gets
- * this as its WHOLE environment, so nothing from .env leaks in.
- *
- * @param {number} port
- * @returns {Record<string, string>}
+ * Every environment variable the spawned server reads. The child gets this as its WHOLE
+ * environment, so nothing from .env leaks in.
  */
 function spawnedEnv(port) {
     return {
@@ -75,10 +67,8 @@ function spawnedEnv(port) {
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // NEUTRALISED SO THE SUITE DOES NOT DEPEND ON THE UNTRACKED .env. server.js does
-        // `import 'dotenv/config'` and dotenv fills only ABSENT keys, so a developer's .env with
-        // DEMO_LOGIN=1 was inherited by every spawned server. An empty string is PRESENT and is
-        // therefore left alone, which holds the demo gate closed. See test/demo-login.test.js.
+        // An empty string is PRESENT, so dotenv (which fills only ABSENT keys) leaves it alone,
+        // holding the demo gate closed against an untracked .env. See test/demo-login.test.js.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: ''
@@ -86,8 +76,8 @@ function spawnedEnv(port) {
 }
 
 /**
- * One HTTP request with the trusted forwarded-protocol header, so it reaches the
- * route the way a request through the production proxy does.
+ * One HTTP request with the trusted forwarded-protocol header, so it reaches the route as a
+ * request through the production proxy does.
  */
 function request({ method = 'GET', path: urlPath = '/', body, headers = {} } = {}) {
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -166,13 +156,8 @@ after(async () => {
 // --- helpers that INSPECT THE FILES -----------------------------------------
 
 /**
- * The responses stored in ONE organisation's database file, read directly.
- *
- * This is the evidence the assertions rest on: a status code says nothing about
- * which file a write reached.
- *
- * @param {string} orgId
- * @returns {object[]} Parsed `data` for every response row.
+ * The responses stored in ONE organisation's database file, read directly: a status code says
+ * nothing about which file a write reached.
  */
 function responsesInFile(orgId) {
     const db = new DatabaseSync(path.join(STORE_DIR, 'orgs', `${orgId}.db`));
@@ -186,11 +171,8 @@ function responsesInFile(orgId) {
 }
 
 /**
- * The transcript column for every response in one organisation's file, read
- * directly. `null` is no transcript; `[]` is an empty one.
- *
- * @param {string} orgId
- * @returns {Array<Array<object>|null>}
+ * The transcript column for every response in one organisation's file: `null` is no transcript,
+ * `[]` is an empty one.
  */
 function transcriptsInFile(orgId) {
     const db = new DatabaseSync(path.join(STORE_DIR, 'orgs', `${orgId}.db`));
@@ -204,13 +186,8 @@ function transcriptsInFile(orgId) {
 }
 
 /**
- * The transcript of the round opened by a given token's invitation.
- *
- * The round model means one open round per invitation, so a token identifies which
- * row to read without relying on it being the newest row in the file.
- *
- * @param {string} token A participant token.
- * @returns {Array<object>|null|undefined} The transcript, or undefined when no row.
+ * The transcript of the round opened by a given token's invitation. One open round per invitation
+ * means a token identifies which row to read without relying on it being the newest row.
  */
 function transcriptsInFileAtRoundFor(token) {
     const hash = hashParticipantToken(token);
@@ -237,11 +214,9 @@ function hashParticipantToken(token) {
 }
 
 /**
- * Creates an organisation and one invitation by driving the public store API
- * directly, so the test owns the ids and the tokens it will use over HTTP.
- *
- * The store is imported here rather than spawned, because it writes to the same
- * STORE_DIR the server reads.
+ * Creates an organisation and one invitation through the public store API, so the test owns the
+ * ids and tokens it will use over HTTP. Imported in-process because it writes to the same STORE_DIR
+ * the server reads.
  */
 const store = await import('../lib/store/index.js');
 
@@ -295,14 +270,9 @@ test('POST /api/response with A\'s token lands in A\'s file, and is absent from 
 });
 
 test('answers written as A are invisible as B and visible as A through the store API', () => {
-    // The store API is the read path the console uses; the isolation must hold there
-    // too, not only in the raw files.
-    //
-    // TWO ACCESSORS, because the round model splits them: `getAllResponses` includes a
-    // still-open partial round, and `getResponsesForAnalysis` excludes it. The write
-    // this test depends on is whatever the earlier tests left, which is a partial, so
-    // the VISIBILITY half is asserted through `getAllResponses` and the SCORING half
-    // through `getResponsesForAnalysis`.
+    // TWO ACCESSORS, because the round model splits them: `getAllResponses` includes a still-open
+    // partial round, `getResponsesForAnalysis` excludes it. The VISIBILITY half is asserted through
+    // the first and the SCORING half through the second.
     const allA = store.getAllResponses(ORG_A.id);
     const allB = store.getAllResponses(ORG_B.id);
 
@@ -313,7 +283,6 @@ test('answers written as A are invisible as B and visible as A through the store
         'B does not see A\'s answer'
     );
 
-    // B sees nothing of A through the analysis accessor either, in either direction.
     assert.equal(
         store.getResponsesForAnalysis(ORG_B.id).some((r) => r.data && r.data.marker === 'write-as-A'),
         false,
@@ -326,9 +295,8 @@ test('answers written as A are invisible as B and visible as A through the store
 // ===========================================================================
 
 test('a body field naming another organisation is ignored, and the answer lands in the token\'s organisation', async () => {
-    // Every spelling a client might try, plus a nested object in case the code
-    // were ever tempted to read one. The response body's own organisation field
-    // must come from the TOKEN, never from the request.
+    // Every spelling a client might try, plus a nested object. The organisation field must come
+    // from the TOKEN, never from the request.
     const bodies = [
         { token: TOKEN_A, department: 'Finance', data: { forged: 'organisationId' }, organisationId: ORG_B.id },
         { token: TOKEN_A, department: 'Finance', data: { forged: 'orgId' }, orgId: ORG_B.id },
@@ -395,8 +363,8 @@ test('GET /q/<A-token>?orgId=B still serves A, and B is unaffected', async () =>
     assert.equal(plainQuery.status, 200, 'the token serves the questionnaire');
     assert.equal(forgedQuery.status, 200, "A's token still serves, whatever the query says");
 
-    // The page carries the token so the client can post answers back; the
-    // organisation id must not appear, because the participant never names a tenant.
+    // The page carries the token so the client can post answers back; the organisation id must not
+    // appear, because the participant never names a tenant.
     assert.equal(
         forgedQuery.text.includes(ORG_B.id),
         false,
@@ -411,8 +379,7 @@ test('GET /q/<A-token>?orgId=B still serves A, and B is unaffected', async () =>
 test('GET /q with an unknown token shows the paste form and refuses the link', async () => {
     const res = await request({ path: '/q/definitely-not-a-token' });
     assert.equal(res.status, 400, 'an unresolvable link is refused');
-    // The refusal is the paste-a-token page, not a JSON error: a mangled link is
-    // the common case and the page that fixes it is the one to show.
+    // The refusal is the paste-a-token page, not a JSON error: a mangled link is the common case.
     assert.match(res.contentType, /text\/html/, 'an HTML page, not a JSON body');
 });
 
@@ -443,10 +410,8 @@ test('a missing token is refused on the write path', async () => {
 });
 
 test("B's token is refused on read when it does not resolve in A's context", async () => {
-    // A token only ever resolves in its own organisation, and the route never
-    // consults the request for a tenant, so B's token serves B and cannot serve A.
-    // Assert the served content for B's token does not carry A's token, and that
-    // an unknown token carries nothing.
+    // B's token serves B and cannot serve A; the served content for B's token must not carry A's
+    // token, and an unknown token carries nothing.
     const resB = await request({ path: `/q/${encodeURIComponent(TOKEN_B)}` });
     assert.equal(resB.status, 200, "B's own token serves");
     assert.equal(resB.text.includes(TOKEN_A), false, "B's page does not carry A's token");
@@ -480,8 +445,7 @@ test('a revoked token is refused on both read and write', async () => {
 });
 
 test('a revoked token and an unknown token are refused identically', async () => {
-    // The refusal must not distinguish "this token existed" from "this token never
-    // did": a difference would say whether an invitation exists.
+    // The refusal must not distinguish "this token existed" from "this token never did".
     const victim = orgWithInvitation('Org Indistinguishable', 'Support');
     store.resetAccess(victim.org.id, victim.invitation.id);
 
@@ -499,9 +463,8 @@ test('a revoked token and an unknown token are refused identically', async () =>
 
 test('after a write as A, analysis for B is empty of it and for A contains it', () => {
     const marker = 'isolation-final';
-    // A write went through the store API here rather than HTTP, because this test
-    // is about the read scoping, which the other tests already exercised over
-    // HTTP. The file inspection below is the evidence either way.
+    // A write through the store API rather than HTTP: this test is about read scoping, and the
+    // file inspection below is the evidence.
     store.addResponse(ORG_A.id, TOKEN_A, { department: 'Finance', data: { marker } });
 
     const inAByApi = store.getResponsesForAnalysis(ORG_A.id).some((r) => r.data && r.data.marker === marker);
@@ -519,9 +482,8 @@ test('after a write as A, analysis for B is empty of it and for A contains it', 
 // 7. THE TRANSCRIPT OVER HTTP
 // ===========================================================================
 //
-// The client sends the raw conversation with the answers. A malformed one is
-// refused with 400 rather than silently dropped, so a transcript the console
-// cannot render never reaches the store.
+// The client sends the raw conversation with the answers. A malformed one is refused with 400
+// rather than silently dropped.
 
 test('a valid transcript is stored and read back in order over HTTP', async () => {
     const turns = [
@@ -566,12 +528,10 @@ test('a malformed transcript is refused with 400, not silently dropped', async (
 });
 
 test('an ABSENT transcript is accepted and stored as no transcript', async () => {
-    // A caller with none to give is not blocked, and it is distinct from an empty
-    // conversation.
+    // A caller with none to give is not blocked, and it is distinct from an empty conversation.
     //
-    // A FRESH INVITATION, because the round model gives one open round per
-    // invitation: a token already used by an earlier test would continue THAT round,
-    // and the transcript under test would be that round's rather than this write's.
+    // A FRESH INVITATION: one open round per invitation means a token used earlier would continue
+    // THAT round, and the transcript under test would be that round's rather than this write's.
     const fresh = store.addInvitation(ORG_A.id, { email: `absent-${Date.now()}@example.test`, department: 'Finance' });
 
     const res = await post('/api/response', { token: fresh.token, data: { marker: 'no-transcript' } });
@@ -596,13 +556,11 @@ test('an EMPTY transcript is accepted and stored as an empty array', async () =>
 });
 
 test('THE FORMAT COMMITMENT IS NEVER STORED in a transcript', async () => {
-    // The synthetic assistant turn commits to the JSON format and exists only in
-    // the outgoing request to the model. It must not reach the transcript, which
-    // records what was actually said: a leak would put words in the participant's
-    // mouth and corrupt the evidence.
+    // The synthetic format-commitment turn exists only in the outgoing request, so it must not
+    // reach the transcript, which records what was actually said.
     //
-    // The commitment's text is read from the module, not restated, so a change to
-    // it cannot leave this test looking for the wrong string.
+    // Its text is read from the module, not restated, so a change cannot leave this test looking
+    // for the wrong string.
     const { withFormatCommitment } = await import('../ai/format-commitment.js');
     const conversation = [{ role: 'user', content: 'Invoices, every morning.' }];
     const withCommitment = withFormatCommitment(conversation);
@@ -632,8 +590,7 @@ test('GET /lost-link serves the form', async () => {
 });
 
 test('POST /lost-link responds identically whether or not the address was invited', async () => {
-    // A difference would be a way to discover who has been invited, which is a
-    // list of employees and their departments.
+    // A difference would be a way to discover who has been invited.
     const known = store.addInvitation(ORG_A.id, { email: 'known-invitee@example.test', department: 'Finance' });
     assert.ok(known.token, 'the invitation was created');
 
@@ -648,8 +605,8 @@ test('POST /lost-link responds identically whether or not the address was invite
 // 7. mayUseQuestionnaire: WHICH CREDENTIAL ADMITS A REQUEST
 // ===========================================================================
 //
-// lib/routes-api.js accepts ONE credential: a live participant token. There is no
-// second way in: a request carrying only `pass` is not admitted.
+// lib/routes-api.js accepts ONE credential: a live participant token. A request carrying only
+// `pass` is not admitted.
 
 test('a live participant token admits the questionnaire', async () => {
     const res = await post('/api/chat', {
