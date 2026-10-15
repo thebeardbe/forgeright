@@ -120,6 +120,11 @@ async function loadPrompt(toolId, lang) {
 /**
  * The questions this conversation has already asked, each with its open-field count.
  *
+ * A `missing` or `evidenced` field is present when the client replayed the server's own reply
+ * and absent on a hand-built conversation. An absent count is treated as unknown, which the
+ * guard reads as no progress - the safe direction, since it prefers substituting a fresh
+ * question over repeating a possibly-stalled one.
+ *
  * THE CONVERSATION IS THE RECORD, not a counter kept across turns: the client already sends every
  * earlier turn, and a counter would be new state that has to survive a page reload.
  *
@@ -142,19 +147,10 @@ function assistantQuestionsWithOpenCounts(messages) {
         const text = typeof message.content === 'string' ? message.content.trim() : '';
         if (text === '') continue;
 
-        // `missing` is present when the client replayed the server's own reply, and absent on a
-        // conversation the client built by hand. An absent count is treated as "unknown", which
-        // the guard reads as no progress - the safe direction, since it prefers substituting a
-        // fresh question over repeating a possibly-stalled one.
+        // Absent counts read as 0, i.e. "unknown", which the guard treats as no progress.
         const missing = Array.isArray(message.missing) ? message.missing.length : 0;
-        // THE EVIDENCE COUNT AT THE TIME, which is what the guard compares against. A reply the
-        // client replays carries the server's own `evidenced` list; an absent one is treated as
-        // unknown, which reads as no progress - the safe direction, since the guard prefers
-        // substituting a fresh question over repeating a possibly-stalled one.
         const evidenced = Array.isArray(message.evidenced) ? message.evidenced.length : 0;
-        // A SUBSTITUTED QUESTION IS RECORDED BUT NEVER MATCHED. The client replays it, so it
-        // arrives like any other assistant turn; the mark is what stops the gate recognising its
-        // own sentence and replacing it with another one. See SUBSTITUTED.
+        // Recorded but never matched; see SUBSTITUTED.
         asked.push({ text, openCount: missing, evidencedCount: evidenced, substituted: message.substituted === true });
     }
 
@@ -162,6 +158,11 @@ function assistantQuestionsWithOpenCounts(messages) {
 }
 
 /**
+ * AN ASSISTANT TURN IS REBUILT AS ROLE AND CONTENT ONLY. The client replays `substituted` and
+ * `missing` beside the text because THIS server needs them, and they reach the provider if the
+ * message is forwarded as-is - internal bookkeeping in the model's own conversation. A user
+ * turn is sanitised; an assistant turn is passed through apart from dropping the extras.
+ *
  * @param {object} args
  * @param {Array<{role: string, content: string}>} args.messages Conversation so far.
  * @param {string} args.lang UI language.
@@ -179,12 +180,7 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
     // Guardrail: the model must never see unsanitised participant text.
     const safeMessages = [];
     for (const msg of messages) {
-        // AN ASSISTANT TURN IS REBUILT AS ROLE AND CONTENT ONLY. The client replays `substituted`
-        // and `missing` alongside the text because THIS server needs them, and they reach the
-        // provider if the message is forwarded as-is - internal bookkeeping fields in the model's
-        // own conversation, which is noise it did not ask for and could act on. A user turn is
-        // sanitised below; an assistant turn is the model's own words, so it is passed through
-        // unchanged apart from dropping the extras.
+        // Assistant turns are rebuilt as role and content only - see the guardrail above.
         if (msg.role !== 'user') {
             safeMessages.push({ role: msg.role, content: msg.content });
             continue;
@@ -421,15 +417,20 @@ function withoutClosingQuestion(content, computed) {
  * IT DOES NOT NAME THE FIELDS: `frustration` and `mistakesPerPeriod` are internal names, so the
  * phrasing counts them, which is honest and reads like a person speaking.
  *
+ * COUNTING ALONE WAS NOT ENOUGH: a stall leaves `missing` UNCHANGED, so the same count gave the
+ * same sentence and the gate repeated itself - MEASURED at turn 18 of a simulation.
+ *
+ * THE LOOP IS BROKEN AT THE GUARD, NOT HERE. This line returns only on a model repeat, and the
+ * caller has seen that exact text - so the participant is never asked a question they answered.
+ * The text invites them to add anything and the interview closes on the next completing turn.
+ *
  * @param {string[]} open The fields still unsupplied.
  * @returns {string}
  */
 function moveOnLine(open) {
     const count = open.length === 1 ? 'one thing' : `${open.length} things`;
 
-    // COUNTING ALONE WAS NOT ENOUGH: a stalled conversation leaves `missing` UNCHANGED, so the same
-    // count produced the same sentence and the gate repeated itself - MEASURED at turn 18 of a
-    // simulation.
+    // Counting alone was not enough; see the caveat above.
     const variants = [
         'If you think of something later, it can be added.',
         'Anything you can add now would still be useful.',
@@ -437,18 +438,7 @@ function moveOnLine(open) {
         'We can leave it there if that is everything.',
         'Anything else you want me to know before we finish?'
     ];
-    // CHOSEN BY SOMETHING THAT MOVES: the field count does not change in a stall. The fields are
-    // honest thing to vary on is the SUM OF THEIR NAMES - a stable value per set of open fields,
-    // and a different value as soon as the set changes. Within one stalled conversation that
-    // still yields one sentence, which is correct: the participant should see the same warm
-    // ending, not a different one each turn.
-    //
-    // THE LOOP IS BROKEN AT THE GUARD ABOVE, NOT HERE. Once every field has been asked, this
-    // line is returned only when the model repeats itself, and the caller has already seen this
-    // exact text - so `askedBefore` contains it, the model's repeat matches, and `fresh` is
-    // still undefined. What stops the repetition is that THE PARTICIPANT IS NO LONGER ASKED A
-    // QUESTION THEY HAVE ANSWERED: this text invites them to add anything, and the interview
-    // closes on the next completing turn. It is a stable ending rather than a rotating one.
+    // Indexed by the sum of the field names, which changes when the set does.
     const fingerprint = open.join('').split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
     const index = fingerprint % variants.length;
 
@@ -576,6 +566,16 @@ function turnsWithoutEvidence(messages) {
  * this is true it stays true - where a comparison against the open field set, which the model can
  * vary every turn, can be defeated indefinitely.
  *
+ * LIMITED TO THE FIELDS CURRENTLY OPEN, which is the fix for a residual stall rather than a
+ * convenience. REQUIRING ALL FIFTEEN was too strong: a field the model CLAIMS to hold is never
+ * offered as a question, so its phrasing never enters and exhaustion can never fire - MEASURED
+ * with a churning model claiming task/trigger/steps, 12 of 15 asked then the move-on line
+ * indefinitely. The monotonic property survives: this runs only on a repeat with no progress.
+ *
+ * AN EMPTY OPEN SET IS NOT THIS FUNCTION'S CALL: `missing` empty with `supplied` empty is
+ * `nothing_answered`, and `missing` empty with evidence is a completed round. Both are decided
+ * before this is reached.
+ *
  * A FIELD WITH NO PHRASING IS NOT COUNTED, deliberately: comparing against the questions that EXIST
  * rather than a fixed fifteen means a field added without a question cannot make this never true.
  *
@@ -583,20 +583,6 @@ function turnsWithoutEvidence(messages) {
  * @returns {boolean}
  */
 function asksEveryField(askedQuestions, openFields) {
-    // THE SET IS `FIELD_QUESTIONS` LIMITED TO THE FIELDS CURRENTLY OPEN, and that limitation is the
-    // fix for a residual stall rather than a convenience.
-    //
-    // REQUIRING ALL FIFTEEN WAS TOO STRONG and produced the very loop the guard prevents: a field
-    // the model CLAIMS to hold is never offered as a question, so its phrasing never enters the
-    // conversation and exhaustion could never fire. MEASURED with a churning model claiming
-    // task/trigger/steps: 12 of 15 questions asked, then the move-on line indefinitely.
-    //
-    // THE MONOTONIC PROPERTY SURVIVES: the open set can change, but this runs only on a repeat with
-    // no progress and asks whether anything is left worth saying ABOUT WHAT IS STILL OPEN.
-    //
-    // AN EMPTY OPEN SET IS NOT THIS FUNCTION'S CALL: `missing` empty with `supplied` empty is
-    // `nothing_answered`, and `missing` empty with evidence is a completed round. Both are
-    // decided before this is reached.
     const phrasings = openFields
         .map((field) => FIELD_QUESTIONS[field])
         .filter((phrasing) => phrasing !== undefined);
@@ -607,13 +593,38 @@ function asksEveryField(askedQuestions, openFields) {
 /**
  * Replaces a question the conversation has already asked, when nothing has moved since.
  *
- * THE STALL THIS EXISTS FOR, MEASURED on a live interview: the model asked ONE field's question for
- * six consecutive turns while `missing` held six others, byte-identically each time. The two-attempt
- * cap is a PROMPT rule the model enforces against itself, and it did not, which is why this is code.
+ * THE STALL THIS EXISTS FOR, MEASURED on a live interview: the model asked ONE field's question
+ * for six consecutive turns while `missing` held six others, byte-identically each time. The
+ * two-attempt cap is a PROMPT rule the model enforces on itself, and it did not.
  *
- * BOTH CONDITIONS MUST HOLD: the content is IDENTICAL to a question already asked, AND `missing` has
- * not shrunk since. Asking twice is legitimate - the prompt allows one rephrase - so the second
- * condition is what stops this firing on a legitimate repeat.
+ * BOTH CONDITIONS MUST HOLD: the content is IDENTICAL to a question already asked, AND `missing`
+ * has not shrunk since. Asking twice is legitimate - the prompt allows one rephrase - so the
+ * second condition stops this firing on a legitimate repeat.
+ *
+ * ONLY THE MODEL'S OWN REPEATS ARE GUARDED. A substitute this function wrote is never matched,
+ * because matching it is the gate arguing with itself: it would replace its own sentence turn
+ * after turn, moving the loop from the model to the gate rather than ending it - MEASURED at
+ * turn 18 of a simulation. A GATE SENTENCE THE MODEL ECHOED IS STILL THE GATE'S: the mark is
+ * carried by the TEXT, not by which branch it arrived through, or the same sentence reaches a
+ * participant twice (every duplicate in a live run was a consecutive pair). An echoed gate
+ * sentence with no progress is REPLACED, not re-issued - the `substituted` exemption is about
+ * not arguing with itself, and the echo is the defect.
+ *
+ * PROGRESS IS MEASURED FROM EVIDENCE, NOT FROM A CLAIM. Comparing `computed.missing` is wrong
+ * mid-interview because it is built partly from the model's own `have` claim: a model that
+ * re-partitions what it CLAIMS shrinks `missing` while nothing is recorded. MEASURED: `have +
+ * missing` stayed fifteen, `missing` fell 8 -> 6 -> 1 with nothing stored, and thirty-one
+ * identical questions passed the guard in a row. `evidenced` is what a churning model cannot
+ * move. The `openCount` branch is a NARROW FALLBACK for a fixture or a conversation recorded
+ * before `evidencedCount` existed - reading "no evidence data" as "no progress" there would turn
+ * a legitimate second attempt into a wall.
+ *
+ * EVERY OPEN FIELD ASKED LEAVES NOTHING TO SUBSTITUTE, so the MOVE-ON LINE is used. It carries
+ * the fields it moves on from and is sent ONCE - a second would be the gate repeating itself.
+ * WHAT REACHES THAT PATH: no field question is left, but not every field has had its question -
+ * one with no entry in FIELD_QUESTIONS, or one the model keeps claiming open. THE INTERVIEW
+ * CLOSES THERE, which terminates this path; the prompt already sanctions it, and it is NOT
+ * `nothing_answered`, which would lie to a participant who answered plenty.
  *
  * IT TERMINATES BECAUSE IT ONLY EVER MOVES TO AN UNASKED FIELD, of which there are fifteen, so the
  * available questions strictly decrease.
@@ -628,38 +639,13 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
     const text = typeof content === 'string' ? content.trim() : '';
     if (text === '') return content;
 
-    // ONLY THE MODEL'S OWN REPEATS ARE GUARDED. A substitute this function wrote is never
-    // matched, because matching it would be the gate arguing with itself: it would replace its
-    // own sentence with another one, turn after turn, and the loop would move from the model to
-    // the gate rather than ending. That is not a hypothetical - it was measured at turn 18 of a
-    // simulation, and it is why the substitute is registered as the gate's.
-    // A QUESTION THE GATE WROTE IS STILL THE GATE'S, EVEN WHEN IT REACHES US AS A PASS-THROUGH.
-    // The model repeats whatever is in the conversation, so a substitute it echoes arrives here
-    // as an ordinary assistant turn - and returning `substituted: false` for it loses the mark,
-    // which is how the same gate sentence reached a participant twice (measured: every duplicate
-    // in a live run was a consecutive pair). The text is the gate's sentence either way, so the
-    // mark is carried by the TEXT, not by which branch we came through.
+    // See the gate-owned note above.
     const gateOwned = askedBefore.some((entry) => entry.text === text && entry.substituted === true);
     const wasAsked = askedBefore.find((entry) => entry.text === text);
 
-    // A GATE SENTENCE THE MODEL ECHOED IS REPLACED, NOT RE-ISSUED. It has no `substituted`
-    // exemption from being MATCHED - that exemption exists so the gate does not argue with
-    // itself on its own next turn, and the echo is a different case: the participant is about to
-    // read the same sentence twice, which is the defect. So a gate-owned repeat with no progress
-    // falls through to the substitution below, exactly as a model repeat does.
     if (!wasAsked) return { text: content, substituted: false };
 
-    // PROGRESS IS MEASURED FROM EVIDENCE, NOT FROM A CLAIM. This compared `computed.missing`,
-    // which mid-interview is built partly from the model's own `have` claim - so a model that
-    // re-partitions what it CLAIMS shrinks `missing` while nothing is recorded, and every shrink
-    // was read as the participant answering something. MEASURED: `have + missing` stayed fifteen,
-    // `missing` fell 8 -> 6 -> 1 with nothing stored, and thirty-one identical questions passed the
-    // guard in a row. `evidenced` is the one list a churning model cannot move.
-    //
-    // EVIDENCE IS AUTHORITATIVE AND THE FALLBACK IS NARROW: the second branch exists only for a
-    // caller supplying the older `openCount` - a fixture, or a conversation recorded before
-    // `evidencedCount` existed - where treating "no evidence data" as "no progress" would make
-    // every such repeat a substitution and turn a legitimate second attempt into a wall.
+    // `evidenced` is authoritative; the `openCount` branch is the narrow fallback above.
     const hasEvidenceData = wasAsked.evidencedCount !== undefined;
     const progressed = hasEvidenceData
         ? computed.evidenced.length > wasAsked.evidencedCount
@@ -693,17 +679,7 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
     }
 
     if (fresh === undefined) {
-        // EVERY OPEN FIELD HAS BEEN ASKED, so nothing is left to substitute. The MOVE-ON LINE
-        // carries the fields it moves on from, so it differs each time and is never itself a
-        // repeat; it is sent ONCE, because a second would be the gate repeating itself.
-        //
-        // THE INTERVIEW CLOSES HERE, which terminates this path. The prompt already sanctions it -
-        // "a field left thin costs a little at the analysis; an interview that repeats costs the
-        // whole process" - and THIS IS NOT `nothing_answered`, which would lie to a participant who
-        // answered plenty. Exhaustion is decided once, above, by `asksEveryField`.
-        //
-        // WHAT REACHES HERE: no field question is left to ask, but not every field has had its
-        // question - one with no entry in FIELD_QUESTIONS, or one the model keeps claiming open.
+        // The move-on line; see the closing note above.
         console.warn(
             '[audit] the model repeated a question with no progress and every open field has ' +
             `been asked already (${computed.missing.join(', ')}); asking the participant to move on`

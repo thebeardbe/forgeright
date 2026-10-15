@@ -114,27 +114,28 @@ app.set('views', path.join(__dirname, 'views'));
  */
 app.use((req, res, next) => {
     res.locals.basePath = PUBLIC_PATH;
+    // `currentUrl` is the path the browser is on, for the theme picker's way back.
+    //
+    // TAKEN FROM THE REQUEST, NOT BUILT FROM PUBLIC_BASE_URL: behind a proxy terminating a
+    // different hostname, a link built from the configuration sends the user to a host they
+    // are not using.
+    //
+    // **THE QUERY STRING IS DELIBERATELY DROPPED - A SECURITY DECISION.** This value goes into
+    // a hidden form field on every page, so carrying the query would echo whatever the URL
+    // held into the body: the demo link's TOKEN, on the very refusal page that exists to say
+    // nothing about it. A credential reflected into HTML lands in browser history, a proxy
+    // log, and any error reporter capturing the DOM. MEASURED: a bad-token request returned a
+    // page containing the submitted token, and the demo tests caught it because two requests
+    // that must be indistinguishable had different bodies.
+    //
+    // THE COST: changing the theme on a page showing a rejudge notice returns without the
+    // notice - a small convenience against not writing credentials into pages.
 
     // The picker's list, derived from the palette data so a new palette appears
     // without touching a template. Ordered as lib/palettes.js orders them.
     res.locals.themeOptions = PALETTE_IDS.map((id) => ({ id, name: PALETTES[id].name }));
 
-    // THE PATH THE BROWSER IS ON, for the theme picker's way back.
-    //
-    // TAKEN FROM THE REQUEST RATHER THAN BUILT FROM PUBLIC_BASE_URL, because the browser's URL may
-    // differ from the configured one: behind a proxy terminating a different hostname, a link built
-    // from the configuration sends the user to a host they are not using.
-    //
-    // **THE QUERY STRING IS DELIBERATELY DROPPED, AND THAT IS A SECURITY DECISION.** This value goes
-    // into a hidden form field on every page, so carrying the query would echo whatever the URL held
-    // into the body - the demo link's TOKEN, on the very refusal page that exists to say nothing
-    // about it. A credential reflected into HTML lands in browser history, a proxy log, and any
-    // error reporter capturing the DOM. MEASURED: a bad-token request returned a page containing the
-    // submitted token, and the demo tests caught it because two requests that must be
-    // indistinguishable had different bodies.
-    //
-    // THE COST: changing the theme on a page showing a rejudge notice returns without the notice -
-    // a small convenience against not writing credentials into pages.
+    // The path the browser is on, for the theme picker's way back. See the caveat above.
     res.locals.currentUrl = req.path;
 
     // The formatting helpers, so a template writes `<%= shortInstant(x) %>` rather than
@@ -142,11 +143,7 @@ app.use((req, res, next) => {
     // unambiguous rather than locale-formatted.
     res.locals.shortInstant = shortInstant;
     res.locals.shortDuration = shortDuration;
-    // THE RESPONSE-SHAPE RESOLVERS, exposed the same way, so a template reads
-    // `responseTitle(response.data)` rather than reaching into a payload shape it has to know.
-    // There are two shapes - an interview round saves `{ workflows: [...] }` and an imported one
-    // saves the workflow directly - and a template that assumed one of them rendered every live
-    // interview as "Untitled answer" with no fields. See lib/view-format.js.
+    // The response-shape resolvers; see lib/view-format.js.
     res.locals.responseTitle = responseTitle;
     res.locals.responseWorkflow = responseWorkflow;
     next();
@@ -160,23 +157,17 @@ app.use((req, res, next) => {
  * Mounted BEFORE the admin router and every other route. Order matters here: a
  * router mounted earlier would run first and let a request from an unlisted host
  * reach a route, which is the whole thing this guard exists to stop.
+ *
+ * The raw header is parsed by `hostnameFromHeader`, which handles an IPv6 authority: a
+ * bracketed literal yields "[", so an entry could never match however it was written.
+ *
+ * Edge cases, both of which must NOT pass by accident: a missing Host header yields "",
+ * matching no entry, because empty entries were filtered out above; and an IPv6 host is
+ * matched as written, so "[::1]" in ALLOWED_HOST works.
  */
 app.use((req, res, next) => {
     if (ALLOWED_HOSTS.length === 0) return next();
 
-    // Strip the port, then lowercase. A Host header is case-insensitive, and an
-    // operator who typed "Localhost" should not be locked out.
-    //
-    // The raw header is parsed by hostnameFromHeader, which handles an IPv6
-    // authority correctly. Splitting on ":" here was a second instance of the
-    // same defect that made the loopback check unable to match "[::1]": a
-    // bracketed literal yields "[", so an IPv6 entry in ALLOWED_HOST could never
-    // match however it was written.
-    //
-    // Edge cases, both of which must NOT pass by accident:
-    //   - a missing Host header yields "", which matches no configured entry,
-    //     because empty entries were filtered out above
-    //   - an IPv6 host is now matched as written, so "[::1]" in ALLOWED_HOST works
     const host = hostnameFromHeader(req.headers.host);
     if (ALLOWED_HOSTS.includes(host)) return next();
 
@@ -328,6 +319,26 @@ app.use((req, res) => {
  *
  * IT MUST TAKE FOUR ARGUMENTS, which is how Express recognises error middleware; a handler with
  * three is mounted as an ordinary route and never called.
+ *
+ * AN ERROR THAT KNOWS ITS OWN STATUS KEEPS IT, because the page's wording depends on whose
+ * fault it is. Express's body parsers attach one - MEASURED: malformed JSON gives
+ * `err.status = 400` with `type = entity.parse.failed`; an oversized body gives `413` with
+ * `entity.too.large`. Answering 500 told the sender "our fault, not yours" about a request
+ * THEY malformed, and hid the problem from a monitor.
+ *
+ * VALIDATED, NOT MERELY CONVERTED. `Number(err.status) || 500` passed any truthy number and
+ * `res.status()` accepts only 100-599, so a middleware attaching -1 made it THROW from inside
+ * the error handler and the body carried a STACK TRACE - the outcome this handler exists to
+ * eliminate, arrived at by the handler itself. MEASURED: -1 gave `RangeError
+ * [ERR_HTTP_INVALID_STATUS_CODE]`.
+ *
+ * THE BOUNDS ARE 400 TO 599, THE FLOOR DELIBERATELY NOT 100: everything here is an error, so
+ * a status below 400 is nonsense, and a 2xx or 3xx page is worse than the stack trace - a
+ * monitor counts a failure as success. Outside the band becomes 500.
+ *
+ * `Number.isInteger` RATHER THAN A RANGE TEST, so `NaN`, `Infinity` and "418" behave: NaN and
+ * Infinity fail and become 500, "418" is coerced and passes. Verified: 400 for a malformed
+ * body, 413 for an oversized one, 418 for a teapot, 400 from the string "400".
  */
 app.use((err, req, res, next) => {
     console.error(`[server] unhandled error on ${req.method} ${req.originalUrl}:`, err);
@@ -338,27 +349,7 @@ app.use((err, req, res, next) => {
     // error in the log.
     if (res.headersSent) return next(err);
 
-    // AN ERROR THAT KNOWS ITS OWN STATUS KEEPS IT, because the page's wording depends on
-    // whose fault it is. Express's body parsers attach one - MEASURED: malformed JSON gives
-    // `err.status = 400` with `type = entity.parse.failed`; an oversized body gives `413`
-    // with `entity.too.large`. Answering 500 told the sender "our fault, not yours" about a
-    // request THEY malformed, and hid the problem from a monitor.
-    //
-    // VALIDATED, NOT MERELY CONVERTED, which fixes a fault in this handler's own last
-    // resort: `Number(err.status) || 500` passed any truthy number and `res.status()`
-    // accepts only 100-599, so a middleware attaching -1 made it THROW from inside the
-    // error handler and the body carried a STACK TRACE - the outcome this handler exists to
-    // eliminate, arrived at by the handler itself. MEASURED: -1 gave `RangeError
-    // [ERR_HTTP_INVALID_STATUS_CODE]`.
-    //
-    // THE BOUNDS ARE 400 TO 599, THE FLOOR DELIBERATELY NOT 100: everything here is an
-    // error, so a status below 400 is nonsense, and a 2xx or 3xx page is worse than the
-    // stack trace - a monitor counts a failure as success. Outside the band becomes 500.
-    //
-    // `Number.isInteger` RATHER THAN A RANGE TEST, so `NaN`, `Infinity` and "418" behave:
-    // NaN and Infinity fail and become 500, "418" is coerced and passes. Verified: 400 for a
-    // malformed body, 413 for an oversized one, 418 for a teapot, 400 from the string
-    // "400".
+    // A status the error carries is kept, validated; see the bounds note above.
     const rawStatus = Number(err.status);
     const status = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus <= 599
         ? rawStatus
@@ -367,25 +358,29 @@ app.use((err, req, res, next) => {
     return sendError(req, res, status);
 });
 
+/**
+ * Starts the HTTP server and warns when the configuration cannot run a real interview.
+ *
+ * A DEPLOYMENT THAT CANNOT INTERVIEW SHOULD NOT BE SILENT ABOUT IT. `mock` answers every turn
+ * with a scripted question and NEVER completes, so an instance left on it cannot run a real
+ * interview - and nothing about that is visible from outside. The owner's container sat on
+ * mock for hours while he read the result as a bug in the interview. This fixes the SILENCE,
+ * not the setting.
+ *
+ * IT IS NOT AN ERROR AND MUST NOT BECOME ONE: local development uses mock and the whole suite
+ * depends on it, so refusing to start would break both.
+ *
+ * THE CONDITION IS "THIS LOOKS LIKE A DEPLOYMENT", and the tell is that the app is NOT bound
+ * to loopback - narrow on purpose, so the warning does not become noise an operator learns to
+ * skip. A KEY PRESENT IS NOT THE TEST: the mock branch of ai/config.js skips the key check
+ * entirely, so `DEEPSEEK_API_KEY` being set proves nothing about which provider is in use.
+ */
 const server = app.listen(PORT, HOST, () => {
     const config = loadAiConfig();
     console.log(`[server] listening on http://${HOST}:${PORT}${BASE_PATH}`);
     console.log(`[server] AI provider: ${config.name} (${config.type})`);
 
-    // A DEPLOYMENT THAT CANNOT INTERVIEW SHOULD NOT BE SILENT ABOUT IT.
-    //
-    // `mock` answers every turn with a scripted question and NEVER completes, so an instance left on
-    // it cannot run a real interview - and nothing about that is visible from outside. The owner's
-    // container sat on mock for hours while he read the result as a bug in the interview. This fixes
-    // the SILENCE, not the setting.
-    //
-    // IT IS NOT AN ERROR AND MUST NOT BECOME ONE: local development uses mock and the whole suite
-    // depends on it, so refusing to start would break both.
-    //
-    // THE CONDITION IS "THIS LOOKS LIKE A DEPLOYMENT", and the tell is that the app is NOT bound to
-    // loopback - narrow on purpose, so the warning does not become noise an operator learns to skip.
-    // A KEY PRESENT IS NOT THE TEST: the mock branch of ai/config.js skips the key check entirely,
-    // so `DEEPSEEK_API_KEY` being set proves nothing about which provider is in use.
+    // A deployment that cannot interview should not be silent; see the note above.
     if (config.type === 'mock' && HOST !== '127.0.0.1' && HOST !== 'localhost' && HOST !== '::1') {
         console.warn(
             `[server] WARNING: AI_PROVIDER is "${config.name}" while this instance is bound to ` +
