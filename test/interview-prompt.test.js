@@ -1,16 +1,13 @@
 /**
  * The interview prompt's DERIVE / ASK / RECORD structure, and the `{ said: ... }` marker.
  *
- * WHAT THE PROMPT GOVERNS. An instruction of the form "ask about it - once, in different words",
- * applied to only four fields, leaves the other eleven with no rule and the model falls back to
- * asking and repeating. The prompt now covers all fifteen fields with three steps, makes the
- * overlap between fields concrete, and adds a stop rule. `{ said: ... }` records an answer that
- * will not fit a type, and is refused by the typed minimum so a model cannot complete by writing
- * prose everywhere.
+ * WHAT THE PROMPT GOVERNS. It covers all fifteen fields with three steps, makes the overlap
+ * between fields concrete, and adds a stop rule. `{ said: ... }` records an answer that will not
+ * fit a type, and is refused by the typed minimum so a model cannot complete by writing prose
+ * everywhere.
  *
- * PROMPT TESTS ARE TEXT ASSERTIONS, and they are the right shape for a change whose artefact
- * IS prose: the rule is the thing that governs the model, so the rule's presence and its
- * exact condition are the behaviour. They are pinned against drift.
+ * PROMPT TESTS ARE TEXT ASSERTIONS, the right shape where the artefact IS prose: the rule governs
+ * the model, so its presence and exact condition are the behaviour. Pinned against drift.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,9 +34,8 @@ function typedProcess(overrides = {}) {
     process.steps = [Object.fromEntries(matrix.STEP_FIELDS.map((f) => [f, f === 'needsReasoning' ? false : 'a value']))];
     process.frequencyPerWeek = 2;
 
-    // EACH FIELD GETS THE SHAPE IT REQUIRES, not a blanket string: a `count` field needs a
-    // number and a `text[]` field an array of strings, and a fixture that gets this wrong is
-    // itself incomplete, which would make every assertion below meaningless.
+    // EACH FIELD GETS THE SHAPE IT REQUIRES, not a blanket string: a fixture that got this wrong
+    // would itself be incomplete, making every assertion below meaningless.
     const typedValues = {
         peopleAffected: 3,
         handoffTo: ['the team'],
@@ -90,8 +86,7 @@ test('the Dutch prompt states the three steps in order', () => {
 });
 
 test('the steps cover EVERY field rather than the four of the old rule', () => {
-    // The old rule applied to the typed minimum only, which left the other eleven with no
-    // guidance. The sweep is now stated as applying to every field.
+    // The sweep must apply to every field, not only the typed minimum.
     const text = prompt('en');
     assert.match(text, /it applies to every field/i, 'the scope is stated as every field');
     assert.match(text, /DERIVE BEFORE YOU ASK\.\*\* For every field in `missing`/s, 'the rule names `missing`, which is every field');
@@ -109,9 +104,8 @@ test('the REMOVED wording is gone from both languages', () => {
 });
 
 test('neither language allows an unconditional re-ask of the same field', () => {
-    // The rule now is: at most TWO attempts, the second in genuinely different words, and a
-    // third is forbidden. The removed rule had no such cap. This asserts the cap exists in
-    // both languages, which is what makes the stop rule real.
+    // At most TWO attempts, the second in genuinely different words, a third forbidden. Both
+    // languages must state the cap.
     for (const lang of LANGS) {
         const text = prompt(lang);
         const capped = /TWO ATTEMPTS, THEN RECORD AND MOVE ON/i.test(text)
@@ -164,15 +158,11 @@ test('the stop rule is made detectable through the conversation, with NO new sta
 });
 
 test('the model really does receive its own earlier turns, so the stop rule rests on something true', async () => {
-    // An assistant turn the model produced is in the next request's messages, so the model can
-    // read its own earlier questions and the stop rule rests on something real rather than on
-    // remembered state elsewhere.
+    // An assistant turn the model produced is in the next request's messages, so it can read its
+    // own earlier questions.
     //
     // THE CLAIM IS NO-NEW-STATE, NOT NO-TRANSFORMATION: non-user messages are forwarded, and the
-    // forwarded form pushes `{ role, content }` rather than the whole message, dropping the
-    // internal bookkeeping fields before the provider sees them. This reads that purpose.
-    //
-    // Checked against the source, since a live call would need a provider.
+    // forwarded form pushes `{ role, content }` rather than the whole message.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
 
     // 1. A NON-USER MESSAGE IS FORWARDED, wherever the guard builds the safe list.
@@ -252,8 +242,8 @@ test('a NORMAL field ACCEPTS prose', () => {
 });
 
 test('a malformed prose marker is not a marker, so it cannot close a field by asserting nothing', () => {
-    // `{ said: "" }`, `{ said: 42 }` and `{ said: " " }` are not prose: they fall through to
-    // the ordinary shape check, which refuses the object.
+    // `{ said: "" }`, `{ said: 42 }` and `{ said: " " }` are not prose: the ordinary shape check
+    // refuses the object.
     for (const bad of [{ said: '' }, { said: '   ' }, { said: 42 }, { said: null }]) {
         assert.equal(shapes.proseSaidIn(bad), null, `${JSON.stringify(bad)} is not a marker`);
     }
@@ -265,8 +255,8 @@ test('a malformed prose marker is not a marker, so it cannot close a field by as
 // ===========================================================================
 
 test('A `{ said: ... }` ON EVERY FIELD DOES NOT COMPLETE — the property that stops prose winning', () => {
-    // The condition the whole trade rests on: a model cannot finish by writing words into
-    // everything, because the typed minimum would still be missing.
+    // A model cannot finish by writing words into everything, because the typed minimum is still
+    // missing.
     const allProse = {};
     for (const field of [...matrix.PROCESS_FIELDS, ...matrix.EFFORT_FIELDS]) {
         allProse[field] = { said: `words for ${field}` };
@@ -282,8 +272,7 @@ test('A `{ said: ... }` ON EVERY FIELD DOES NOT COMPLETE — the property that s
 });
 
 test('prose on the ELEVEN normal fields, with the typed minimum typed, DOES complete', () => {
-    // The contrast that shows all-prose fails for the right reason: only the typed minimum
-    // is the floor.
+    // All-prose fails for the right reason: the typed minimum is the floor.
     const process = { task: 'entering invoices', trigger: 'the mail arrives' };
     process.steps = [Object.fromEntries(matrix.STEP_FIELDS.map((f) => [f, f === 'needsReasoning' ? false : 'v']))];
     process.frequencyPerWeek = 2;
@@ -298,9 +287,8 @@ test('prose on the ELEVEN normal fields, with the typed minimum typed, DOES comp
 });
 
 test('GENUINELY ABSENT evidence is still refused, distinct from prose', () => {
-    // THE DIFFERENCE THE TRADE DEPENDS ON: "they answered, in words" and "they were never
-    // asked" must not collapse. A field omitted entirely stays missing; the same field
-    // recorded as prose does not.
+    // "They answered, in words" and "they were never asked" must not collapse: a field omitted
+    // entirely stays missing, the same field recorded as prose does not.
     for (const field of ['dependsOn', 'frustration', 'peopleAffected']) {
         const present = typedProcess({ [field]: { said: 'their words' } });
         const absent = typedProcess();
@@ -407,9 +395,8 @@ test('a prose field renders the words, with no leftover marker object', async ()
 // provider. They pin whether the rule as written can govern what it claims to.
 
 test('REPORT 1: the stop rule forbids a repeated PHRASE, not only a repeated field', () => {
-    // A question text repeated eight times while `missing` falls from 10 to 4 shows the stop rule
-    // governs ASKING and does not catch the phrase. If the rule only counts asks-per-field, a
-    // model can repeat one sentence for different fields.
+    // A question repeated eight times while `missing` falls shows the stop rule governs ASKING and
+    // does not catch the phrase: counting asks-per-field lets one sentence serve different fields.
     const text = prompt('en');
 
     // The rule DOES name a repeated question, not only a repeated field.
@@ -427,9 +414,8 @@ test('REPORT 1: the stop rule forbids a repeated PHRASE, not only a repeated fie
 });
 
 test('REPORT 2: the prompt states that a prose-recorded field IS supplied', () => {
-    // The prose marker alone did not let the interview close: the model recorded `{ said }`
-    // and listed the field as missing anyway. The rule added for that is asserted here, and
-    // the CODE behaviour is asserted above (a prose normal field completes).
+    // The rule that a prose-recorded field IS supplied, asserted here; the CODE behaviour is
+    // asserted above.
     const text = prompt('en');
     assert.match(text, /the field stops being in `missing`/i, 'the prompt says the field stops being missing');
     assert.match(text, /it RECORDS what they told you/i, 'and that it is a record, not a failure');

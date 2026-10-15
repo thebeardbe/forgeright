@@ -1,19 +1,14 @@
 /**
  * The console resolver, and the four round states it has to render.
  *
- * WHAT THIS COVERS. The client saves `{ workflows: [...] }`, so a view that reads
- * `response.data.task` finds `task` undefined for EVERY interview round - the screen an admin opens
- * first shows `Untitled answer` with no fields at all, for every interview. The resolver reads the
- * right shape; a direct read beside it is the failure to avoid.
+ * The client saves `{ workflows: [...] }`, so a view that reads `response.data.task` finds `task`
+ * undefined for EVERY interview round - the screen an admin opens first shows `Untitled answer`
+ * with no fields at all. The resolver reads the right shape; a direct read beside it is the failure
+ * to avoid.
  *
- * ONE RESOLVER RATHER THAN A FALLBACK AT EACH READ SITE, because there are three read sites (the
- * answers title, the answers fields, the roadmap card) and a fallback written three times drifts.
- * So the resolver is tested DIRECTLY, as the single point, and then the four states are rendered
- * through the page so the wiring is tested rather than only the function.
- *
- * `Untitled answer` MUST OCCUR ZERO TIMES ON A PAGE OF REAL ROUNDS, and survives only as the
- * genuine fallback where there is honestly no task. That is the claim, and it is asserted by
- * counting.
+ * ONE RESOLVER RATHER THAN A FALLBACK AT EACH READ SITE, because a fallback written three times
+ * drifts. The resolver is tested DIRECTLY, and then the four states are rendered through the page
+ * so the wiring is tested rather than only the function.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,8 +32,7 @@ const view = (name) => fs.readFileSync(path.join(PROJECT_ROOT, 'views', name), '
 // ===========================================================================
 
 test('the INTERVIEW shape `{ workflows: [...] }` resolves to its first workflow', () => {
-    // What the client posts: `{ workflows: [{ task, trigger, ... }] }`. This is the shape EVERY
-    // live round saves and the one the view could not read.
+    // What the client posts: the shape EVERY live round saves.
     const data = { workflows: [{ id: 'w1', task: 'Sort the mail', trigger: 'the post arrives' }] };
     const resolved = responseWorkflow(data);
 
@@ -48,7 +42,7 @@ test('the INTERVIEW shape `{ workflows: [...] }` resolves to its first workflow'
 
 test('the IMPORTED shape (the workflow directly) resolves to itself', () => {
     // What a seed or the API writes: the workflow IS the data, with no `workflows` wrapper. The
-    // demo seed uses this shape, so a resolver that only read `workflows` would break the demo.
+    // demo seed uses this shape.
     const data = { task: 'Direct import', trigger: 'x' };
     assert.equal(responseWorkflow(data).task, 'Direct import');
     assert.equal(responseTitle(data), 'Direct import');
@@ -77,16 +71,13 @@ test('a workflow with NO `task` keeps a genuine `Untitled answer` fallback', () 
 });
 
 test('a BARE ARRAY is refused, which is deliberate rather than an oversight', () => {
-    // `responseWorkflow` returns null for an array, because no stored shape is a bare array: the
-    // client always posts `{ workflows: [...] }` and the imported shape is an object. Asserting it
-    // pins the behaviour, so a change to accept arrays is a deliberate one rather than a drift.
+    // No stored shape is a bare array, so a change to accept one is deliberate rather than drift.
     assert.equal(responseWorkflow([{ task: 'bare' }]), null, 'a top-level array is not a payload shape');
     assert.equal(responseTitle([{ task: 'bare' }]), 'Untitled answer');
 });
 
 test('SEVERAL workflows resolve to the FIRST, not a merge', () => {
-    // A round is the work of one process, so several is a shape the round model does not produce -
-    // and showing the first is honest rather than merging them into something never said.
+    // A round is the work of one process, so showing the first is honest rather than merging.
     const data = { workflows: [{ task: 'A' }, { task: 'B' }] };
     assert.equal(responseWorkflow(data).task, 'A');
     assert.equal(responseTitle(data), 'A');
@@ -99,13 +90,11 @@ test('a malformed entry inside `workflows` is skipped for a usable one', () => {
 });
 
 test('the resolver is READ AT EVERY SITE THAT RENDERS A FIELD, not re-implemented at each', () => {
-    // The point of one resolver: a view calls it rather than reaching into a payload shape. A view
-    // that reads `.data.task` directly renders every interview as untitled, so the direct read is
-    // asserted ABSENT.
+    // A view that reads `.data.task` directly renders every interview as untitled, so the direct
+    // read is asserted ABSENT.
     //
-    // THE ROADMAP IS NOT A FIELD SITE: it renders a LINK to each answer
-    // rather than the participant's fields, so it does not call the resolver. The sites are the two
-    // in the answers view - the title, and the fields partial - which are both asserted.
+    // THE ROADMAP IS NOT A FIELD SITE: it renders a LINK to each answer rather than the
+    // participant's fields. The sites are the two in the answers view.
     const answers = view('admin-answers.ejs');
     const roadmap = view('admin-roadmap.ejs');
 
@@ -119,10 +108,8 @@ test('the resolver is READ AT EVERY SITE THAT RENDERS A FIELD, not re-implemente
 });
 
 test('the roadmap LINKS to each answer instead of copying its fields', () => {
-    // The roadmap renders a link to the answer rather than every
-    // participant field inline - seven `words` rows per response - so
-    // the fields appear in one place rather than two. Both halves of that are asserted, because
-    // the link must reach the right answer.
+    // The roadmap renders a link to the answer rather than every participant field inline, so the
+    // fields appear in one place rather than two, and the link must reach the right answer.
     const roadmap = view('admin-roadmap.ejs');
 
     // A link, built from the response id, to the answers view.
@@ -138,9 +125,8 @@ test('the roadmap LINKS to each answer instead of copying its fields', () => {
 });
 
 test('`includeFields` defaults TRUE, so the roadmap would get fields if it asked for them', () => {
-    // The partial gained an `includeFields` flag with the roadmap change. Its default is the one
-    // that matters: absent means fields are rendered, so a caller that does not pass it (the
-    // roadmap did not, before the change) gets the full field list rather than silence.
+    // The default matters: absent `includeFields` means fields are rendered, so a caller that does
+    // not pass it gets the full field list rather than silence.
     const partial = view('partials/response-fields.ejs');
     assert.match(partial, /typeof includeFields === 'undefined' \|\| includeFields/,
         'an absent includeFields renders the fields');
@@ -152,10 +138,8 @@ test('`includeFields` defaults TRUE, so the roadmap would get fields if it asked
 });
 
 test('a valid `open` id opens that answer SERVER-SIDE, and a stale one opens nothing', async () => {
-    // THE PROPERTY THE LINK DEPENDS ON. `?open=<id>` is read by the route and marks one `<details>`
-    // open, so the reader lands on the answer the roadmap linked to. A stale id must open nothing
-    // rather than everything or an error - an id from a deleted response is a link that must fail
-    // quietly.
+    // `?open=<id>` marks one `<details>` open. A stale id must open nothing rather than everything
+    // or an error: an id from a deleted response is a link that must fail quietly.
     const consoleViews = fs.readFileSync(path.join(PROJECT_ROOT, 'lib', 'auth', 'console-views.js'), 'utf8');
     assert.match(consoleViews, /openResponseId: typeof req\.query\.open === 'string' \? req\.query\.open : null/,
         'the route reads the open parameter');
@@ -166,10 +150,8 @@ test('a valid `open` id opens that answer SERVER-SIDE, and a stale one opens not
 });
 
 test('the placeholder contrast is asserted against the CSS, not a hex', () => {
-    // A placeholder colour that matches the entered text is unreadable. A hex would
-    // be an assertion about a value rather than about the rule, so what is pinned is that a
-    // placeholder rule EXISTS and sets a colour distinctly from the input text. The exact value
-    // is a design choice and stays in the stylesheet.
+    // A hex would be an assertion about a value rather than the rule, so what is pinned is that a
+    // placeholder rule EXISTS and sets a colour distinctly from the input text.
     const css = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'css', 'app.css'), 'utf8');
     assert.match(css, /::placeholder/, 'there is a placeholder rule');
     // And it sets a colour rather than relying on the browser default (which is what matched the
@@ -238,13 +220,9 @@ test('EMPTY: a finished round with every field declined names itself and tags AL
 });
 
 test('a declined `steps` RENDERS a row and its "not answered" tag', () => {
-    // A declined `steps` must render a row rather than nothing: the
-    // partial's steps block requires an ARRAY, and `{ declined: ... }` falls through it unless
-    // handled. That would leave a gap in the "every field tagged" claim - 14 tags for 15 fields -
-    // and the field most likely to be visibly refused would be the one that vanishes.
-    //
-    // So the assertion is: the row appears, it carries the tag, and
-    // the count is FIFTEEN. An admin counting tags finds the whole round.
+    // The partial's steps block requires an ARRAY, so `{ declined: ... }` falls through it unless
+    // handled, leaving 14 tags for 15 fields. The row must appear, carry the tag, and make the
+    // count FIFTEEN.
     return ejs.renderFile(
         path.join(PROJECT_ROOT, 'views', 'partials', 'response-fields.ejs'),
         { data: allDeclined() }
@@ -258,9 +236,9 @@ test('a declined `steps` RENDERS a row and its "not answered" tag', () => {
 });
 
 test('a declined `steps` renders in all THREE states - words, wordless, and prose', () => {
-    // The fix must cover every way steps arrives, with the SAME tags as every other field: a
-    // declined-with-words row shows their words and "not answered", a wordless one shows
-    // "they did not say" and "not answered", and prose shows "in their own words".
+    // Every way steps arrives carries the SAME tags as every other field: a declined-with-words row
+    // shows their words and "not answered", a wordless one "they did not say", prose "in their own
+    // words".
     const partial = {
         task: 't', trigger: 'tr', peopleAffected: 3, handoffTo: ['x'], waitsFor: ['x'], dependsOn: ['x'],
         systems: ['x'], touchedDepartments: ['x'], mistakesPerPeriod: 1, mistakeConsequence: 'c',

@@ -1,17 +1,16 @@
 /**
  * The churning-claim fixture, the three-way list distinction, and the residual mechanisms.
  *
- * WHAT THIS FILE IS ABOUT. A model that re-partitions its claims each turn is a termination
- * mechanism distinct from oscillation: the model lies differently every turn rather than repeating
- * itself, so nothing that looks for a repeated sentence can catch it.
+ * A model that re-partitions its claims each turn is a termination mechanism distinct from
+ * oscillation: it lies differently every turn rather than repeating itself, so nothing that looks
+ * for a repeated sentence can catch it.
  *
- * THE DEFECT IT EXPOSES. Mid-interview, `missing` is built partly from the model's own `have`
+ * THE FAILURE IT EXPOSES. Mid-interview, `missing` is built partly from the model's own `have`
  * CLAIM, believed without evidence. A model that reshuffles which fields it claims to hold makes
  * `missing` fall while NOTHING is recorded - `have + missing` staying at fifteen throughout - and
- * every fall was read as the participant answering, so an interview could ask thirty-one identical
- * questions in a row without either exhaustion branch firing.
+ * every fall is read as the participant answering, so the interview keeps asking forever.
  *
- * THE DISTINCTION THAT FIXES IT, and the heart of this file - three lists that are not the same:
+ * THE DISTINCTION THAT FIXES IT - three lists that are not the same:
  *
  *   missing     what the model CLAIMS is open
  *   supplied    what the model claims is answered, minus declined   (STILL A CLAIM)
@@ -41,11 +40,8 @@ const ALL = matrix.ALL_PROCESS_FIELD_NAMES;
 
 /**
  * A churning claim: the fields the model CLAIMS to hold move with `turn`, while `have + missing`
- * stays at fifteen.
- *
- * This is the churning signature. `K` moves 3..10 and wraps, so the claimed-hold count
- * changes every turn and any guard reading it sees "progress" constantly, while nothing is
- * recorded.
+ * stays at fifteen. `K` moves 3..10 and wraps, so the claimed-hold count changes every turn and a
+ * guard reading it sees "progress" constantly.
  */
 export function claims(turn) {
     const K = 3 + (turn % 8);
@@ -55,8 +51,8 @@ export function claims(turn) {
 /**
  * A payload that PROVES a constant set of fields, so `evidenced` does not move.
  *
- * Only the first three fields are typed, whatever the claim says. This is the payload half of the
- * lie: the model claims to hold nine fields while the payload carries three.
+ * Only the first three fields are typed, whatever the claim says: the model claims to hold nine
+ * fields while the payload carries three.
  */
 function constantPayload() {
     const values = {};
@@ -112,9 +108,8 @@ function maxRun(replies) {
 // ===========================================================================
 
 test('the fixture reproduces the signature: the claim moves while have + missing stays at fifteen', () => {
-    // The failure mode the fixture represents, asserted directly: the claimed-hold count MOVES
-    // every turn and the two lists always sum to the field count. A guard that reads the claim
-    // therefore sees progress on every turn while nothing is recorded.
+    // Asserted directly: the claimed-hold count MOVES every turn and the two lists always sum to
+    // the field count, so a guard reading the claim sees progress while nothing is recorded.
     const counts = [];
     for (let turn = 1; turn <= 12; turn += 1) {
         const c = claims(turn);
@@ -126,12 +121,10 @@ test('the fixture reproduces the signature: the claim moves while have + missing
 });
 
 test('the three lists on a CHURNING model: only `evidenced` holds still', () => {
-    // THE DISTINCTION THAT FIXES IT, measured rather than taken on trust. Against a churning claim
-    // with a constant payload: `missing` and `supplied` both move (they believe the claim), and
-    // `evidenced` is constant (it counts what the payload proves).
+    // Against a churning claim with a constant payload: `missing` and `supplied` both move (they
+    // believe the claim), and `evidenced` is constant (it counts what the payload proves).
     //
-    // `supplied` MOVING IS THE POINT: reading `supplied` instead of `missing` does not work, for
-    // exactly this reason.
+    // `supplied` MOVING IS THE POINT: reading `supplied` instead of `missing` does not work.
     const missingCounts = [];
     const suppliedCounts = [];
     const evidencedCounts = [];
@@ -150,8 +143,7 @@ test('the three lists on a CHURNING model: only `evidenced` holds still', () => 
 });
 
 test('a CHURNING model TERMINATES, bounded, where a guard that reads the claim would not', () => {
-    // A model that re-partitions its claim every turn must still end, and end BOUNDED, rather than
-    // reading each fresh claim as progress and repeating forever.
+    // A model that re-partitions its claim every turn must still end, and end BOUNDED.
     const { endedAt, replies } = runChurn({ rate: 0 });
 
     assert.notEqual(endedAt, null, 'the churning conversation terminates');
@@ -171,11 +163,9 @@ test('five churn rates all terminate, none running away', () => {
 });
 
 test('a guard that reads the claim alone STALLS on this fixture - so the fixture has teeth', () => {
-    // A FIXTURE THAT PASSES AGAINST UNGUARDED CODE PROVES NOTHING. This drives the conversation
-    // with the guard forced to read the CLAIM (`hasEvidenceData` false) and shows it runs far
-    // longer with long runs of one sentence. The comparison is the assertion: the guarded path is
-    // dramatically shorter, which is what makes the terminating tests meaningful rather than
-    // vacuous.
+    // A FIXTURE THAT PASSES AGAINST UNGUARDED CODE PROVES NOTHING. With the guard forced to read
+    // the CLAIM (`hasEvidenceData` false) the conversation runs far longer with long runs of one
+    // sentence, which is what makes the terminating tests meaningful rather than vacuous.
     const simulate = (claimOnly) => {
         const conversation = [];
         const replies = [];
@@ -183,8 +173,7 @@ test('a guard that reads the claim alone STALLS on this fixture - so the fixture
         for (let turn = 1; turn <= 200; turn += 1) {
             const askedBefore = conversation.map((entry) => ({
                 text: entry.content,
-                // `claimOnly` omits the evidence count, which forces the claim-based fallback and
-                // models a guard with no evidence data to judge from.
+                // Omitting the evidence count forces the claim-based fallback.
                 ...(claimOnly ? {} : { evidencedCount: entry.evidenced }),
                 openCount: entry.missing.length, substituted: entry.substituted === true
             }));
@@ -201,10 +190,9 @@ test('a guard that reads the claim alone STALLS on this fixture - so the fixture
     const claimOnly = simulate(true);
 
     assert.notEqual(fixed.endedAt, null, 'the fixed guard terminates');
-    // THE CLAIM-READING GUARD IS DRAMATICALLY LONGER, which is the stall. It is not infinite on
-    // this fixture - the claim cycles through eight values, so the fallback eventually sees a
-    // repeat - but it runs many times longer and with long runs of one sentence, which is the
-    // live signature (thirty-one identical in a row).
+    // Dramatically longer, which is the stall. Not infinite on this fixture - the claim cycles
+    // through eight values, so the fallback eventually sees a repeat - but with long runs of one
+    // sentence.
     assert.ok(claimOnly.endedAt > fixed.endedAt * 3,
         `the claim-reading guard runs many times longer (fixed ${fixed.endedAt}, claim ${claimOnly.endedAt})`);
     assert.ok(maxRun(claimOnly.replies) >= 5,
@@ -218,8 +206,8 @@ test('a guard that reads the claim alone STALLS on this fixture - so the fixture
 // ===========================================================================
 
 test('EVIDENCE IS AUTHORITATIVE: a churning claim gains nothing from a fallen `missing`', () => {
-    // The order that matters. When evidence data is present it decides, so a model whose claim says
-    // twelve fields are open while the payload proves the same set gets no progress credit.
+    // When evidence data is present it decides, so a claim of twelve open fields against a constant
+    // payload gets no progress credit.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const raw = (c) => JSON.stringify({ status: 'asking', content: c, processes: [partial], have: [], missing: [] });
     const q = 'What systems do you use?';
@@ -233,10 +221,9 @@ test('EVIDENCE IS AUTHORITATIVE: a churning claim gains nothing from a fallen `m
 });
 
 test('the FALLBACK prevents a wall: an old-shape caller with a fallen `missing` passes', () => {
-    // THE OTHER DIRECTION. A conversation recorded before `evidenced` existed carries only
-    // `openCount`. With no evidence data to judge from, treating "no evidenced data" as "no
-    // progress" would substitute on every such repeat and turn a legitimate second attempt into a
-    // wall - so the claim-based check applies.
+    // A conversation recorded before `evidenced` existed carries only `openCount`. With no evidence
+    // data to judge from, treating that as "no progress" would substitute on a legitimate second
+    // attempt, so the claim-based check applies.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const raw = (c) => JSON.stringify({ status: 'asking', content: c, processes: [partial], have: [], missing: [] });
     const q = 'What systems do you use?';
@@ -260,8 +247,8 @@ test('REAL evidence progress passes, so the guard is not a wall for a healthy in
 });
 
 test('the reply carries `evidenced` forward, so the next turn can compare against it', () => {
-    // The mechanism: the server sends its own `evidenced` list on every reply, and the caller
-    // records it with the question. Without it, every repeat would fall to the claim-based path.
+    // The server sends its own `evidenced` list on every reply and the caller records it with the
+    // question; without it every repeat would fall to the claim-based path.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const r = parseModelResponse(JSON.stringify({
         status: 'asking', content: 'Who else is involved in this?', processes: [partial], have: [], missing: []
@@ -277,17 +264,15 @@ test('the reply carries `evidenced` forward, so the next turn can compare agains
 // ===========================================================================
 
 test('the residual stall of requiring all fifteen: twelve asked, then stuck', () => {
-    // Requiring ALL fifteen questions was too strong, because a field the model CLAIMS is never
+    // Requiring ALL fifteen questions is too strong, because a field the model CLAIMS is never
     // offered - the substitute picks from `missing` - so its phrasing never enters the conversation
-    // and exhaustion could never fire: the move-on line was emitted every turn, indefinitely.
-    //
-    // Driven through the real guard with the churn fixture: the round ends even though fewer than
-    // fifteen questions were ever asked.
+    // and exhaustion never fires. Driven through the real guard: the round ends even though fewer
+    // than fifteen questions were asked.
     const { endedAt, replies } = runChurn({ rate: 0 });
 
     assert.notEqual(endedAt, null, 'the round ends rather than looping on the move-on line');
-    // A real field question is asked for every field the payload leaves OPEN, which is fewer than
-    // the three the payload proves - so this is the relaxation at work.
+    // A real field question is asked for every field the payload leaves OPEN, so this is the
+    // relaxation at work.
     const asked = new Set(replies);
     assert.ok(asked.size < ALL.length, `fewer than fifteen questions were asked (asked ${asked.size})`);
 });
@@ -316,23 +301,16 @@ function turnWithChurn(content, conversation, turn) {
 }
 
 test('FINDING: a model that REWORDS its question each turn is never caught - the next mechanism', () => {
-    // THE ATTACK THE BRIEF ASKED FOR, and it succeeds. The guard matches a repeat by EXACT TEXT.
-    // A model that sends the same question with a trivial variation - a numeric suffix, a
-    // rephrasing, anything that changes the string - is never a match target, so the guard never
-    // fires and the interview runs indefinitely. The participant sees the same question, reworded,
-    // forever.
+    // THE ATTACK, and it succeeds. The guard matches a repeat by EXACT TEXT, so a model that sends
+    // the same question with a trivial variation - a numeric suffix, a rephrasing - is never a
+    // match target, the guard never fires, and the interview runs indefinitely.
     //
-    // IT IS THE SAME CLASS the guard exists to stop, surviving the exact-text comparison: the
-    // termination argument is "a repeat with no progress is caught", and a reworded question is
-    // not a repeat. Measured: 100 turns, never exhausting, with a two-field payload.
-    //
-    // RECORDED AS TODAY'S BEHAVIOUR. Fixing it needs a similarity test rather than equality, or a
-    // cap on turns-without-evidence, and that is a design decision rather than a mutation.
+    // Measured: 100 turns, never exhausting, with a two-field payload. RECORDED AS TODAY'S
+    // BEHAVIOUR; fixing it needs a similarity test or a turn cap, which is a design decision.
     const conversation = [];
     let endedAt = null;
     for (let turn = 1; turn <= 100; turn += 1) {
-        // The SAME question, reworded with a counter - what a model "trying again in different
-        // words" produces.
+        // The SAME question, reworded with a counter.
         const reworded = `Who else is involved in this? (${turn})`;
         const entry = turnWithChurn(reworded, conversation, turn);
         conversation.push(entry);
@@ -344,10 +322,8 @@ test('FINDING: a model that REWORDS its question each turn is never caught - the
 });
 
 test('FINDING: the reworded attack also defeats the evidence check, because no repeat is seen', () => {
-    // The same attack against the evidence check: `evidenced` correctly shows NO progress, and the
-    // guard would substitute - but it only gets the chance on a REPEAT. With unique text every
-    // turn there is no repeat, so the evidence comparison is never reached. The evidence check is
-    // correct and still bypassed.
+    // The same attack against the evidence check: `evidenced` correctly shows NO progress, but the
+    // guard only gets the chance on a REPEAT, and unique text is never a repeat.
     const conversation = [];
     for (let turn = 1; turn <= 30; turn += 1) {
         const entry = turnWithChurn(`What about the mail on day ${turn}?`, conversation, turn);

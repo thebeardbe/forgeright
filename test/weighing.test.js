@@ -1,16 +1,11 @@
 /**
  * Workflow 3: weighing.
  *
- * The model composes ONE number for a process from ten terms and writes a
- * paragraph explaining it; the code validates the shape, stores the score against
- * the REVISION, and sorts the roadmap.
+ * The model composes ONE number for a process from ten terms and writes a paragraph explaining it;
+ * the code validates the shape, stores the score against the REVISION, and sorts the roadmap.
  *
- * WHAT THE CODE DOES NOT DO, and this is pinned deliberately rather than assumed:
- * it does not compute the score from the terms, and it does not enforce the
- * direction of a cost term. See the boundary test near the end.
- *
- * STORE_DIR is a temp directory per run, set before anything is imported, so
- * data/store/ is never touched.
+ * WHAT THE CODE DOES NOT DO, pinned deliberately: it does not compute the score from the terms, and
+ * it does not enforce the direction of a cost term. See the boundary test near the end.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -98,9 +93,7 @@ test('SEVERAL missing terms are ALL named', () => {
 });
 
 test('a term that is a STRING is refused as not-a-number, never coerced', () => {
-    // Coercion is the quiet failure this gate exists to prevent: "5" is a reply
-    // that ignored the contract, and accepting it would make the one shape check
-    // also guess about types.
+    // Coercion is the quiet failure this gate prevents: "5" is a reply that ignored the contract.
     const result = weighing.validateWeighing(validReply({ terms: { ...termsAt(), time: '5' } }));
 
     assert.equal(result.ok, false);
@@ -122,8 +115,7 @@ test('a NON-NUMERIC, MISSING or INFINITE score is refused, and a string score is
 });
 
 test('missing, empty, whitespace and non-string reasoning are ALL refused', () => {
-    // A score nobody can explain cannot be reviewed, which is the spec's whole
-    // protection for this step.
+    // A score nobody can explain cannot be reviewed, which is the protection for this step.
     for (const reasoning of [undefined, '', '   ', '\t\n', 42, null, {}]) {
         const result = weighing.validateWeighing(validReply({ reasoning }));
         assert.equal(result.ok, false, `reasoning ${JSON.stringify(reasoning)} must be refused`);
@@ -158,10 +150,8 @@ test('a missing term is treated the same as an explicit null', () => {
 
 // --- the term RANGE, inclusive at both ends --------------------------------
 //
-// The owner moved the whole feature onto one 0-100 scale: the ten terms AND the
-// composite score. The live bound is TERM_MIN/TERM_MAX, inclusive, PER TERM. The
-// score is UNBOUNDED, because it is a composite the model composes rather than a
-// value with its own scale - which is a deliberate asymmetry, pinned below.
+// The whole feature is on one 0-100 scale: the ten terms AND the composite score. The live bound is
+// TERM_MIN/TERM_MAX, inclusive, PER TERM. See the score's own bound below.
 
 test('the range constants are 0 and 100', () => {
     assert.equal(weighing.TERM_MIN, 0);
@@ -227,8 +217,7 @@ test('the SCORE is bounded on the SAME 0-100 scale as the terms', () => {
         assert.equal(result.score, score);
     }
 
-    // Out of range is refused, including a fraction just outside, so the bound is
-    // on the value and not only on whole numbers.
+    // Out of range is refused including a fraction just outside, so the bound is on the value.
     for (const score of [-5, 250, 1_000_000, 100.5, -0.5]) {
         const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
         assert.equal(result.ok, false, `score ${score} must be refused`);
@@ -239,9 +228,8 @@ test('the SCORE is bounded on the SAME 0-100 scale as the terms', () => {
 });
 
 test('the SCORE refusal is distinguishable from the TERM refusal', () => {
-    // A reader who saw the term wording for a bad score would go looking for a term
-    // to fix. Both strings are asserted, side by side, so the two cannot collapse
-    // into one message.
+    // A reader who saw the term wording for a bad score would look for a term to fix, so the two
+    // messages must not collapse into one.
     const badScore = weighing.validateWeighing(validReply({ score: 250, terms: termsAt(50) }));
     const badTerm = weighing.validateWeighing(validReply({ score: 50, terms: { ...termsAt(50), complexity: 140 } }));
 
@@ -253,9 +241,8 @@ test('the SCORE refusal is distinguishable from the TERM refusal', () => {
 });
 
 test('TYPE is checked BEFORE RANGE, so a numeric string is a type error, not a range error', () => {
-    // Deliberate ordering. A string is refused as a type error even when its value
-    // is also out of range, so the message tells the model WHAT is wrong (the type)
-    // rather than sending it to adjust a number it never sent as a number.
+    // A string is refused as a TYPE error even when its value is also out of range, so the message
+    // says what is wrong rather than sending the model to adjust a number it never sent.
     for (const score of ['42', '5', '250', '999']) {
         const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
         assert.equal(result.ok, false, `score ${JSON.stringify(score)} must be refused`);
@@ -267,10 +254,8 @@ test('TYPE is checked BEFORE RANGE, so a numeric string is a type error, not a r
 // ===========================================================================
 // 2. COST_TERMS AND isCostTerm — THE CLASSIFICATION
 // ===========================================================================
-//
-// The classification is what the code holds. The DIRECTION (a high cost term
-// counting against the process) is applied by the model in the prompt; see the
-// boundary test at the end of this file.
+// The classification is what the code holds; the DIRECTION (a high cost term counting against the
+// process) is applied by the model in the prompt. See the boundary test at the end.
 
 test('isCostTerm is true for exactly the four cost terms', () => {
     assert.deepEqual([...weighing.COST_TERMS], ['departments', 'complexity', 'reasoningSteps', 'buildEffort']);

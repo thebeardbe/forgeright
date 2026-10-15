@@ -1,33 +1,27 @@
 /**
  * The cookie notice: one partial, every page, and a dismiss control that works wherever it appears.
  *
- * WHY IT IS A SHARED PARTIAL, and why the two symptoms were one cause. The banner's markup and
- * script must not live inline in one page: a page without the partial has no banner at all, and a
- * banner whose button does nothing reads as a broken click. It is a partial included from
- * `theme-head`, which every page already renders.
+ * WHY IT IS A SHARED PARTIAL. The banner's markup and script must not live inline in one page: a
+ * page without the partial has no banner at all, and a banner whose button does nothing reads as a
+ * broken click. It is a partial included from `theme-head`, which every page renders.
  *
- * TWO THINGS THAT COULD SHIP BROKEN, and they are what this file exists to catch:
+ * TWO THINGS THAT COULD SHIP BROKEN:
  *
- *   1. `.hidden` LIVED ONLY IN `questionnaire.css`. The banner uses it in the markup and on click,
- *      so extracting the markup without moving that rule would have put a VISIBLE banner on the
- *      other pages where clicking did nothing - the owner's symptom, widened to nine pages.
- *   2. THE BANNER COVERS THE QUESTIONNAIRE'S INPUT. It is `position: fixed; bottom: 0`, 177px tall
- *      at 390px, and `elementFromPoint` at the input's centre returned the banner, so a participant
- *      could not type.
+ *   1. `.hidden` LIVED ONLY IN `questionnaire.css`, which only the questionnaire loads. The banner
+ *      uses it in the markup and on click, so extracting the markup without moving that rule would
+ *      put a VISIBLE banner on the other pages where clicking did nothing.
+ *   2. THE BANNER COVERS THE QUESTIONNAIRE'S INPUT: `position: fixed; bottom: 0`, 177px tall at
+ *      390px, so a participant could not type.
  *
- * TWO KINDS OF ASSERTION, chosen to fit what each claim actually is:
+ * TWO KINDS OF ASSERTION:
  *
- *   - THE PAGE REACH is driven over HTTP against a spawned server, because "it renders here" is a
- *     statement about a real request through the real router - a source grep would pass on a view
- *     that includes the partial inside a branch that never runs.
- *   - THE DISMISS BEHAVIOUR runs the partial's OWN SCRIPT in a `node:vm` sandbox with a stub DOM.
- *     There is no DOM library in this project, and the script touches a small, known surface, so a
- *     stub is enough to answer "does clicking hide it and store the key" - which is the assertion
- *     that would have caught `.hidden` being left behind.
+ *   - THE PAGE REACH is driven over HTTP against a spawned server, because a source grep would pass
+ *     on a view that includes the partial inside a branch that never runs.
+ *   - THE DISMISS BEHAVIOUR runs the partial's OWN SCRIPT in a `node:vm` sandbox with a stub DOM,
+ *     which is enough to answer "does clicking hide it and store the key".
  *
- * WHAT THIS FILE CANNOT DO IS MEASURE LAYOUT. The overlap fix is a CSS custom property, and its
- * effect on whether a participant can reach the input needs a browser's layout engine - see the
- * section at the end, which characterises the mechanism and says plainly what was not verified.
+ * WHAT THIS FILE CANNOT DO IS MEASURE LAYOUT: the overlap fix is a CSS custom property whose effect
+ * needs a browser's layout engine. See the section at the end.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -59,11 +53,11 @@ store.closeAll();
 
 const { createContext, runInContext } = await import('node:vm');
 
-/** The partial's source, read once: the markup, the script and the CSS rules all come from it. */
+/** The partial's source, read once: the markup, the script and its CSS rules all come from it. */
 const PARTIAL = fs.readFileSync(path.join(VIEWS, 'partials', 'cookie-notice.ejs'), 'utf8');
 const STORAGE_KEY = 'fr_cookie_notice';
 
-/** The banner's inline script, extracted from the partial so the tests run the REAL code. */
+/** The banner's inline script, extracted so the tests run the REAL code. */
 const SCRIPT = (() => {
     const match = PARTIAL.match(/<script>([\s\S]*?)<\/script>/);
     assert.notEqual(match, null, 'the partial carries an inline script');
@@ -75,10 +69,8 @@ const SCRIPT = (() => {
 // ===========================================================================
 
 /**
- * Runs the banner's script against a stub DOM and returns handles to inspect it.
- *
- * `storage` is `'working'`, `'throwing'` (getItem throws, as a blocked store does) or `'absent'`
- * (`localStorage` is undefined, as in an environment without it).
+ * Runs the banner's script against a stub DOM. `storage` is `'working'`, `'throwing'` (getItem
+ * throws, as a blocked store does) or `'absent'` (`localStorage` is undefined).
  */
 function runBanner({ storage = 'working', storedKey = null } = {}) {
     const classes = new Set(['cookie-banner', 'hidden']);
@@ -220,11 +212,9 @@ after(async () => {
 });
 
 /**
- * The page types the banner must reach, with the reason each is on the list.
- *
- * THE LAST TWO ARE THE POINT of including them: the 404 and the 421 render WITHOUT console chrome,
- * from the error page rather than a console view, and they are the ones most likely to have been
- * missed when the banner moved into `theme-head`.
+ * The page types the banner must reach. The last two are the point of the list: the 404 and the 421
+ * render WITHOUT console chrome, from the error page rather than a console view, so they are the
+ * ones most likely to be missed when the banner moves into `theme-head`.
  */
 const PAGES = [
     ['landing', () => request({ path: '/' })],
@@ -241,22 +231,20 @@ const PAGES = [
 test('the banner, its script and its stylesheet reach EVERY page type', async () => {
     for (const [name, fetch] of PAGES) {
         const res = await fetch();
-        // The markup, and NOT `hidden` in the served HTML: the script decides whether to reveal it,
-        // so a page that shipped it visible would flash for everybody who had already dismissed it.
+        // The markup, and NOT `hidden` in the served HTML: a served-visible banner would flash for
+        // everybody who had already dismissed it.
         assert.match(res.text, /id="cookie-banner"/, `${name}: the banner markup is rendered`);
         assert.match(res.text, /class="cookie-banner hidden"/, `${name}: it starts hidden`);
         // The script travels with the markup, so a page cannot get one without the other.
         assert.match(res.text, new RegExp(STORAGE_KEY), `${name}: the inline script is rendered`);
         assert.match(res.text, /id="cookie-ok"/, `${name}: the dismiss control is rendered`);
-        // THE STYLESHEET, because a page with the markup and no `app.css` renders a fixed,
-        // unstyled bar and a control whose `.hidden` rule does nothing.
+        // A page with the markup and no `app.css` renders a fixed, unstyled bar.
         assert.match(res.text, /\/css\/app\.css/, `${name}: app.css is loaded`);
     }
 });
 
 test('the 404 and the 421 carry the banner although they render no console chrome', async () => {
-    // Called out separately because they are the two the owner's report would have missed: they
-    // come from `views/error.ejs`, not from a console view, and they render with no session.
+    // These two come from `views/error.ejs`, not a console view, and render with no session.
     const notFound = await request({ path: '/nothing-here' });
     const refusedHost = await request({ path: '/', host: 'wrong-host.example' });
 
@@ -269,13 +257,12 @@ test('the 404 and the 421 carry the banner although they render no console chrom
 });
 
 test('the banner is included ONCE per page, from `theme-head`, not duplicated by callers', async () => {
-    // A page that included the partial directly AND through `theme-head` would render two banners
-    // and two scripts, and the second `getElementById` would attach a second click handler.
+    // A page including the partial directly AND through `theme-head` would render two banners and
+    // two scripts, and attach a second click handler.
     //
-    // THE SCRIPT IS COUNTED BY THE BLOCK THAT CARRIES THE BEHAVIOUR, not by occurrences of the key:
-    // the key appears TWICE inside one script (`getItem` and `setItem`), so counting occurrences
-    // would read it as two scripts. The marker used is the click handler, which appears once per
-    // script and nowhere else.
+    // THE SCRIPT IS COUNTED BY THE CLICK HANDLER, not by occurrences of the storage key: the key
+    // appears TWICE inside one script (`getItem` and `setItem`), so counting it would read the
+    // script as two.
     const res = await request({ path: '/' });
     const banners = (res.text.match(/id="cookie-banner"/g) ?? []).length;
     const scripts = (res.text.match(/getElementById\('cookie-ok'\)/g) ?? []).length;
@@ -285,10 +272,9 @@ test('the banner is included ONCE per page, from `theme-head`, not duplicated by
 });
 
 test('NO view includes the banner without also loading app.css', async () => {
-    // The structural form of the stylesheet claim, checked across every view rather than the pages
-    // a request happens to reach: a view that included the partial and skipped `app.css` would
-    // render a fixed unstyled bar. Both arrive through `theme-head`, and this asserts that no view
-    // reaches the partial another way.
+    // The structural form of the stylesheet claim, across every view rather than the pages a
+    // request happens to reach: both arrive through `theme-head`, and no view may reach the partial
+    // another way.
     const viewFiles = fs.readdirSync(VIEWS).filter((f) => f.endsWith('.ejs'));
     const includesBannerDirectly = [];
 
@@ -323,9 +309,9 @@ test('LOADING with the key already stored LEAVES IT HIDDEN', () => {
 });
 
 test('the DISMISS control HIDES the banner and STORES the record', () => {
-    // THE ASSERTION THAT WOULD HAVE CAUGHT `.hidden` BEING LEFT BEHIND. If the rule stayed in
-    // `questionnaire.css`, the click would still store the key and remove the class, so this test
-    // alone would pass - which is why the CSS section below asserts the rule's location too.
+    // If the `.hidden` rule stayed in `questionnaire.css` the click would still store the key and
+    // remove the class, so this test alone would pass - which is why the CSS section below asserts
+    // the rule's location too.
     const banner = runBanner({ storage: 'working' });
     assert.equal(banner.visible(), true, 'shown before the click');
     assert.equal(banner.stored(), null, 'and nothing stored yet');
@@ -337,9 +323,8 @@ test('the DISMISS control HIDES the banner and STORES the record', () => {
 });
 
 test('the stored key is the SAME one on every page, so one dismissal covers all of them', () => {
-    // ONE KEY, not one per page: dismissing on the landing page must silence the console, the
-    // questionnaire and the error pages too. The script is the same partial everywhere, so this
-    // asserts the key it writes is the key it reads.
+    // ONE KEY, not one per page: dismissing on the landing page must silence every page, so the key
+    // written is the key read.
     const first = runBanner({ storage: 'working' });
     first.click();
     assert.equal(first.stored(), '1');
@@ -360,23 +345,21 @@ test('the click handler is registered exactly once per page', () => {
 // ===========================================================================
 
 test('a THROWING localStorage SHOWS the notice - the deliberate degradation', () => {
-    // A banner that silently never appears is worse than one that appears twice: a reader who
-    // cannot dismiss it is annoyed, while a reader who never sees it is not told at all. The
-    // `catch` reveals rather than hides, and this asserts that direction.
+    // The `catch` reveals rather than hides: a reader who cannot dismiss the banner is annoyed,
+    // while a reader who never sees it is not told at all.
     const blocked = runBanner({ storage: 'throwing' });
     assert.equal(blocked.visible(), true, 'the notice is SHOWN when storage throws');
 });
 
 test('an ABSENT localStorage SHOWS the notice too', () => {
-    // The same degradation reached the other way: the property is not there at all, so the read
-    // throws a ReferenceError-adjacent failure inside the same `try`.
+    // The same degradation reached the other way: `localStorage` is not there at all.
     const absent = runBanner({ storage: 'absent' });
     assert.equal(absent.visible(), true, 'the notice is SHOWN when there is no storage');
 });
 
 test('a THROWING setItem still hides the banner, so the click is not a dead end', () => {
-    // The click must visibly work even when the record cannot be written. Otherwise the button
-    // appears broken and the reader presses it repeatedly.
+    // The click must visibly work even when the record cannot be written, or the button appears
+    // broken.
     const blocked = runBanner({ storage: 'throwing' });
     assert.equal(blocked.visible(), true, 'shown to begin with');
     blocked.click();
@@ -389,8 +372,7 @@ test('a THROWING setItem still hides the banner, so the click is not a dead end'
 
 test('the `.hidden` rule lives in app.css, which every page loads - NOT in questionnaire.css', () => {
     // The banner carries `hidden` in its markup and adds it on click, so `.hidden` must live in a
-    // stylesheet every page loads. Defined only in `questionnaire.css`, it would leave a visible
-    // banner on every other page WHERE CLICKING DID NOTHING - a broken control, not an absent one.
+    // stylesheet every page loads, or every other page shows a banner WHERE CLICKING DOES NOTHING.
     const app = fs.readFileSync(path.join(CSS, 'app.css'), 'utf8');
     const questionnaire = fs.readFileSync(path.join(CSS, 'questionnaire.css'), 'utf8');
 
@@ -411,9 +393,9 @@ test('the banner rules live in app.css, so a view cannot load them by accident o
 });
 
 test('the reserved space is a custom property the script sets and the CSS consumes', () => {
-    // The overlap mechanism, asserted STRUCTURALLY: the script measures the banner and writes
-    // `--cookie-notice-height`; `app.css` pads the body by it; `questionnaire.css` shrinks the
-    // history area by it. Whether that is ENOUGH at a given viewport needs layout - see below.
+    // The overlap mechanism, asserted STRUCTURALLY: the script writes `--cookie-notice-height` from
+    // the banner's height, `app.css` pads the body by it, `questionnaire.css` shrinks the history
+    // area by it. Whether that is ENOUGH at a viewport needs layout - see below.
     assert.match(SCRIPT, /setProperty\(\s*'--cookie-notice-height'/, 'the script writes the property');
     assert.match(SCRIPT, /offsetHeight/, 'read from the banner own measured height, not a constant');
 
@@ -427,8 +409,8 @@ test('the reserved space is a custom property the script sets and the CSS consum
 });
 
 test('the banner starts HIDDEN in the markup and the script decides when to reveal it', () => {
-    // The order matters: a served-visible banner would flash for a returning visitor before the
-    // script hid it. The class is in the markup, and the script REMOVES it rather than adding it.
+    // The class is in the markup and the script REMOVES it: a served-visible banner would flash for
+    // a returning visitor before the script hid it.
     assert.match(PARTIAL, /class="cookie-banner hidden"/, 'the markup ships it hidden');
     assert.match(SCRIPT, /classList\.remove\('hidden'\)/, 'and the script reveals it');
 });
@@ -437,18 +419,17 @@ test('the banner starts HIDDEN in the markup and the script decides when to reve
 // 6. WHAT CANNOT BE ASSERTED HERE - recorded, not asserted away
 // ===========================================================================
 //
-// POINT 5 OF THE BRIEF ASKED FOR A REAL MEASUREMENT: "the input must be reachable and typeable with
-// the banner visible". THAT CANNOT BE DONE IN THIS SUITE, and no assertion below pretends to.
+// "THE INPUT MUST BE REACHABLE AND TYPEABLE WITH THE BANNER VISIBLE" CANNOT BE TESTED HERE, and no
+// assertion below pretends to:
 //
 //   - There is no DOM or layout engine in this project. `elementFromPoint`, `offsetHeight` and a
-//     computed `padding-bottom` are all layout queries, and a `node:vm` stub can only return the
+//     computed `padding-bottom` are layout queries, and a `node:vm` stub can only return the
 //     numbers a test hands it - which is how a test comes to "verify" the very thing it assumed.
 //   - The browser measurement at four viewports is the evidence for the layout; it is not
-//     reproducible here. What is asserted is the MECHANISM: the property is written from the
-//     banner's own height, the body consumes it, and the questionnaire shrinks by it. Whether
-//     `max(120px, calc(360px - h))` clears the input at a given width is a layout question.
+//     reproducible here. What is asserted is the MECHANISM. Whether `max(120px, calc(360px - h))`
+//     clears the input at a given width is a layout question.
 //
-// AND TWO HONEST LIMITS THIS FILE DOES NOT TEST, RECORDED SO THEY ARE NOT LOST:
+// AND TWO HONEST LIMITS THIS FILE DOES NOT TEST:
 //
 //   1. AT 360x640 AND 320x568 THE INPUT IS STILL COVERED ON ARRIVAL, because the header and the
 //      intro alone exceed the viewport. SCROLLING REACHES IT and typing works, so no participant
@@ -460,8 +441,7 @@ test('the banner starts HIDDEN in the markup and the script decides when to reve
 //      of the harness, checked below rather than assumed.
 
 test('each sandbox gets its OWN storage, so the once-per-browser behaviour cannot leak across tests', () => {
-    // The skip/none path in one test must not silence another. Verified rather than asserted: two
-    // sandboxes are independent, and a dismissal in the first is invisible to the second.
+    // The skip/none path in one test must not silence another: two sandboxes are independent.
     const first = runBanner({ storage: 'working' });
     first.click();
     assert.equal(first.stored(), '1', 'the first dismissed it');
@@ -473,8 +453,8 @@ test('each sandbox gets its OWN storage, so the once-per-browser behaviour canno
 
 test('the overlap fix is recorded as UNVERIFIABLE here, in one place', () => {
     // A test that states the limit, so a future reader finds it rather than inferring coverage from
-    // the structural assertions above. It asserts the two facts that ARE checkable: the mechanism
-    // exists in the CSS, and this suite has no layout engine to measure its effect.
+    // the structural assertions above: the mechanism exists in the CSS, and this suite has no layout
+    // engine to measure its effect.
     const hasLayoutEngine = typeof document !== 'undefined' && typeof window !== 'undefined';
     assert.equal(hasLayoutEngine, false,
         'this suite has no browser DOM, so the input-reachability measurement is NOT made here');

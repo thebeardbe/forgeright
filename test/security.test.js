@@ -189,12 +189,11 @@ test('checkPromptInjection is deterministic across repeated calls', async () => 
 
 // --- Per-rule true positives ------------------------------------------------
 //
-// One true positive per KEYWORD and per REGEX. A per-behaviour test hides the case where the two
-// lists are merged and substring-matched: every regex is silently killed while a single keyword
-// coincidence keeps the suite green.
+// One true positive per KEYWORD and per REGEX: a per-behaviour test hides the case where the two
+// lists are merged and substring-matched, killing every regex.
 //
-// Cases are matched to rules by CONTENT, not by file position. Zipping positives to rules by index
-// shifts everything when one rule is inserted or removed.
+// Cases are matched to rules by CONTENT, not by file position, which index zipping would break when
+// a rule is inserted or removed.
 // every case and failed the suite for the wrong reason. The mapping below keys
 // each case on a distinctive substring of the rule it must exercise; a guard
 // test then asserts the file and the mapping cover exactly the same rules, so a

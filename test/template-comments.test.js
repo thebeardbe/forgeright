@@ -7,11 +7,10 @@
  * everything AFTER it becomes template output. The tail renders as body text in the detail block,
  * once per page, because an include is a single parse.
  *
- * WHY THIS IS A SOURCE CHECK AND NOT AN OUTPUT CHECK. The leaked text is not inside
- * the comment - it is what comes after the premature terminator - so the rendered page
- * contains prose with no output marker in the source to identify it by. Output-side
- * detection finds either nothing or legitimate `<h3>` markup, where the check is exact. The
- * unreliable part is proving a leak from the OUTPUT; proving it from the SOURCE is exact.
+ * WHY THIS IS A SOURCE CHECK AND NOT AN OUTPUT CHECK. The leaked text is not inside the comment -
+ * it is what comes after the premature terminator - so the rendered page contains prose with no
+ * output marker to identify it by. Proving a leak from the OUTPUT is unreliable; from the SOURCE
+ * it is exact.
  *
  * THE RULE, stated so it can be applied by hand:
  *
@@ -20,9 +19,9 @@
  *   delimiter, in either form - the literal `<%`, or an escaped `<` followed by `%` -
  *   the comment closes early and the remainder renders.
  *
- * THE ESCAPED FORMS ARE THE WHOLE POINT. A search for `<%` alone finds nothing on a
- * file that provably leaks, and no amount of hostile-input escaping catches a
- * template-parsing failure involving no input at all.
+ * THE ESCAPED FORMS ARE THE WHOLE POINT: a search for `<%` alone finds nothing on a file that
+ * provably leaks, and no amount of hostile-input escaping catches a template-parsing failure
+ * involving no input at all.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -67,8 +66,7 @@ const COMMENT_OPENERS = ['<%#', '<% /*'];
 /**
  * Every comment in a template, with the text EJS will actually treat as the comment.
  *
- * Taking text up to the FIRST `%>` is the whole method: that is where EJS ends the
- * comment, whether or not the `%>` is intended as the close.
+ * Taking text up to the FIRST `%>` is the whole method: that is where EJS ends the comment.
  *
  * @param {string} source
  * @returns {Array<{line: number, text: string, opener: string}>}
@@ -140,9 +138,8 @@ test('no template comment contains an opener of its own language', () => {
 });
 
 test('the check runs over the file that actually leaked', () => {
-    // A guard against the sweep silently covering nothing: the file the leak was found
-    // in must be among those scanned, and it must contain comments for the scan to
-    // have exercised anything.
+    // A guard against the sweep covering nothing: the leaking file must be among those scanned,
+    // and must contain comments for the scan to have exercised anything.
     const file = path.join(VIEWS_DIR, 'partials', 'response-fields.ejs');
     assert.ok(templateFiles().includes(file), 'response-fields.ejs is scanned');
     assert.ok(commentBodies(fs.readFileSync(file, 'utf8')).length > 0, 'it holds at least one comment');
@@ -201,21 +198,18 @@ test('an escaped opener with no percent-close after it is NOT a leak', () => {
 // 3. THE MECHANISM, PINNED AGAINST EJS ITSELF
 // ===========================================================================
 //
-// The source check encodes a claim about EJS's parser. These tests hold that claim
-// against EJS, so if the parser's behaviour changed the check would be seen to be
-// describing a rule that does not hold - rather than silently passing.
+// These tests hold the source check's claim about EJS's parser against EJS, so a change in the
+// parser is seen rather than silently passing.
 
 test('EJS really does end a comment at the first %> inside it', async () => {
     const ejs = await import('ejs');
 
-    // The construct that leaks: an escaped opener whose own `%>` ends the comment
-    // before the intended close.
+    // An escaped opener whose own `%>` ends the comment before the intended close.
     const leaking = '<%# see &lt;%= value %> LEAKED TAIL\n%>END';
     const rendered = ejs.render(leaking);
 
     assert.ok(rendered.includes('LEAKED TAIL'), 'the tail after the premature close renders');
-    // The intended close is now ordinary text, and whatever follows it renders
-    // too - so the damage runs past the end of the intended comment.
+    // The intended close is now ordinary text, so the damage runs past the end of the comment.
     assert.ok(rendered.includes('END'), 'and so does everything after the intended close');
 });
 
@@ -234,17 +228,9 @@ test('a comment with no delimiter in it renders nothing at all', async () => {
 
 test('why the check flags an opener even when only ONE percent-close is present', async () => {
     // WORTH KNOWING, because it is why the check is conservative rather than precise.
-    // EJS ends the comment at the first `%>` and renders whatever follows. If the
-    // comment is INTENDED to be longer than that - where an `<%= ... %>` inside the comment
-    // supplies the premature close - the text between that close and the intended close becomes
-    // OUTPUT.
-    //
-    // A source check cannot know the INTENT. What it can see is an
-    // opener inside the comment text, which is the construct that makes an early
-    // close possible. So it flags the construct rather than the outcome, and a
-    // comment that legitimately writes an opener with no `%>` after it inside the
-    // comment - see the safe form below - is not flagged, because the extracted text
-    // then contains no `%>` to close on.
+    // A source check cannot know the INTENT, so it flags the CONSTRUCT that makes an early close
+    // possible - an opener inside the comment text. A comment that writes an opener with no `%>`
+    // after it inside the comment is not flagged: the extracted text has nothing to close on.
     const ejs = await import('ejs');
 
     // An escaped opener whose own `%>` ends the comment early.
@@ -257,9 +243,8 @@ test('why the check flags an opener even when only ONE percent-close is present'
 // THE LEGITIMATE CASE, AND HOW TO WRITE IT SAFELY
 // ===========================================================================
 //
-// A comment that DOCUMENTS this rule is the obvious way to reintroduce the leak: the
-// natural way to explain "do not write an opener here" is to write one. The fixed
-// comment in `response-fields.ejs` shows the safe form, and this test pins it - a
+// A comment that DOCUMENTS this rule is the obvious way to reintroduce the leak. The safe form in
+// `response-fields.ejs` is pinned here - a
 // comment may DESCRIBE the delimiter in words, and may not contain it.
 
 test('a comment may describe the delimiter in words, which is how the fixed one reads', () => {
