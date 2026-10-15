@@ -1,17 +1,16 @@
 /**
  * The repeat guard, the narrowed closing matcher, and the derived "nothing answered" console state.
  *
- * WHY THIS FILE EXISTS. The reviewer ran eight live interviews and one completed. Seven stalled
- * with the same question repeated, one byte-identically for six turns - a loop neither of the two
- * earlier fixes addressed. It is the pre-existing PER-FIELD repeat, and it is the symptom the
- * owner reported from the start: frustration, then abandonment.
+ * WHAT THE GUARD IS FOR. A model can ask the same question turn after turn, byte-identically, and
+ * the round never moves: frustration, then abandonment. The guard replaces a repeated question
+ * with a fresh one from the open fields.
  *
  * THE GUARD'S OWN LOOP IS THE INTERESTING PART, and it is why this file is shaped the way it is.
  * A guard that replaces a repeated question with a fixed substitute makes the SUBSTITUTE the
  * question of record, so it matches its own sentence next turn and replaces it again - the loop
- * moves from the model to the gate. The builder measured that at turn 18 of a simulation and
- * fixed it by marking a substitute so only the model's own repeats are match targets. Termination
- * is therefore the property most of this file tests, because it is the one that failed twice.
+ * moves from the model to the gate. The fix marks a substitute so only the model's own repeats are
+ * match targets. Termination is therefore the property most of this file tests, because it is the
+ * property that loop threatens.
  *
  * TWO FINDINGS ARE RECORDED AS ASSERTIONS ON TODAY'S BEHAVIOUR, NOT AS PASSING CLAIMS. They are
  * localised with "FINDING" and they assert what the code does, so a fix turns them red on purpose.
@@ -175,7 +174,7 @@ test('TERMINATION: a model stuck on ONE sentence ends the round, with no questio
 test('TERMINATION under an ECHOING model - the case that stresses the substitute mark', () => {
     // THE HARSHER MODEL, and the one that actually exercises the mark. Instead of repeating one
     // fixed sentence, this model ECHOES back whatever it last received - so it sends the gate's
-    // OWN substitute as its next question. That is exactly the loop the builder measured: a
+    // OWN substitute as its next question. That is the loop the mark defeats: a
     // substitute that the gate then matches and replaces again.
     //
     // It must still terminate: the mark stops the gate matching its own sentence, so the
@@ -199,16 +198,12 @@ test('TERMINATION under an ECHOING model - the case that stresses the substitute
     assert.ok(exhaustedAt <= 40, `termination is bounded, not merely eventual (ended at turn ${exhaustedAt})`);
 });
 
-test('an ECHOING model NEVER sends the same question twice in a row - the fix, not the finding', () => {
-    // REWRITTEN, and the property it carries is NO CONSECUTIVE DUPLICATE. It used to assert the
-    // opposite - that an echoing model DID repeat, with `consecutiveDuplicates > 0` - because
-    // that was the state of the code and pinning it meant a fix could not land silently. The fix
-    // landed, so the assertion is inverted: an echoing model produces ZERO consecutive duplicate
-    // questions. The echo itself still happens (the model sends back what it last saw); what is
-    // gone is any pair of consecutive identical sentences reaching the participant.
-    //
-    // The live defect was fifteen consecutive duplicate pairs, so this is the property that was
-    // wrong and is now right.
+test('an ECHOING model NEVER sends the same question twice in a row, and the round terminates', () => {
+    // The property is NO CONSECUTIVE DUPLICATE. An echoing model sends back whatever it last saw,
+    // so it re-issues the gate's own substitute; the mark on a substitute keeps it from being
+    // matched as if it were the model's, and the conversation still advances to a fresh field
+    // each round rather than circling. The echo still reaches the server; what never reaches the
+    // participant is a pair of consecutive identical sentences.
     const conversation = [];
     const replies = [];
     let incoming = 'How do you keep track of it?';
@@ -250,17 +245,11 @@ test('and an ECHOING model TERMINATES - the two fixes together, which is where i
 });
 
 test('a SUBSTITUTE the model ECHOES is REPLACED, not re-issued - and the round still terminates', () => {
-    // REWRITTEN, and the property it carries is TERMINATION. It used to assert the opposite: a
-    // marked substitute passed through UNCHANGED, which was the mechanism protecting termination
-    // (the gate must not argue with its own last sentence). That mechanism also exempted the
-    // substitute from echo matching, so a model that echoed it reached the participant twice -
-    // the FIFTEEN consecutive duplicate pairs the reviewer saw live.
-    //
-    // THE FIX KEEPS BOTH PROPERTIES, and this test holds the one it used to hold from the other
-    // side: a substitute the model echoes is REPLACED, so no sentence reaches the participant
-    // twice, AND the conversation still terminates rather than the gate replacing its own
-    // sentence forever. The mark is now carried by the TEXT, so the gate never re-argues with
-    // itself on its next turn, while an echo of it is still a match target.
+    // TERMINATION AND NO CONSECUTIVE DUPLICATE, in the same case. A substitute the model echoes
+    // must be REPLACED, so no sentence reaches the participant twice; and the replacement must not
+    // be re-argued on the gate's next turn, so the conversation terminates rather than the gate
+    // replacing its own sentence forever. The mark is carried by the TEXT, so the gate recognises
+    // its own last sentence while an echo of it is still a match target.
     const substitute = 'Who else is involved in this?';
     const conversation = [{ content: substitute, missing: new Array(10).fill('f'), substituted: true }];
 
@@ -271,13 +260,11 @@ test('a SUBSTITUTE the model ECHOES is REPLACED, not re-issued - and the round s
 
 test('the mark survives a PASS-THROUGH, so the gate never argues with its own next turn', () => {
     // THE HALF THAT KEEPS TERMINATION. A substitute can be echoed back and, if there is progress,
-    // passed through. The mark must travel with it, so the gate recognises its own sentence next
-    // turn rather than treating it as the model's and substituting again. This is the property
-    // the old test asserted ("the mark is not lost"); it is asserted here on the text, which is
-    // where the fix moved it.
+    // passed through. The mark must travel with it on the TEXT, so the gate recognises its own
+    // sentence next turn rather than treating it as the model's and substituting again.
     const substitute = 'Who else is involved in this?';
-    // The conversation holds the substitute as the gate's own, and one field has been answered
-    // since (so the repeat is a legitimate pass-through rather than a substitution).
+    // The substitute is the gate's own, and one field has been answered since, so the repeat is a
+    // legitimate pass-through rather than a substitution.
     const conversation = [{ content: substitute, missing: new Array(12).fill('f'), substituted: true }];
 
     const result = turn(substitute, conversation);
@@ -353,7 +340,8 @@ test('the move-on line and the exhausted close are DIFFERENT messages', () => {
     assert.notEqual(closeLine, null, 'and the closing line does');
     assert.notEqual(moveOnLine[0], closeLine[0], 'and they are different sentences');
 
-    // And a run DOES end, on the close, which is the behaviour the fix put first.
+    // And a run DOES end, on the close, which is the termination behaviour the exhaustion check
+    // runs ahead of.
     const conversation = [];
     let final = null;
     for (let i = 1; i <= 40; i += 1) {
@@ -367,7 +355,7 @@ test('the move-on line and the exhausted close are DIFFERENT messages', () => {
 });
 
 // ===========================================================================
-// 3. THE NARROWED MATCHER - BOTH DIRECTIONS, WITH MY OWN QUESTIONS
+// 3. THE NARROWED MATCHER - BOTH DIRECTIONS
 // ===========================================================================
 
 /** Whether the reply's content was replaced by a gate (substituted), given a partial matrix. */
@@ -378,14 +366,12 @@ function wasGated(content) {
     return r.content !== content;
 }
 
-// THE BUILDER CLAIMED 28 ORDINARY QUESTIONS WITH 0 WRONGLY GATED AND 12 CLOSING PHRASINGS WITH 0
-// MISSED. The previous claim in this area was 17-of-17 and the reviewer found 8 false positives
-// in 22, so the numbers are checked with my own sets rather than accepted. The two patterns that
-// were over-broad - bare `anything else` and bare `shall`/`should`/`may` - are stressed hardest.
+// The set below stresses the two patterns that are over-broad in principle - bare `anything else`
+// and bare `shall`/`should`/`may` - with realistic phrasings about THIS process.
 
-test('ordinary questions are NOT gated - my own set, stressing the two over-broad patterns', () => {
+test('ordinary questions are NOT gated - stressing the two over-broad patterns', () => {
     const ordinary = [
-        // The two patterns the fix narrowed, with realistic phrasings that are about THIS process.
+        // The two patterns the matcher narrows, with realistic phrasings that are about THIS process.
         'Is there anything else you would change about this step?',
         'Is there anything else that regularly goes wrong here?',
         'Is there anything else you do before this starts?',
@@ -434,10 +420,10 @@ test('ordinary questions are NOT gated - my own set, stressing the two over-broa
     const wronglyGated = ordinary.filter(wasGated);
     // REPORT EVERY FALSE POSITIVE by name, so a failure says which phrasing and not just a count.
     assert.deepEqual(wronglyGated, [], `these ordinary questions were wrongly gated: ${JSON.stringify(wronglyGated)}`);
-    assert.ok(ordinary.length >= 28, `checked at least the builder's 28 (checked ${ordinary.length})`);
+    assert.ok(ordinary.length >= 28, `the set holds at least 28 ordinary questions (checked ${ordinary.length})`);
 });
 
-test('closing phrasings ARE gated - my own set, including ones neither party wrote', () => {
+test('closing phrasings ARE gated - including ones that quote no prompt verbatim', () => {
     const closings = [
         'Is there another process you would like to improve?',
         "Is there another process you'd like to improve?",
@@ -461,13 +447,13 @@ test('closing phrasings ARE gated - my own set, including ones neither party wro
 
     const missed = closings.filter((c) => !wasGated(c));
     assert.deepEqual(missed, [], `these closing phrasings were NOT gated: ${JSON.stringify(missed)}`);
-    assert.ok(closings.length >= 12, `checked at least the builder's 12 (checked ${closings.length})`);
+    assert.ok(closings.length >= 12, `the set holds at least 12 closing phrasings (checked ${closings.length})`);
 });
 
 test('a legitimately-asked question is not gated even when it contains "move on"', () => {
-    // The regression the builder found in its own narrowing was in this family: "move on" is
-    // ordinary when the target is the NEXT STEP of the current work, and a closing offer when the
-    // target is ANOTHER process. The subject of the sentence is the distinction.
+    // The two patterns in the matcher are over-broad in principle (bare `anything else` and a bare
+    // modal `shall`/`should`/`may`), so both directions are stressed below: a legitimate question
+    // about THIS process must not be gated, and a genuine closing offer must be.
     for (const content of [
         'Would you like to move on to the next step?',
         'Do you want to move on to the steps themselves?',
@@ -480,18 +466,18 @@ test('a legitimately-asked question is not gated even when it contains "move on"
 });
 
 test('FINDING: one ordinary phrasing is still wrongly gated by the anything-else pattern', () => {
-    // THE RESIDUAL FALSE POSITIVE, and it is the same defect class the commit fixed - a legitimate
-    // question about THIS process being replaced by a generic one. The pattern is
+    // A RESIDUAL FALSE POSITIVE: a legitimate question about THIS process being replaced by a
+    // generic one. The pattern is
     // `/\banything else\s+(?:you|we)...\s+(?:like|want|wish|add|cover)\b/`, and `add` has no
     // anchor after it, so:
     //
     //   "Is there anything else you would add to the steps?"   -> about THIS process, GATED
     //   "Is there anything else you would add?"                -> a closing offer, gated
     //
-    // are indistinguishable to the pattern. The first is less common than the false positives the
-    // commit removed, so this is a residual rather than a regression - but it is the same shape,
-    // and "add" with a trailing qualifier is exactly how a model phrases a question about the
-    // current steps. RECORDED AS TODAY'S BEHAVIOUR so narrowing it turns this red on purpose.
+    // are indistinguishable to the pattern. The first is rarer than the false positives the
+    // narrowing removed, and "add" with a trailing qualifier is exactly how a model phrases a
+    // question about the current steps. RECORDED AS TODAY'S BEHAVIOUR so narrowing it turns this
+    // red on purpose.
     const aboutThisProcess = 'Is there anything else you would add to the steps?';
     assert.equal(wasGated(aboutThisProcess), true,
         'FINDING: this question about the current steps IS gated');
@@ -504,8 +490,8 @@ test('FINDING: a closing offer with the object AFTER the verb is missed', () => 
     // THE OTHER DIRECTION, and the accepted one: the pattern is allowed to miss a rare closing
     // phrasing rather than hit a common one. "Would you like to add anything else?" puts `anything
     // else` after the verb, where none of the subject patterns reach it, so it passes through with
-    // the matrix unsatisfied. The commit accepts this direction; recording it pins how far the
-    // miss goes rather than leaving it to be discovered live.
+    // the matrix unsatisfied. This direction is accepted, and recording it pins how far the miss
+    // goes rather than leaving it to be discovered live.
     assert.equal(wasGated('Would you like to add anything else?'), false,
         'FINDING: this closing phrasing is NOT gated');
 });
@@ -599,10 +585,10 @@ test('the console renders "nothing answered" and withholds the rejudge form on t
 // 5. EXHAUSTION: MONOTONIC, AND PLACED BEFORE THE SUBSTITUTION
 // ===========================================================================
 //
-// THE DEFECT WAS THE PLACEMENT, and that mattered more than what the check compared. The old
-// check lived in the `no fresh target` branch, so a rotating `missing` kept offering fresh
-// targets and the branch was never reached - the interviewer kept asking and never closed. The
-// reviewer's live capture ran 40 turns with 26 repeats and never closed.
+// THE PLACEMENT IS WHAT MATTERS, more than what the check compares. A check that lives in the
+// `no fresh target` branch never runs when a rotating `missing` keeps offering fresh targets, so
+// the interviewer keeps asking and never closes. The check therefore runs before substitution,
+// on a repeat with no fresh target, so a rotating open set cannot keep it out of reach.
 //
 // So these build conversations where `missing` ROTATES, which is what defeats a check that
 // compares against the open set, and assert the round still closes.
@@ -652,18 +638,16 @@ function runRotating(period, sentence = 'How do you keep track of it?', maxTurns
 }
 
 test('an OSCILLATING `missing` still terminates - the placement fix', () => {
-    // The shape that defeated the old check: the model varies its payload so the open set
-    // rotates, and every rotation rate must still close the interview. The old check ran out of
-    // reach here, so a failure is a return of that defect.
+    // The shape that would defeat a check placed out of reach of a rotating open set: the model
+    // varies its payload so `missing` rotates, and every rotation rate must still close the
+    // interview.
     //
-    // HONEST LIMIT: I could NOT construct an offline rotation that makes the OLD sentence-based
-    // check fail - because the field QUESTIONS are a fixed set of fifteen and any rotation
-    // consumes them within a bounded number of turns, after which both checks fire. The builder's
-    // defeat was measured live (40 turns, 26 repeats) and against a reproduction (15 questions
-    // done by turn 17, ran to 25). What this test can assert offline is the OUTCOME the fix owes -
-    // every rotation terminates, bounded - and the structural test below asserts the MECHANISM.
-    // So a return of the old code passes this test but fails the structural one, which is stated
-    // rather than hidden.
+    // HONEST LIMIT: an offline rotation cannot be constructed that makes the old sentence-based
+    // check fail - the field QUESTIONS are a fixed set of fifteen, so any rotation consumes them
+    // within a bounded number of turns and both checks then fire. What this test can assert
+    // offline is the OUTCOME the placement owes - every rotation terminates, bounded - and the
+    // structural test below asserts the MECHANISM. So a misplaced check passes this test but
+    // fails the structural one, which is stated rather than hidden.
     for (const period of [1, 2, 3, 5, 7]) {
         const { endedAt } = runRotating(period);
         assert.notEqual(endedAt, null, `rotation period ${period} must terminate, not run indefinitely`);
@@ -709,11 +693,9 @@ test('a WIDE rotation - the open set different every turn - still terminates wit
 });
 
 test('exhaustion asks whether every question about an OPEN field has been asked', () => {
-    // REWRITTEN. It pinned the SIGNATURE `asksEveryField(askedQuestions)`, and the signature now
-    // takes the open fields as well - because requiring all fifteen was too strong and produced
-    // its own loop (a field the model CLAIMS is never offered, so its phrasing never enters the
-    // conversation and exhaustion can never fire). The monotonic INTENT holds, so this asserts the
-    // DECISION rather than the parameter list:
+    // The DECISION, not the parameter list. Requiring all fifteen was too strong: a field the model
+    // CLAIMS is never offered, so its phrasing never enters the conversation and exhaustion can
+    // never fire - a loop of its own. The monotonic INTENT holds with the open set instead:
     //   - the set is `FIELD_QUESTIONS` LIMITED TO the currently-open fields, and
     //   - it is satisfied when every one of those has been asked, and
     //   - the decision uses it, on a repeat with no fresh target.
@@ -733,7 +715,7 @@ test('exhaustion asks whether every question about an OPEN field has been asked'
         'the exhaustion branch passes the currently-open fields');
 });
 
-test('the RESIDUAL STALL the relaxation fixed: all fifteen was too strong', () => {
+test('the RESIDUAL STALL of requiring all fifteen: the round still ends', () => {
     // THE CASE THAT PRODUCED A SECOND LOOP: the model claims task/trigger/steps HELD, so those
     // questions are never offered, their phrasings never enter the conversation, and a check
     // requiring all fifteen could never fire - the move-on line emitted every turn, indefinitely.

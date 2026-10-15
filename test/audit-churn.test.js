@@ -1,16 +1,15 @@
 /**
  * The churning-claim fixture, the three-way list distinction, and the residual mechanisms.
  *
- * WHY THIS FILE EXISTS. The reviewer found a third termination mechanism, distinct from the
- * oscillation already fixed, and reported that it could NOT be reproduced offline - "only a model
- * re-partitions its claims". That was wrong, and this file is the proof: a scripted model that
- * lies differently each turn is exactly what a scripted model does.
+ * WHAT THIS FILE IS ABOUT. A model that re-partitions its claims each turn is a termination
+ * mechanism distinct from oscillation: the model lies differently every turn rather than repeating
+ * itself, so nothing that looks for a repeated sentence can catch it.
  *
- * THE DEFECT. Mid-interview, `missing` is built partly from the model's own `have` CLAIM, believed
- * without evidence. A model that reshuffles which fields it claims to hold makes `missing` fall
- * while NOTHING is recorded - `have + missing` staying at fifteen throughout - and every fall was
- * read as the participant answering. The reviewer's worst live run was thirty-one identical
- * questions in a row with neither exhaustion branch firing.
+ * THE DEFECT IT EXPOSES. Mid-interview, `missing` is built partly from the model's own `have`
+ * CLAIM, believed without evidence. A model that reshuffles which fields it claims to hold makes
+ * `missing` fall while NOTHING is recorded - `have + missing` staying at fifteen throughout - and
+ * every fall was read as the participant answering, so an interview could ask thirty-one identical
+ * questions in a row without either exhaustion branch firing.
  *
  * THE DISTINCTION THAT FIXES IT, and the heart of this file - three lists that are not the same:
  *
@@ -19,11 +18,8 @@
  *   evidenced   what the PAYLOAD PROVES - fieldsPresentIn, the test matrixComplete uses
  *
  * `supplied` does NOT fix it: while asking, `supplied` believes the claim too, so it churns with
- * `missing`. Measured here rather than taken on trust, because the reviewer's one-line fix was
- * exactly that and it was wrong.
- *
- * EVERY NUMBER IN THIS FILE IS MINE. The builder's and the reviewer's numbers have both been wrong
- * before, so the counts are measured rather than repeated.
+ * `missing`. Every count in this file is measured against a fixture rather than repeated from a
+ * claim.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -47,7 +43,7 @@ const ALL = matrix.ALL_PROCESS_FIELD_NAMES;
  * A churning claim: the fields the model CLAIMS to hold move with `turn`, while `have + missing`
  * stays at fifteen.
  *
- * This is the reviewer's live signature. `K` moves 3..10 and wraps, so the claimed-hold count
+ * This is the churning signature. `K` moves 3..10 and wraps, so the claimed-hold count
  * changes every turn and any guard reading it sees "progress" constantly, while nothing is
  * recorded.
  */
@@ -112,7 +108,7 @@ function maxRun(replies) {
 }
 
 // ===========================================================================
-// 1. THE FIXTURE REPRODUCES THE DEFECT, AND THE FIX ENDS IT
+// 1. THE FIXTURE REPRODUCES THE SIGNATURE, AND THE GUARD ENDS IT
 // ===========================================================================
 
 test('the fixture reproduces the signature: the claim moves while have + missing stays at fifteen', () => {
@@ -134,8 +130,8 @@ test('the three lists on a CHURNING model: only `evidenced` holds still', () => 
     // with a constant payload: `missing` and `supplied` both move (they believe the claim), and
     // `evidenced` is constant (it counts what the payload proves).
     //
-    // `supplied` MOVING IS THE POINT: the reviewer's one-line fix was to read `supplied` instead of
-    // `missing`, and it does not work for exactly this reason.
+    // `supplied` MOVING IS THE POINT: reading `supplied` instead of `missing` does not work, for
+    // exactly this reason.
     const missingCounts = [];
     const suppliedCounts = [];
     const evidencedCounts = [];
@@ -153,10 +149,9 @@ test('the three lists on a CHURNING model: only `evidenced` holds still', () => 
     assert.equal(evidencedCounts[0], 3, 'and it is the three fields the payload actually proves');
 });
 
-test('a CHURNING model TERMINATES - the fix, where the pre-fix guard stalled', () => {
-    // THE OFFLINE REPRODUCTION the reviewer said could not be built. A model that re-partitions its
-    // claim every turn must still end, and end BOUNDED, rather than reading each fresh claim as
-    // progress and repeating forever.
+test('a CHURNING model TERMINATES, bounded, where a guard that reads the claim would not', () => {
+    // A model that re-partitions its claim every turn must still end, and end BOUNDED, rather than
+    // reading each fresh claim as progress and repeating forever.
     const { endedAt, replies } = runChurn({ rate: 0 });
 
     assert.notEqual(endedAt, null, 'the churning conversation terminates');
@@ -165,8 +160,8 @@ test('a CHURNING model TERMINATES - the fix, where the pre-fix guard stalled', (
 });
 
 test('five churn rates all terminate, none running away', () => {
-    // The builder measured five rotation rates. Checked with my own fixture rather than repeated:
-    // every rate terminates and stays bounded.
+    // Every rotation rate terminates and stays bounded, measured on the fixture rather than
+    // repeated from a claim.
     for (const rate of [0, 1, 2, 3, 5, 7, 8]) {
         const { endedAt, replies } = runChurn({ rate });
         assert.notEqual(endedAt, null, `churn rate ${rate} terminates`);
@@ -175,12 +170,12 @@ test('five churn rates all terminate, none running away', () => {
     }
 });
 
-test('the pre-fix guard STALLS on this exact fixture - so the fixture has teeth', () => {
-    // A FIXTURE THAT PASSES AGAINST THE BROKEN CODE PROVES NOTHING. This drives the conversation
-    // with the guard forced to read the CLAIM (`hasEvidenceData` false), which is the pre-fix
-    // behaviour, and shows it runs far longer with long runs of one sentence. The comparison is
-    // the assertion: the fixed path is dramatically shorter, which is what makes the terminating
-    // tests meaningful rather than vacuous.
+test('a guard that reads the claim alone STALLS on this fixture - so the fixture has teeth', () => {
+    // A FIXTURE THAT PASSES AGAINST UNGUARDED CODE PROVES NOTHING. This drives the conversation
+    // with the guard forced to read the CLAIM (`hasEvidenceData` false) and shows it runs far
+    // longer with long runs of one sentence. The comparison is the assertion: the guarded path is
+    // dramatically shorter, which is what makes the terminating tests meaningful rather than
+    // vacuous.
     const simulate = (claimOnly) => {
         const conversation = [];
         const replies = [];
@@ -188,8 +183,8 @@ test('the pre-fix guard STALLS on this exact fixture - so the fixture has teeth'
         for (let turn = 1; turn <= 200; turn += 1) {
             const askedBefore = conversation.map((entry) => ({
                 text: entry.content,
-                // `claimOnly` mimics the pre-fix guard by OMITTING the evidence count, which forces
-                // the claim-based fallback. The production code does exactly this when it is absent.
+                // `claimOnly` omits the evidence count, which forces the claim-based fallback and
+                // models a guard with no evidence data to judge from.
                 ...(claimOnly ? {} : { evidencedCount: entry.evidenced }),
                 openCount: entry.missing.length, substituted: entry.substituted === true
             }));
@@ -238,10 +233,10 @@ test('EVIDENCE IS AUTHORITATIVE: a churning claim gains nothing from a fallen `m
 });
 
 test('the FALLBACK prevents a wall: an old-shape caller with a fallen `missing` passes', () => {
-    // THE OTHER DIRECTION, and the builder says a test caught it. A conversation recorded before
-    // `evidenced` existed carries only `openCount`. With no evidence data to judge from, treating
-    // "no evidenced data" as "no progress" would substitute on every such repeat and turn a
-    // legitimate second attempt into a wall - so the claim-based check applies.
+    // THE OTHER DIRECTION. A conversation recorded before `evidenced` existed carries only
+    // `openCount`. With no evidence data to judge from, treating "no evidenced data" as "no
+    // progress" would substitute on every such repeat and turn a legitimate second attempt into a
+    // wall - so the claim-based check applies.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const raw = (c) => JSON.stringify({ status: 'asking', content: c, processes: [partial], have: [], missing: [] });
     const q = 'What systems do you use?';
@@ -281,11 +276,10 @@ test('the reply carries `evidenced` forward, so the next turn can compare agains
 // 3. THE OPEN-FIELD RELAXATION, AND WHETHER IT CAN BE GAMED
 // ===========================================================================
 
-test('the residual stall the relaxation fixed: twelve of fifteen asked, then stuck', () => {
+test('the residual stall of requiring all fifteen: twelve asked, then stuck', () => {
     // Requiring ALL fifteen questions was too strong, because a field the model CLAIMS is never
     // offered - the substitute picks from `missing` - so its phrasing never enters the conversation
-    // and exhaustion could never fire. The builder measured it at twelve of fifteen with the
-    // move-on line emitted every turn, indefinitely.
+    // and exhaustion could never fire: the move-on line was emitted every turn, indefinitely.
     //
     // Driven through the real guard with the churn fixture: the round ends even though fewer than
     // fifteen questions were ever asked.
@@ -350,10 +344,10 @@ test('FINDING: a model that REWORDS its question each turn is never caught - the
 });
 
 test('FINDING: the reworded attack also defeats the evidence check, because no repeat is seen', () => {
-    // The same attack, stated against the fix that matters most here: `evidenced` correctly shows
-    // NO progress, and the guard would substitute - but it only gets the chance on a REPEAT. With
-    // unique text every turn there is no repeat, so the evidence comparison is never reached. The
-    // evidence fix is correct and still bypassed.
+    // The same attack against the evidence check: `evidenced` correctly shows NO progress, and the
+    // guard would substitute - but it only gets the chance on a REPEAT. With unique text every
+    // turn there is no repeat, so the evidence comparison is never reached. The evidence check is
+    // correct and still bypassed.
     const conversation = [];
     for (let turn = 1; turn <= 30; turn += 1) {
         const entry = turnWithChurn(`What about the mail on day ${turn}?`, conversation, turn);

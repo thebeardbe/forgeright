@@ -123,7 +123,7 @@ test('a COMPLETE payload with a plateaued series is NOT capped', () => {
     // `evidenced=15, missing=0` with evidence settling. A complete interview must not be closed by
     // the evidence cap: it has recorded everything, so there is nothing left to wait for.
     //
-    // A SHORT CAPTURE ALONE IS NOT A TEST OF THE CONDITION: the series `14,14,13,15,15,15` reads as
+    // A SHORT SERIES ALONE IS NOT A TEST OF THE CONDITION: the series `14,14,13,15,15,15` reads as
     // only two turns without evidence at its end, far below the cap of twenty, so it passes whether
     // or not the `missing > 0` condition exists. The short series is checked for fidelity AND the
     // series is EXTENDED to a real plateau, which is the case that reproduces the defect offline.
@@ -166,9 +166,9 @@ test('two more settling series pass through too, and each is extended to a real 
 });
 
 test('the trigger REQUIRES `missing` to be non-empty - asserted on the source of the condition', () => {
-    // The fix itself, stated where it can be read: the condition includes `computed.missing.length
-    // > 0`, so an interview with every field supplied cannot be closed by a timeout. Asserted
-    // structurally because the behavioural tests above depend on this one line.
+    // The condition includes `computed.missing.length > 0`, so an interview with every field
+    // supplied cannot be closed by a timeout. Asserted structurally because the behavioural tests
+    // above depend on this one line.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
     assert.match(source, /if \(playingTheMatrix && computed\.supplied\.length > 0\s*\n\s*&& computed\.missing\.length > 0\s*\n\s*&& turnsWithoutEvidence\(messages\) >= TURNS_WITHOUT_EVIDENCE_CAP\)/,
         'the cap requires non-empty `missing` as well as supplied fields and the plateau');
@@ -234,9 +234,9 @@ test('an EMPTY `evidenced` array counts as no evidence, and the cap fires', () =
 });
 
 test('an OMITTED `evidenced` on a SERVER turn counts as no evidence - it does NOT disable the cap', () => {
-    // THE HOLE THAT WAS FIXED: absence used to SKIP the turn, so a client that omitted the field put
-    // every earlier mechanism out of reach and the interview ran forever, silently. Absence of
-    // evidence now means "cannot judge, use the tightest interpretation" - an empty list - because
+    // Absence must not SKIP the turn: a client that omits the field would otherwise put every
+    // earlier mechanism out of reach and the interview would run forever, silently. Absence of
+    // evidence means "cannot judge, use the tightest interpretation" - an empty list - because
     // seeing `missing` proves the server wrote the turn and had an `evidenced` to omit.
     const messages = conversationFrom(plateau(22, 3), { missingCount: 12 });
     for (const turn of messages) delete turn.evidenced; // a client that omits the field
@@ -371,8 +371,7 @@ test('a run gaining a field every turn is never cut off before it completes', ()
 });
 
 test('a run gaining a field every 5, 10 or 19 turns still completes - the cap clears the real plateau', () => {
-    // The builder's claim that the cap does not cut off a working interview, checked with my own
-    // patterns rather than the 1/3/6/10 they used.
+    // Each rate is checked with its own fixture; at every one the cap clears a real gain.
     for (const everyTurns of [2, 5, 10, 19]) {
         const { cappedBeforeFull } = slowGain(everyTurns);
         assert.equal(cappedBeforeFull, null, `a run gaining every ${everyTurns} turns is not capped`);
@@ -396,10 +395,10 @@ test('FINDING: a run gaining every 21+ turns IS cut off - the boundary is the ca
 // ===========================================================================
 
 test('FINDING: a turn carrying NEITHER `missing` NOR `substituted` is still unjudgeable', () => {
-    // THE GAP THE RULE LEAVES OPEN, asked for rather than assumed. The omitted-`evidenced` rule
-    // keys on `missing` being an array or `substituted` being present. A turn carrying NEITHER is
-    // read as a bare assistant turn and SKIPPED, so a client that replays turns with only `content`
-    // still disables the cap - the same silence, through the remaining door.
+    // THE GAP THE RULE LEAVES OPEN. The omitted-`evidenced` rule keys on `missing` being an array
+    // or `substituted` being present. A turn carrying NEITHER is read as a bare assistant turn and
+    // SKIPPED, so a client that replays turns with only `content` still disables the cap - the same
+    // silence, through the remaining door.
     //
     // IT IS NOT REACHABLE THROUGH THIS CLIENT: `public/js/audit.js` always pushes `substituted` and
     // `missing` (as `false` and `[]` when the server omits them) and returns early on `error` and
