@@ -1,19 +1,15 @@
 /**
  * The schema refusal leaves the file byte-identical.
  *
- * WHY THIS FILE EXISTS. Commit 0708717 fixed a defect where the version assertion
- * ran AFTER `db.exec(schemaSql())`, so a refused open of an older file was
- * half-migrated first: `CREATE TABLE IF NOT EXISTS` added every table the old file
- * lacked, leaving it v6-SHAPED and stamped with its old version, and every later
- * open refused it again. Three commits touched fourteen source files and zero test
- * files, and reverting the fix passed the whole suite.
+ * WHAT THIS COVERS. The version assertion must run BEFORE `db.exec(schemaSql())`. Run after, a
+ * refused open of an older file is half-migrated first: `CREATE TABLE IF NOT EXISTS` adds every
+ * table the old file lacks, leaving it v6-SHAPED and stamped with its old version, and every later
+ * open refuses it again.
  *
- * MEASURED BY SHA-256 OF THE WHOLE FILE, not by size. The builder first claimed
- * size stayed identical; the reviewer showed that claim is conditionally
- * informative: it holds exactly when the file already contains the tables the
- * schema would add, and a MINIMAL file grew 12288 -> 139264 on the old code. The
- * minimal-file case is the one tested here, because it is where the defect was most
- * damaging and where the size claim was wrong.
+ * MEASURED BY SHA-256 OF THE WHOLE FILE, not by size. Size alone is conditionally informative: it
+ * stays identical exactly when the file already contains the tables the schema would add, and a
+ * MINIMAL file grows 12288 -> 139264 when the assertion runs late. The minimal-file case is the one
+ * tested here, because it is where the damage is greatest and where the size check is blind.
  *
  * STORE_DIR is a temp directory per run, set before anything is imported.
  */
@@ -128,15 +124,15 @@ test('a MINIMAL v5 file missing the v6 tables is refused, and NOTHING is written
     assert.equal(stampedVersion(file), '5', 'the stamp is untouched');
 
     // The size is reported for the record, but the assertion above is the hash.
-    // Under the old code this file grew 12288 -> 139264 while the v6 tables
-    // appeared, which is the defect the size check could not see.
+    // A late assertion grows this file 12288 -> 139264 while the v6 tables appear, which is the
+    // change the size check cannot see.
     assert.equal(fs.statSync(file).size, sizeBefore, 'and the size is unchanged too, in this case');
 });
 
 test('the minimal file is STILL refused on a second attempt, and still unchanged', () => {
-    // Under the old code the first refused open left the file v6-shaped but stamped
-    // 5, so every later open refused it again while the file kept its damage. This
-    // asserts the refusal is repeatable without further change.
+    // A first refused open must not leave the file v6-shaped but stamped 5, or every later open
+    // refuses it again while the file keeps its damage. This asserts the refusal is repeatable
+    // without further change.
     const orgId = 'minimal-v5-repeat';
     const file = fileFor(orgId);
     fs.mkdirSync(orgsDir(), { recursive: true });
@@ -168,12 +164,12 @@ test('a v6 file that is simply current opens normally, so the refusal is specifi
 });
 
 // ===========================================================================
-// THE DEFECT ITSELF, AS A NEGATIVE
+// THE HALF-MIGRATED STATE, AS A NEGATIVE
 // ===========================================================================
 
 test('the refused file is not left v6-SHAPED AND stamped v5', () => {
-    // The exact end state the defect produced: the shape of v6 with the stamp of v5.
-    // Stated as a negative, because that combination is the thing to prevent.
+    // The exact end state to prevent: the shape of v6 with the stamp of v5.
+    // Stated as a negative, because that combination is the thing to avoid.
     const orgId = 'not-half-migrated';
     const file = fileFor(orgId);
     fs.mkdirSync(orgsDir(), { recursive: true });

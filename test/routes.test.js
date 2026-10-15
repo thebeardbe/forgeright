@@ -263,15 +263,10 @@ test('the host check runs before the route, so a bad host fails on any path', as
 
 // --- the /api/score credential -------------------------------------------------
 //
-// DELETED HERE, because the behaviour no longer exists: `/api/score rejects a wrong
-// access code with 403`, `/api/score rejects a missing access code with 403` and
-// `/api/score accepts the right access code and scores a valid payload` all asserted
-// the shared code, which was removed. The credential is a participant token now, and
-// its rejection is covered in test/participant-routes.test.js, which is where the
-// token machinery lives.
+// `/api/score` takes a participant token. Its rejection is covered in
+// test/participant-routes.test.js, which is where the token machinery lives.
 test('/api/score accepts a valid participant token and scores a valid payload', async () => {
-    // The scoring path itself is untouched by the credential change, so this is the
-    // same assertion as before, reached the only way in that remains.
+    // The same scoring assertion as ever, reached the only way in there is.
     const res = await post('/api/score', VALID_PAYLOAD);
     assert.equal(res.status, 200);
     const body = res.json();
@@ -345,8 +340,8 @@ test('/api/score rejects workflows that is not an array with 400', async () => {
 });
 
 test('/api/score never serves a blank heading for a whitespace title', async () => {
-    // The defect this covers: the route accepted the payload and served '   '
-    // as the heading, because validation lived only on the model path.
+    // The route must validate the heading too, not only the model path: accepting the payload and
+    // serving '   ' as the heading is the failure this covers.
     const res = await scoreWith({ workflows: [{ id: 'a', title: '   ' }, { id: 'b', title: '   ' }] });
     assert.equal(res.status, 400, 'a blank heading must never be scored and returned');
 });

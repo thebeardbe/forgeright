@@ -66,7 +66,7 @@ test('case 1: no open round inserts a PARTIAL round', () => {
 });
 
 test('case 2: an OPEN round is UPDATED, not appended', () => {
-    // The defect the round model fixes: two rows for one process.
+    // Two rows for one process would follow from appending rather than updating.
     const { org, recordTurn } = orgWithInvitation();
 
     const first = recordTurn({ data: { step: 1 }, transcript: conversation(1) });
@@ -232,9 +232,8 @@ test('an omitted transcript through updateResponse PRESERVES it', () => {
 });
 
 test('progressive saving through recordTurn accumulates rather than losing the conversation', () => {
-    // The end-to-end shape of the bug: several turns against ONE open round, each
-    // carrying a longer conversation. The final row must hold the LAST transcript, not
-    // the first.
+    // Several turns against ONE open round, each carrying a longer conversation. The final row must
+    // hold the LAST transcript, not the first.
     const { org, recordTurn } = orgWithInvitation();
 
     recordTurn({ data: { n: 1 }, transcript: conversation(1) });
@@ -345,8 +344,8 @@ test('stepsStillNeed is computed across processes but the completion gate judges
 // 6. THE PROMPT'S FRESH-START RULE
 // ===========================================================================
 //
-// The line previously REQUIRED accumulation ("alongside the first"), which contradicts
-// the owner's model, so it was changed. Pinned in both languages so it cannot drift back.
+// The line must NOT require accumulation ("alongside the first"): the fresh-start rule
+// replaces the earlier process. Pinned in both languages so it cannot drift back.
 
 const PROMPTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'prompts', 'cartiere_audit');
 

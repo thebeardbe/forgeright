@@ -1,23 +1,18 @@
 /**
- * The score numbering fix: the number is computed inside the transaction, and the
+ * The score numbering: the number is computed inside the transaction, and the
  * index makes a recurrence loud.
  *
- * WHY THIS FILE EXISTS. The reviewer mutated both halves of `e2d59de` and the whole
- * suite passed each time (861 pass):
+ * WHAT THIS FILE PINS. Both halves of the numbering guarantee:
  *
- *   - moving `nextScoreRevision` back to the call site
- *   - removing `idx_process_score_number` from the schema
+ *   - THE CAUSE FIX: `nextScoreRevision` computes the number inside `insertScore`'s
+ *     transaction, so two writers cannot both read 17 and both insert 18.
+ *   - THE INDEX: `idx_process_score_number` makes a duplicate (revision_id, revision_no)
+ *     a UNIQUE constraint failure rather than a silent duplicate.
  *
- * Neither the index name nor the numbering appears in any test or script. Both
- * halves are pinned here. The reviewer's three-state reproduction shows what each
- * does:
- *
- *   shipped code                          24 weighings, 0 duplicates
- *   numbering reverted + index removed    2 duplicate numbers silently (7 and 11)
- *   numbering reverted, index kept        20 weighings, UNIQUE constraint failed
- *
- * So THE CAUSE FIX prevents the duplicate, and THE INDEX turns a recurrence loud
- * rather than silent.
+ * The two are separate: without the cause fix and with the index, a recurrence is loud;
+ * without both, two weighings silently take the same number (7 and 11 in a 24-weighing run).
+ * Neither the index name nor the numbering is otherwise visible from the public API, so both
+ * are pinned here.
  *
  * STORE_DIR is a temp directory per run, set before anything is imported.
  */
@@ -60,14 +55,13 @@ function orgWithRevision() {
 // 1. THE NUMBER IS COMPUTED INSIDE THE TRANSACTION
 // ===========================================================================
 //
-// The fix was to move the `MAX(revision_no)` READ inside `insertScore`'s
-// transaction. Before, the read sat at the call site, so two writers could both
-// read 17 and both insert 18.
+// The `MAX(revision_no)` READ must sit inside `insertScore`'s transaction rather than at the call
+// site: at the call site, two writers read 17 and both insert 18.
 //
-// The reviewer's suggestion: call `insertScore` twice on the SAME revision passing
-// NO `revisionNo`, and assert the numbers come back 1 then 2. That pins the change
-// - the number is derived by the store rather than by the caller - without staging
-// a race, which cannot be staged reliably in one process (see the note at the end).
+// The case is built by calling `insertScore` twice on the SAME revision passing NO `revisionNo`,
+// and asserting the numbers come back 1 then 2. That pins the change - the number is derived by the
+// store rather than by the caller - without staging a race, which cannot be staged reliably in one
+// process (see the note at the end).
 
 test('insertScore DERIVES the number when the caller gives none: 1 then 2 on one revision', () => {
     const { org, revisionId } = orgWithRevision();
@@ -83,7 +77,7 @@ test('insertScore DERIVES the number when the caller gives none: 1 then 2 on one
 
 test('the derived numbers are what is STORED, not only what is returned', () => {
     // The read-back is the evidence: a function returning 1 and 2 while storing
-    // something else would pass the test above and still be the defect.
+    // something else would pass the test above and still be wrong.
     const { org, revisionId } = orgWithRevision();
     const db = registry.connectionFor(org.id);
 
@@ -103,11 +97,11 @@ test('the numbering continues from the highest existing number, not from a count
     // deleting the HIGHEST number cannot make the next insert equal a surviving one.
     // That is the `MAX`-derivation half of the guarantee, and it is exercised here.
     //
-    // THE OTHER HALF IS THE INDEX, which is what this test does NOT stage: removing
-    // `idx_process_score_number` leaves this test passing, because the case it builds
-    // never asks the database to refuse anything. The refusal is covered separately
-    // by "inserting two rows with the same (revision_id, revision_no) is REFUSED".
-    // Stated because the sentence above used to claim the whole guarantee.
+    // THE OTHER HALF IS THE INDEX, which is what this test does NOT stage: without
+    // `idx_process_score_number` it still passes, because the case it builds never asks the
+    // database to refuse anything. The refusal is covered separately by "inserting two rows with
+    // the same (revision_id, revision_no) is REFUSED". Stated so the sentence above is not read
+    // as claiming the whole guarantee.
     const { org, revisionId } = orgWithRevision();
     const db = registry.connectionFor(org.id);
 
@@ -240,30 +234,28 @@ test('the same number on a DIFFERENT revision is allowed, so the index is per re
 // which is the mechanism, and not at lock acquisition as the old note implied.
 //
 // WHAT IS TRUE is narrower and more useful: the interleave cannot be produced
-// THROUGH THE PUBLIC API, because `insertScore` opens the transaction that the
-// pre-fix code left open until after the read. Staging it therefore needs the
-// reverted pattern, not a call to `insertScore`.
+// THROUGH THE PUBLIC API, because `insertScore` opens the transaction around the read. Staging it
+// therefore needs an out-of-transaction read pattern, not a call to `insertScore`.
 //
 // IT DOES NOT FIT THIS CASE. That harness holds a WRITE LOCK so the parent's write
 // can be made to block; what the numbering race needs is two writers INTERLEAVING
 // a read that is, in the shipped code, already inside a write transaction. A
-// `BEGIN IMMEDIATE` serialises the two threads, so with the fix in place the
-// interleave cannot occur, and staging it would require reverting the fix inside
-// the test to demonstrate a defect the code does not have. Attempts with worker
-// threads reached the `MAX` read in both threads but could not turn that into a
-// duplicate through the public API, because the transaction prevents it - which is
-// the fix working.
+// `BEGIN IMMEDIATE` serialises the two threads, so the interleave cannot occur, and staging it
+// would require embedding an out-of-transaction read in the test to demonstrate a state the
+// shipped code cannot reach. Attempts with worker threads reached the `MAX` read in both threads
+// but could not turn that into a duplicate through the public API, because the transaction
+// prevents it.
 //
 // So the honest coverage is above, and it is TWO PINNED POINTS rather than one: the
 // NUMBER is derived and consecutive, asserted on what is STORED and not only what is
 // returned (the cause fix, pinned with no concurrency at all), and the INDEX refuses
-// a duplicate (the loud handling of a recurrence). Both were verified by mutation:
+// a duplicate (the loud handling of a recurrence). Both are mutation-verified:
 // reverting the derivation fails five tests here, and removing the index fails two.
 //
 // What is unpinned is only the third thing, the interleave between two writers, and
-// a test for it would have to embed the reverted code and assert on a state the
+// a test for it would have to embed the out-of-transaction read and assert on a state the
 // shipped build cannot reach. That is the trap the repo already documents in the
 // NOTES.md section "The write-contention test trap", not a gap somebody forgot. For
-// anyone who ever does need to stage it: with the fix in place, three worker threads
+// anyone who ever does need to stage it: three worker threads
 // calling `insertScore` produce zero duplicates across 60 rows, because
 // `BEGIN IMMEDIATE` serialises the read and the insert.

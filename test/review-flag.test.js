@@ -3,13 +3,12 @@
  *
  * `needsReviewFromRevisions` in `lib/store/process-membership.js` answers: "was this
  * process BORN from an unsure split, and has nobody settled that since?" It reads
- * the HISTORY, because an earlier version read only the current revision and was
- * wrong in both directions (commit c7f8ec8):
+ * the HISTORY, because reading only the current revision is wrong in both directions:
  *
- *   - false positive: a low-confidence MERGE was flagged and labelled "split while
+ *   - false positive: a low-confidence MERGE is flagged and labelled "split while
  *     unsure", sending a reader after a split that did not exist;
- *   - false negative: an ordinary model merge CLEARED the flag, which was the worse
- *     of the two, because it removed the only mechanism the unsure-split path has
+ *   - false negative: an ordinary model merge CLEARS the flag, which is worse than the
+ *     false positive, because it removes the only mechanism the unsure-split path has
  *     for being noticed.
  *
  * The derivation rests on REVISION 1 BEING THE CREATION, so that assumption is
