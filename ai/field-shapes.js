@@ -222,6 +222,25 @@ export const ALL_PROCESS_FIELD_NAMES = Object.freeze([
  * without it. The comparison is strict, so any non-zero frequency counts.
  *
  * @param {*} value
+ * THE PROSE MARKER IS CHECKED FIRST, AND FOR EVERY SHAPE. `{ said: "<the participant's words>" }`
+ * records an answer that will not fit the field's type; it counts as supplied for any shape EXCEPT
+ * the four in TYPED_MINIMUM_FIELDS, so the interview stops asking about a field that was genuinely
+ * answered and the words are kept rather than lost.
+ *
+ * WHY IT EXISTS: a model could only supply a correctly-typed value, so an answer that was real but
+ * not a number - "it depends on the mail, no rule I can make" - had NOWHERE TO GO. The field stayed
+ * missing and a real interview looped on the same question five times.
+ *
+ * IT IS NOT AN ESCAPE FROM THE GATE: TYPED_MINIMUM_FIELDS refuses it, so a model cannot complete
+ * an interview by writing prose into everything - demonstrated in the tests. `missing` still names
+ * a field that is ABSENT; this distinguishes "they answered, in words" from "never asked".
+ * CHECKED BEFORE THE PER-FIELD MINIMUM, or `{ said: ... }` on a numeric field falls through to the
+ * minimum and loses that distinction.
+ *
+ * A REFUSAL IS ANSWERED-BUT-NOT-SUPPLIED, which is neither of the two things this function
+ * returns. It is resolved in `fieldsPresentIn` and `fieldsDeclinedIn`; FALSE here stops anything
+ * downstream mistaking it for a usable value. See `declinedIn` for why the two must differ.
+ *
  * @param {string} shape One of the FIELD_SHAPES values.
  * @param {string} [field] The field name, so a per-field minimum can apply.
  * @returns {boolean}
@@ -229,30 +248,7 @@ export const ALL_PROCESS_FIELD_NAMES = Object.freeze([
 function hasShape(value, shape, field) {
     if (value === undefined || value === null) return false;
 
-    // THE PROSE MARKER IS CHECKED FIRST, AND FOR EVERY SHAPE.
-    //
-    // `{ said: "<the participant's words>" }` records an answer that will not fit the field's
-    // type. It counts as supplied for any shape EXCEPT the four in TYPED_MINIMUM_FIELDS, so
-    // the interview stops asking about a field the participant has genuinely answered, and
-    // their words are kept rather than lost.
-    //
-    // WHY IT EXISTS: a model could only supply a field with a correctly-typed value, so an answer
-    // that was real but not a number - "it depends on the mail, no rule I can make" - had NOWHERE TO
-    // GO. The field stayed missing, and a real interview looped on the same question five times
-    // because the participant's answers could never satisfy it.
-    //
-    // IT IS NOT AN ESCAPE FROM THE GATE. The fields in TYPED_MINIMUM_FIELDS refuse it,
-    // so a model cannot complete an interview by writing prose into everything - demonstrated
-    // in the tests. `missing` still names a field that is ABSENT; this distinguishes "they
-    // answered, in words" from "they were never asked".
-    //
-    // CHECKED BEFORE THE PER-FIELD MINIMUM, so `{ said: ... }` on a numeric field is judged by
-    // this rule rather than falling through to the minimum, which would report it as not
-    // supplied and lose the distinction between prose and absence.
-    // A REFUSAL COUNTS AS ANSWERED-BUT-NOT-SUPPLIED, which is neither of the two things this
-    // function returns. It is resolved in fieldsPresentIn and fieldsDeclinedIn instead, and
-    // returns FALSE here so that nothing downstream mistakes it for a usable value. See
-    // declinedIn for why the two must be different.
+    // See the prose-marker note above.
     if (declinedIn(value) !== null) return false;
 
     const said = proseSaidIn(value);

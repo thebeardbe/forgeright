@@ -43,11 +43,21 @@
         waiting: false,
         audit: null,
         result: null,
-        // The processes this round holds, by `id`, as last saved. `roundProcesses` is
-        // what a completion claim is checked against before it is stored: see
-        // mergeForwardDroppedProcesses. It is deliberately the SAVED set rather than the
-        // last reply's, so a reply that drops a process cannot also overwrite the record
-        // of what the round had.
+        // The processes this round holds, by `id`, as last saved.
+        //
+        // WHAT A COMPLETION CLAIM IS CHECKED AGAINST before it is stored; see
+        // mergeForwardDroppedProcesses. Deliberately the SAVED set rather than the last
+        // reply's, so a reply that drops a process cannot overwrite the record of what the
+        // round had.
+        //
+        // IT ALSO GOES WITH EVERY TURN, so the server can tell a process the model re-worded
+        // from one the participant has just named. The reply cannot carry that distinction -
+        // both arrive as an entry with content - and neither can the client, because two
+        // accounts of one process and two accounts of two are the same shape. What separates
+        // them is knowing WHICH PROCESS THE ROUND WAS ON. It is the map the client already
+        // keeps, so this is one field rather than new state, and `lib/routes-api.js` resolves
+        // no organisation and reads no participant data (see its header), which is why the
+        // client sends it rather than the route looking it up.
         roundProcesses: new Map()
     };
 
@@ -107,23 +117,22 @@
         if (el) el.remove();
     }
 
-    // THERE IS NO start() HERE ANY MORE, and its absence is deliberate.
-    //
-    // It was the access-code step, reading the code from #pass and hiding #unlock. The access code
-    // is gone (see mayUseQuestionnaire in lib/routes-api.js) and so are #pass, #unlock and
-    // #start-btn, which leaves nothing for it to read, send or hide.
-    //
-    // IT WAS A CRASH WAITING TO HAPPEN: it called $('unlock').classList.add(...) on an element that
-    // no longer exists, a TypeError on null. It never fired, because the only two things that called
-    // it were the missing controls - MEASURED in a browser against a real invitation link:
-    // {"startBtn":false,"pass":false,"unlock":false}, and a direct call threw.
-    //
-    // DELETING IS THE HONEST FIX rather than a third existence check on an unreachable function: a
-    // guard would preserve the shape of a flow that no longer exists, leaving the next reader to
-    // work out why a control that is never rendered is
-    // being defended. The token is the only credential, and beginWithToken() below is the
-    // only way in.
-
+    /**
+     * Sends the participant's turn and acts on the reply.
+     *
+     * THERE IS NO ACCESS-CODE STEP. The token is the only credential and `beginWithToken`
+     * below is the only way in; `mayUseQuestionnaire` in lib/routes-api.js enforces it.
+     *
+     * SCORING USES `toSave` RATHER THAN THE RAW REPLY, and this matters: `toSave` carries the
+     * reconciled identity and any process carried forward from the round, while the raw reply
+     * is the model's own. Scoring the raw reply showed a total built from a stub while the
+     * full process sat unread beside it in the same round.
+     *
+     * THE INPUT STAYS OPEN WHEN `complete`, because the closing question is answerable: the
+     * model asks "is there another process you would like to improve?" in the SAME reply that
+     * reports completion, so hiding it made rounds 2 and beyond unreachable - the whole point
+     * of the round model.
+     */
     async function send() {
         if (state.waiting) return;
         const input = $('input');
@@ -147,17 +156,8 @@
                     participantToken: TOKEN || undefined,
                     lang: cfg.lang,
                     messages: state.conversation,
-                    // THE ROUND'S OWN PROCESSES GO WITH THE TURN, so the SERVER can tell a
-                    // process the model re-worded from one the participant has just named. The
-                    // reply cannot carry that distinction - both arrive as an entry with content
-                    // - and the client cannot make it either, because two accounts of one
-                    // process and two accounts of two processes are the same shape. What
-                    // separates them is knowing WHICH PROCESS THE ROUND WAS ON, and this is it.
-                    //
-                    // It is the same map the client already keeps for its own carry-forward, so
-                    // this is one field rather than new state. `lib/routes-api.js` deliberately
-                    // resolves no organisation and reads no participant data (see its header),
-                    // which is why the client sends this rather than the route looking it up.
+                    // The round's processes, so the server can tell a re-worded process
+                    // from a newly named one; see the note above `state.roundProcesses`.
                     roundProcesses: Array.from(state.roundProcesses.values())
                 })
             });
@@ -325,13 +325,7 @@
                 return;
             }
             if (exhausted) {
-                // The round ends, and it is scored on what was supplied - unlike the
-                // nothing-answered case, where there would be nothing to score.
-                //
-                // `toSave` RATHER THAN `payload`, and this matters: `payload` is the raw reply,
-                // while `toSave` carries the reconciled identity and any process carried forward
-                // from the round. Scoring the raw reply showed the participant a total built
-                // from a stub while the full process sat unread beside it in the same round.
+                // The round ends and is scored on what was supplied; see the `toSave` note above.
                 $('input-area').classList.add('hidden');
                 if (toSave) {
                     state.audit = toSave;
@@ -341,14 +335,7 @@
             }
 
             if (isComplete && toSave) {
-                // `toSave` for the same reason as the exhausted branch above.
                 state.audit = toSave;
-                // THE INPUT STAYS OPEN, because the closing question is answerable.
-                // Hiding it here is what made the second process unreachable: the
-                // model asks "is there another process you would like to improve?"
-                // in the SAME reply that reports completion, and the participant had
-                // no way to answer it. Rounds 2 and beyond could therefore never
-                // begin, which is the whole point of the round model.
                 await runScoring();
             }
         } catch (err) {
@@ -784,6 +771,16 @@
      * summed into the total. The other two buckets do NOT count it, so showing it as "recoverable"
      * would claim hours this analysis is explicitly saying cannot be recovered - they show the raw
      * weekly effort instead.
+     *
+     * A ZERO THAT MEANS "NOT COMPUTABLE" MUST NOT BE SHOWN AS A ZERO. The effort formula
+     * multiplies three factors, and the prose marker makes any of them unreadable as a number,
+     * so the product is 0. Printing `0 h/wk effort` says the work takes no time, which is false
+     * and is the damaging half of the defect - the participant described a daily check of 56
+     * servers. THE SCORE IS UNCHANGED: it cannot multiply a sentence, and turning one into a
+     * figure is the guess the marker exists to prevent. Only the label changes.
+     *
+     * AN ABSENT FIELD MEANS NOBODY GAVE A USABLE VALUE, so it is shown as such rather than
+     * printing "undefined" as though it were a reading.
      */
     function bucketHtml(cssClass, title, items, mode) {
         if (!items || !items.length) return '';
@@ -791,13 +788,6 @@
         for (const wf of items) {
             const value = mode === 'recoverable' ? wf.recoverableHoursPerWeek : wf.effortHoursPerWeek;
             const unit = mode === 'recoverable' ? 'h/wk recoverable' : 'h/wk effort';
-            // A ZERO THAT MEANS "NOT COMPUTABLE" MUST NOT BE SHOWN AS A ZERO. The effort formula
-            // multiplies three factors, and the prose marker makes any of them unreadable as a
-            // number, so the product is 0. Printing `0 h/wk effort` says the work takes no time,
-            // which is false and is the damaging half of this defect - the participant described
-            // a daily check of 56 servers. The SCORE is unchanged: it cannot multiply a sentence,
-            // and turning one into a figure is the guess the marker exists to prevent. Only the
-            // label changes, to say what the zero actually means.
             const unmeasurable = effortIsUnmeasurable(wf);
             const scoreText = mode === 'effort' && unmeasurable
                 ? '<em>' + escapeHtml(S.effortNotMeasured) + '</em>'
@@ -809,11 +799,8 @@
                 '<span class="wf-score">' + scoreText + '</span>' +
                 '</div>' +
                 '<div class="wf-meta">' +
-                // An absent field means nobody gave a usable value. Show that,
-                // rather than printing "undefined" as though it were a reading.
                 metaPart(wf.frequencyPerWeek, '/wk') + ' · ' +
                 metaPart(wf.minutesPerInstance, ' min') + ' · ' +
-                // See `timePerPeriodText` for why this needs resolving before `metaPart`.
                 metaPart(timePerPeriodText(wf.timePerPeriod) ?? wf.timePerPeriod, '') + ' · ' +
                 metaPart(wf.peopleAffected, ' people') + ' · ' +
                 'judgement ' + escapeHtml(String(wf.judgementScore)) + '/5' +
@@ -907,11 +894,6 @@
     function beginWithToken() {
         $('conversation').classList.remove('hidden');
 
-        // A RESUMED ROUND REBUILDS THE CONVERSATION IT ACTUALLY HAD, so the participant
-        // can read what they said before continuing. `state.conversation` is what gets
-        // posted back on the next turn, so restoring it also means the server receives
-        // the whole conversation again rather than only the new part - which is what
-        // `recordTurn` rewrites the stored transcript from.
         if (resumedTranscript.length > 0) {
             state.conversation = resumedTranscript.map((turn) => ({
                 role: turn.role,
@@ -932,22 +914,19 @@
         $('actions').classList.remove('hidden');
     }
 
+    // NO UNLOCK LISTENERS: #start-btn and #pass are not rendered and their function is gone,
+    // so a page with a resolved token starts the conversation directly - the only case.
+    //
+    // THE `#download-md` GUARD IS REQUIRED, NOT DEFENSIVE. `$` is getElementById, so an absent
+    // button made the listener `null.addEventListener` and threw, taking the whole block with
+    // it - `#input`'s Enter key included - so the questionnaire loaded and ignored every answer.
+    // The handler and the string are kept, so bringing the button back is removing `hidden` in
+    // views/audit.ejs and nothing else.
     document.addEventListener('DOMContentLoaded', () => {
-        // NO UNLOCK LISTENERS. The controls they bound to, #start-btn and #pass, are
-        // not rendered any more and the function they called is gone, so a page with a
-        // resolved token starts the conversation directly - which is the only case.
         if (hasToken) beginWithToken();
         $('send-btn').addEventListener('click', send);
 
-        // THE GUARD IS REQUIRED, NOT DEFENSIVE. `#download-md` is hidden in the view for the
-        // PoC, and this line bound it UNGUARDED: `$` is getElementById, so a hidden-or-absent
-        // button made this `null.addEventListener` and threw a TypeError, which would take the
-        // whole listener block with it - `#input`'s Enter key included - so the questionnaire
-        // would have loaded and then silently ignored every answer. This codebase has had that
-        // exact bug once already, which is why the check is here rather than assumed.
-        //
-        // THE HANDLER AND THE STRING ARE KEPT, so bringing the button back is removing the
-        // `hidden` attribute in views/audit.ejs and nothing else.
+        // The guard is required, not defensive; see the block above.
         if ($('download-md')) $('download-md').addEventListener('click', downloadMarkdown);
 
         $('input').addEventListener('keydown', (e) => {

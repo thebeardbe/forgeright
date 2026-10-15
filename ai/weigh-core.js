@@ -160,7 +160,17 @@ function proseForWeighing(said) {
  *
  * `data` IS IN EITHER STORED SHAPE and is resolved through `responseWorkflow` before any field is
  * read, so a reader that assumed the flat shape would find no fields and weigh the work as
- * unmeasured.
+ * unmeasured - and carried an EMPTY `## What the participants said` section into the prompt, the
+ * same defect as the step merge.
+ *
+ * A PROSE ANSWER IS LABELLED BEFORE IT REACHES THE MODEL, which is the whole point of
+ * `proseForWeighing`: `{ said: "just me" }` is the participant's words for a field that would not
+ * take a number, and passing the raw object gives an unexplained `{"said":"..."}` where every
+ * other field is a number or a list. The model decides whether prose is usable, not this code -
+ * its job is to make sure the model knows "they said this" from "the figure is this".
+ *
+ * NOT FILTERED OUT. Excluding prose here would decide on the model's behalf that it is unusable,
+ * and the weighing is exactly the place that can judge whether "just me" is a participant count.
  *
  * @param {Array<object>} responses Responses with `data` parsed.
  * @returns {object}
@@ -174,29 +184,8 @@ function mergeParticipants(responses) {
 
     for (const field of fields) {
         const values = responses
-            // THE SHAPE IS RESOLVED, THE FIELD IS NOT REACHED FOR DIRECTLY. This read
-            // `response.data?.[field]`, the FLAT shape, so on a live interview every one of the
-            // fourteen fields came back undefined and the prompt above carried an EMPTY
-            // `## What the participants said` section - the same defect as the step merge, and a
-            // second route to "No evidence was supplied for this process". A live round saves
-            // `{ workflows: [ {...} ] }`; an imported one saves the workflow directly.
-            // `responseWorkflow` is the one definition of that shape, shared with the console and
-            // with `ai/merge-steps.js`, so the three cannot disagree about what a response holds.
+            // Shape resolved, not reached into; prose labelled, not filtered. See the header.
             .map((response) => responseWorkflow(response.data)?.[field])
-            // A PROSE ANSWER IS LABELLED BEFORE IT REACHES THE WEIGHING MODEL, and that is
-            // the whole point of this line. `{ said: "just me" }` is the participant's own
-            // words for a field that would not take a number, and passing the raw object
-            // would give the model an unexplained `{"said":"..."}` where every other field
-            // is a number or a list - it could read it as a figure, or ignore it, and either
-            // way it was not TOLD what it was looking at.
-            //
-            // The weighing model decides whether prose is usable, not this code: its job is
-            // to make sure the model knows the difference between "they said this" and "the
-            // figure is this". Whether it can score it, it works out itself.
-            //
-            // NOT FILTERED OUT. Excluding prose here would decide on the model's behalf that
-            // it is unusable, and the weighing is exactly the place that can judge whether
-            // "just me" is a participant count.
             .map((value) => {
                 const said = proseSaidIn(value);
                 if (said !== null) return proseForWeighing(said);
