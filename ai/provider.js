@@ -1,7 +1,6 @@
 /**
- * Provider dispatch: resolves the configured provider to an adapter and exposes a single generateText
- * entry point. Adapters are imported eagerly because there are only three and a dynamic import would
- * hide a broken adapter until first use.
+ * Provider dispatch: resolves the configured provider to an adapter and exposes one generateText entry
+ * point. Adapters are imported eagerly so a broken one fails at load rather than at first use.
  */
 import { loadAiConfig } from './config.js';
 import { generate as generateMock } from './adapters/mock.js';
@@ -28,8 +27,7 @@ export async function generateText({ messages, systemInstruction, temperature, m
     const config = loadAiConfig();
     const adapter = ADAPTERS[config.type];
 
-    // A missing adapter is a programming error rather than a runtime condition: the config names a type
-    // nothing implements.
+    // A programming error, not a runtime condition: the config names a type nothing implements.
     if (!adapter) {
         throw new Error(
             `No adapter registered for provider type "${config.type}" ` +

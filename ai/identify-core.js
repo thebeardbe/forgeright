@@ -1,13 +1,7 @@
 /**
- * Identification core: workflow 2, one completed response and which process it belongs to.
- *
- * The model reasons and the code decides: the model reports `matches`, a confidence and its reasoning,
- * `validateIdentification` in lib/store/processes.js checks the shape, and the caller stores what
- * survives. Nothing here scores or ranks, which is workflow 3.
- *
- * It uses the same two helpers as the interview, deliberately unreimplemented: `extractJsonObject` for
- * a reply that arrives as prose, and `withFormatCommitment` for the trailing turn that keeps a long
- * conversation in JSON.
+ * Identification core: workflow 2, one completed response and which process it belongs to. The model
+ * reports `matches`, a confidence and its reasoning, and `validateIdentification` in
+ * lib/store/processes.js checks the shape. Nothing here scores or ranks, which is workflow 3.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -22,10 +16,7 @@ const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
 
 const SUPPORTED_LANGS = ['nl', 'en', 'fr'];
 
-/**
- * Loads the identification prompt, falling back to English then Dutch. It returns null rather than
- * throwing so the caller reports a clean error instead of a stack trace, matching the interview prompt.
- */
+/** Loads the identification prompt, falling back to English then Dutch, or null. */
 async function loadIdentifyPrompt(toolId, lang) {
     for (const candidate of [lang, 'en', 'nl']) {
         const file = path.join(PROMPTS_DIR, toolId, `identify_${candidate}.md`);
@@ -39,11 +30,9 @@ async function loadIdentifyPrompt(toolId, lang) {
 }
 
 /**
- * The user turn carrying the comparison: the new response and the known processes. It is sent as the
- * user turn rather than folded into the system prompt, because it is the data under comparison and
- * changes per call while the system prompt states the rules. The full transcripts are not sent: they
- * are stored so a person can read them, and several conversations per comparison would be a large cost
- * for text the decision does not use.
+ * The user turn carrying the comparison: the new response and the known processes. Sent as the user turn
+ * rather than folded into the system prompt, because it is the data under comparison and changes per call.
+ * The full transcripts are not sent: they are a large cost for text the decision does not use.
  *
  * @param {object} response The response row, with `data` parsed.
  * @param {Array<object>} knownProcesses Existing processes with their reasoning. Each may carry
@@ -77,8 +66,7 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         }
     }
 
-    // An admin supplies an argument rather than a category, which is why the prompt allows a name
-    // change and a re-merge at all.
+    // An admin supplies an argument rather than a category, which is why a name change is allowed.
     if (adminReasoning) {
         parts.push('## An admin disagrees with the current grouping, and says why');
         parts.push('');
@@ -121,10 +109,9 @@ export async function runIdentification({
 
     const message = buildComparisonMessage(response, knownProcesses, adminReasoning);
 
-    // The same guardrail as the interview: this text came from a participant and is about to be placed
-    // in a prompt. The admin's reasoning is included deliberately, because it is an authorised
-    // instruction rather than participant input, and it is screened like everything else so a
-    // compromise of the admin account is not also an instruction to the model.
+    // Participant text is about to be placed in a prompt. The admin's reasoning is deliberately included,
+    // because it is an authorised instruction, and screened like everything else so a compromised admin
+    // account is not also an instruction to the model.
     const cleaned = sanitizeInput(message);
     if (await checkPromptInjection(cleaned)) {
         console.warn('[identify] blocked an input that matched an injection pattern');
@@ -147,13 +134,9 @@ export async function runIdentification({
 }
 
 /**
- * Parses and shape-checks an identification reply, without which a grouping is stored as the model
- * worded it. The check is `validateIdentification` in lib/store/processes.js, where the rules about a
- * real `matches` id and a required `reasoning` live, so there is one definition rather than one per
- * caller.
- *
- * A reply with no JSON is reported as an error with what came back, matching the interview's behaviour,
- * so an unreadable reply is diagnosable from the log.
+ * Parses and shape-checks an identification reply. The check is `validateIdentification` in
+ * lib/store/processes.js, where the rules about a real `matches` id and a required `reasoning` live. A
+ * reply with no JSON is reported with what came back, so it is diagnosable from the log.
  *
  * @param {string} raw
  * @returns {object} The parsed reply, or {status:'error', content, reason}.

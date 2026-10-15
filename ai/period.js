@@ -1,20 +1,16 @@
 /**
- * Periods, and the two questions asked about a `timePerPeriod` value.
- *
- * The distinction these predicates exist to protect is between a period that says the work is zero and
- * a period that could not be measured.
+ * Periods, and the two questions asked about a `timePerPeriod` value. The distinction these protect is
+ * between a period that says the work is zero and one that could not be measured.
  */
 
 /**
- * Whether a value is the continuous-work shape the prompt asks for. Two forms are accepted, because the
- * participant's own words are a valid answer as well as the structured object:
+ * Whether a value is the continuous-work shape the prompt asks for. Both the structured object and a
+ * description in the participant's own words are accepted:
  *
- *   { hours: 6, period: "week" }   the shape the prompt documents, convertible to weekly hours
- *   "2 hours a day"                a description, which answers the field but cannot be converted
+ *   { hours: 6, period: "week" }   convertible to weekly hours
+ *   "2 hours a day"                answers the field but cannot be converted
  *
- * A description's hours are read as zero by the effort calculation, which is deliberate: see
- * `timePerPeriodIsScorable`. A wrong-typed value that is neither, such as a number or an array, is
- * refused.
+ * A description's hours are read as zero by the effort calculation; see `timePerPeriodIsScorable`.
  *
  * @param {*} value
  * @returns {boolean}
@@ -27,10 +23,9 @@ export function isPeriod(value) {
 }
 
 /**
- * Whether a `timePerPeriod` can actually be turned into weekly hours: true for the structured shape,
- * false for a description. The distinction exists so a zero effort figure can be read correctly, since
- * a scorable period of zero would mean the work consumes nothing while an unscorable description means
- * the figure is unknown.
+ * Whether a `timePerPeriod` can be turned into weekly hours: true for the structured shape, false for a
+ * description. The distinction exists so a zero effort figure is readable: scorable zero means the work
+ * consumes nothing, while an unscorable description means the figure is unknown.
  *
  * @param {*} value
  * @returns {boolean}
@@ -41,10 +36,7 @@ export function timePerPeriodIsScorable(value) {
         && PERIODS_IN_WEEK[value.period] !== undefined;
 }
 
-/**
- * How many of each period fit in a week, used by the effort calculation, so a period this system cannot
- * read is rejected at the matrix rather than scoring zero.
- */
+/** How many of each period fit in a week, used by the effort calculation. */
 export const PERIODS_IN_WEEK = Object.freeze({
     day: 5,      // A working week, matching how the prompt reads "daily".
     week: 1,

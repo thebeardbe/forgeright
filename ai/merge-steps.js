@@ -1,10 +1,8 @@
 /**
  * Merging the steps of a process described by several people.
  *
- * The rule is business logic rather than a rendering detail, because it decides where the automation
- * boundary is. It sits in `ai/` because both layers need it and `ai/` is the common ancestor, so
- * neither has to depend on the other; it imports only from `ai/`, keeping the one-way arrow intact.
- * The function is pure, so it is testable with literals.
+ * Business logic rather than a rendering detail, because it decides where the automation boundary is. It
+ * sits in `ai/` because both layers need it and `ai/` is the common ancestor; it imports only from `ai/`.
  */
 
 import { stepNeedsReasoning } from './matrix.js';
@@ -18,15 +16,12 @@ function stepKey(step) {
 }
 
 /**
- * Merges the steps of every response behind one process into one ordered sequence, not one per
- * response, because rendering them separately showed a three-step process six times. Merged by name,
- * first-seen order.
+ * Merges the steps of every response behind one process into one ordered sequence, merged by name in
+ * first-seen order, rather than one sequence per response.
  *
- * The pessimistic reading wins: `needsReasoning` is true if any response says true, because the flag
- * marks where a human stays in the loop and the optimistic reading would hide the work the roadmap
- * exists to surface. On a disagreement the merged row carries the pessimistic flag and one account's
- * quotation, so differing wording takes the longer `whatHappens` and the first non-empty `decidedHow`
- * and `reasoningBasis`.
+ * The pessimistic reading wins: `needsReasoning` is true if any response says true, because the flag marks
+ * where a human stays in the loop and the optimistic reading would hide that work. Differing wording takes
+ * the longer `whatHappens` and the first non-empty `decidedHow` and `reasoningBasis`.
  *
  * @param {Array<object>} responses Response rows, each with `data` in either stored shape.
  * @returns {{steps: Array<object>, reasoningSteps: number, describedBy: Array<[string, number]>,
@@ -41,14 +36,12 @@ export function mergeProcessSteps(responses) {
     for (const response of Array.isArray(responses) ? responses : []) {
         if (!response) continue;
 
-        // Resolved once, here, where the response enters the merge, rather than at each read below:
-        // both fields come from the same resolved workflow, so a shape the resolver understands cannot
-        // be read correctly for the steps and wrongly for the departments.
+        // Resolved once here rather than at each read below, so the steps and the departments cannot
+        // disagree about the shape.
         const workflow = responseWorkflow(response.data);
 
-        // The departments and their counts are read from the responses behind the process rather than
-        // from a field: "which departments described this" is how many people spoke, not how many teams
-        // the work crosses.
+        // Read from the responses behind the process rather than a field: "which departments described
+        // this" is how many people spoke, not how many teams the work crosses.
         const departments = (workflow && workflow.touchedDepartments) || [];
         const list = Array.isArray(departments) ? departments : [];
         const names = list.length > 0 ? list : [response.department];
@@ -56,8 +49,7 @@ export function mergeProcessSteps(responses) {
             describedBy.set(name, (describedBy.get(name) || 0) + 1);
         }
 
-        // From the same resolved workflow as the departments above: on a live interview this is
-        // `data.workflows[0].steps`, and on an imported round `data.steps`.
+        // From the same resolved workflow as the departments above.
         const steps = (workflow && workflow.steps) || [];
         for (const step of Array.isArray(steps) ? steps : []) {
             const key = stepKey(step);
@@ -65,8 +57,7 @@ export function mergeProcessSteps(responses) {
 
             const existing = merged.get(key);
             if (!existing) {
-                // `accounts` and `flags` are bookkeeping for the caller, not fields of the step: they
-                // are removed before the steps are returned.
+                // Bookkeeping, removed before the steps are returned.
                 merged.set(key, { ...step, accounts: 1, flags: new Set([stepNeedsReasoning(step)]) });
                 continue;
             }
@@ -80,17 +71,14 @@ export function mergeProcessSteps(responses) {
             if (!existing.decidedHow && step.decidedHow) existing.decidedHow = step.decidedHow;
             if (stepNeedsReasoning(step)) existing.needsReasoning = true;
 
-            // First non-empty wins, like the basis it comes from: a second account that did quote must
-            // not lose its evidence because the first one did not.
+            // First non-empty wins, so a second account that did quote keeps its evidence.
             if (!existing.reasoningBasis && step.reasoningBasis) {
                 existing.reasoningBasis = step.reasoningBasis;
             }
         }
     }
 
-    // Two counts, named for what they are, because using one for the other overstates the dispute:
-    // `sharedSteps` is every step more than one account described, and `disputedSteps` is the subset
-    // those accounts did not read the same way.
+    // `disputedSteps` is the subset of `sharedSteps` the accounts read differently.
     const all = [...merged.values()];
     const disputedSteps = all.filter((step) => step.flags.size > 1).length;
     const sharedSteps = all.filter((step) => step.accounts > 1).length;
