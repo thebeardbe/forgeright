@@ -7,9 +7,9 @@
  *   { status: "complete", content: "<closing line>", have: [], missing: [],
  *     processes: [...], audit: { workflows: [...] } }
  *
- * `HAVE` AND `MISSING` DECIDE WHETHER THE INTERVIEW CONTINUES, NOT `STATUS`. The server
- * computes both lists and compares the model's claim against them, so a model that believes
- * it is finished while a field is absent cannot close early and drop it silently.
+ * `have` and `missing` decide whether the interview continues, not `status`: the server computes both
+ * lists and compares the model's claim against them, so a model that believes it is finished while a
+ * field is absent cannot close early and drop it silently.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -27,23 +27,15 @@ const PROMPTS_DIR = path.join(__dirname, '..', 'data', 'prompts');
 const SUPPORTED_LANGS = ['nl', 'en', 'fr'];
 
 /**
- * The fields DERIVED from the payload, never asked of the model.
- *
- * `stepsStillNeed` is computed by `parseModelResponse` from `processes`; the model's own value
- * is deleted on sight. A prompt that DESCRIBED it would invite the model to report it, and a
- * model claiming what the matrix computed is how a report starts contradicting its own data.
- * A list, so the next derived field is added here rather than guarded separately.
+ * The fields derived from the payload, never asked of the model. The model's own value is deleted on
+ * sight, and a list so the next derived field is added here rather than guarded separately.
  */
 const DERIVED_FIELDS = Object.freeze(['stepsStillNeed']);
 
 /**
- * Removes every derived field from an object graph, at any depth.
- *
- * THE ENFORCEMENT HALF OF `DERIVED_FIELDS`. The payload is persisted verbatim, so a value
- * deleted only at the top level still reaches a caller inside `processes` and the saved
- * answers. DEPTH-FIRST, IN PLACE, WALKING ARRAYS - the leak found arrived inside one.
- * Terminates: `JSON.parse` output has no cycles. ONE LOG LINE FOR ALL PATHS, or a model
- * repeating the field per process logs every turn.
+ * Removes every derived field from an object graph at any depth, in place, walking arrays: the payload
+ * is persisted verbatim, so a value deleted only at the top level still reaches a caller inside
+ * `processes` and the saved answers.
  *
  * @param {*} value Any part of the parsed reply.
  * @param {string[]} fields The field names to remove.
@@ -71,11 +63,9 @@ function stripDerivedFields(value, fields) {
 }
 
 /**
- * Refuses to serve a prompt that describes a derived field.
- *
- * A THROW AT LOAD, not a warning and not a test: `parseModelResponse` deletes whatever the model
- * sends, but a prompt that MENTIONED the field would put it in front of the model every turn, so
- * the deletion would be quietly correcting a mistake the prompt invited.
+ * Refuses to serve a prompt that describes a derived field, at load rather than as a warning: a prompt
+ * that mentioned the field would put it in front of the model every turn, so the deletion would be
+ * quietly correcting a mistake the prompt invited.
  *
  * @param {string} text The prompt file's contents.
  * @param {string} file Its path, for the error.
@@ -94,9 +84,8 @@ function assertPromptDoesNotDescribeDerivedFields(text, file) {
 }
 
 /**
- * Loads a prompt, falling back to English then Dutch when a translation is
- * missing. Returns null rather than throwing so the caller can report a clean
- * error to the user instead of a stack trace.
+ * Loads a prompt, falling back to English then Dutch. Returns null rather than throwing so the caller
+ * reports a clean error instead of a stack trace.
  */
 async function loadPrompt(toolId, lang) {
     for (const candidate of [lang, 'en', 'nl']) {
@@ -113,18 +102,9 @@ async function loadPrompt(toolId, lang) {
 }
 
 /**
- * The questions this conversation has already asked, each with its open-field count.
- *
- * THE CONVERSATION IS THE RECORD, not a counter: the client already sends every earlier turn,
- * and a counter is new state that must survive a reload.
- *
- * THE COUNT COMES FROM THE MODEL'S OWN CLAIM, because past turns are not re-matrixed. A model
- * reporting `missing: []` every stalled turn reports the same count, which is the comparison
- * the guard needs; a falling count has progressed.
- *
- * An absent `missing`/`evidenced` reads as unknown, i.e. no progress - the safe direction, as
- * a fresh question beats repeating a stalled one. IT CANNOT SEE a claim and payload disagreeing
- * so as to hide progress, and that is safe: the matrix refuses to close on anything missing.
+ * The questions this conversation has already asked, each with its open-field count. The count comes
+ * from the model's own claim, because past turns are not re-matrixed, and an absent `missing`/`evidenced`
+ * reads as no progress, which is the safe direction.
  *
  * @param {Array<{role: string, content: string, missing?: string[]}>} messages
  * @returns {Array<{text: string, openCount: number}>}
@@ -137,10 +117,10 @@ function assistantQuestionsWithOpenCounts(messages) {
         const text = typeof message.content === 'string' ? message.content.trim() : '';
         if (text === '') continue;
 
-        // Absent counts read as 0, i.e. "unknown", which the guard treats as no progress.
+        // Absent counts read as 0, i.e. unknown, which the guard treats as no progress.
         const missing = Array.isArray(message.missing) ? message.missing.length : 0;
         const evidenced = Array.isArray(message.evidenced) ? message.evidenced.length : 0;
-        // Recorded but never matched; see SUBSTITUTED.
+        // Recorded but never matched.
         asked.push({ text, openCount: missing, evidencedCount: evidenced, substituted: message.substituted === true });
     }
 
@@ -148,10 +128,9 @@ function assistantQuestionsWithOpenCounts(messages) {
 }
 
 /**
- * AN ASSISTANT TURN IS REBUILT AS ROLE AND CONTENT ONLY. The client replays `substituted` and
- * `missing` beside the text because THIS server needs them, and they reach the provider if the
- * message is forwarded as-is - internal bookkeeping in the model's own conversation. A user
- * turn is sanitised; an assistant turn is passed through apart from dropping the extras.
+ * An assistant turn is rebuilt as role and content only: the client replays `substituted` and `missing`
+ * beside the text because this server needs them, and they would otherwise reach the provider as
+ * internal bookkeeping in the model's own conversation.
  *
  * @param {object} args
  * @param {Array<{role: string, content: string}>} args.messages Conversation so far.
@@ -170,7 +149,7 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
     // Guardrail: the model must never see unsanitised participant text.
     const safeMessages = [];
     for (const msg of messages) {
-        // Assistant turns are rebuilt as role and content only - see the guardrail above.
+        // Assistant turns are rebuilt as role and content only.
         if (msg.role !== 'user') {
             safeMessages.push({ role: msg.role, content: msg.content });
             continue;
@@ -178,8 +157,7 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
 
         const cleaned = sanitizeInput(msg.content);
         if (await checkPromptInjection(cleaned)) {
-            // Refuse rather than pass it through. The prompt sets the same rule,
-            // but this holds even if the model is persuaded to ignore it.
+            // Refuse rather than pass it through, even if the model is persuaded to ignore the prompt.
             console.warn('[audit] blocked an input that matched an injection pattern');
             return {
                 status: 'rejected',
@@ -198,16 +176,10 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
         lang: safeLang
     });
 
-    // THE QUESTIONS ALREADY ASKED, passed IN rather than read from anywhere global, so
-    // `parseModelResponse` stays a pure function of its input and testable with one string.
-    //
-    // ONLY THE ASSISTANT'S TURNS ARE USEFUL - a participant's answers are not questions - and the
-    // list is the model's own words, so the comparison is exact rather than fuzzy. EACH CARRIES THE
-    // OPEN-FIELD COUNT FROM WHEN IT WAS ASKED, which is what makes a repeat distinguishable from a
-    // stall: fewer fields open means the participant answered something, so a second attempt is
-    // legitimate, while an equal count is the six-turn stall this guard exists for. The count comes
-    // from the conversation, not stored state; the last question has no answer yet, so it takes the
-    // current count.
+    // The questions already asked, passed in rather than read from anywhere global, so
+    // `parseModelResponse` stays a pure function of its input. Only the assistant's turns are useful, and
+    // each carries the open-field count from when it was asked, which is what makes a legitimate second
+    // attempt distinguishable from the stall this guard exists for.
     const askedBefore = assistantQuestionsWithOpenCounts(messages);
 
     return parseModelResponse(raw, { askedBefore, messages });
@@ -220,13 +192,9 @@ function countReason(count, singular, plural) {
 }
 
 /**
- * The workflows a completion reply carries, from either shape.
- *
- * THE ONE PLACE THAT KNOWS BOTH SHAPES: the interview shape carries `processes`, which is what the
- * prompt asks the model to emit, and the older single-shot shape carries `audit.workflows`. Every
- * consumer reads the payload through here, so none can be updated for one shape and missed for the
- * other - which is how this defect happened. Both are returned as a plain array, so no caller
- * branches.
+ * The workflows a completion reply carries, from either shape: the interview shape carries `processes`
+ * and the older single-shot shape carries `audit.workflows`. Every consumer reads the payload through
+ * here, so none can be updated for one shape and missed for the other.
  *
  * @param {object} parsed A parsed model response.
  * @returns {Array<object>|undefined} The workflows, or undefined when neither is present.
@@ -239,11 +207,8 @@ export function workflowsFrom(parsed) {
 }
 
 /**
- * Whether a reply carries a payload at all, in either shape.
- *
- * `processes` present but EMPTY is not a payload: an interview that produced no
- * process has produced nothing to score, and treating an empty array as success
- * is how a blank analysis reaches the reader.
+ * Whether a reply carries a payload at all: `processes` present but empty is not one, because an
+ * interview that produced no process has produced nothing to score.
  *
  * @param {object} parsed
  * @returns {boolean}
@@ -254,16 +219,13 @@ function hasPayload(parsed) {
 }
 
 /**
- * Validates an audit payload's workflows.
+ * Validates an audit payload's workflows, exported so both entry points apply the same rule: the model
+ * path and `POST /api/score`, which takes the payload straight from the client.
  *
- * EXPORTED SO BOTH ENTRY POINTS APPLY THE SAME RULE - the model path and `POST /api/score`, which
- * takes the payload straight from the client. Validating only the model path left the direct route
- * able to serve a blank heading, and duplicated checks drift apart.
- *
- * EVERY CHECK BELOW IS LIVE ON THE HTTP PATH, including the one for an entry that is not an object.
- * That check IS unreachable from the INTERVIEW path, where a malformed entry leaves the matrix
- * incomplete so the completion gate returns `asking` first - but `POST /api/score` calls this
- * DIRECTLY, so `{"workflows":[null]}` returns "1 entry is not an object". DO NOT REMOVE IT AS DEAD.
+ * Every check below is live on the HTTP path, including the one for an entry that is not an object. That
+ * check is unreachable from the interview path, where a malformed entry leaves the matrix incomplete, but
+ * `POST /api/score` calls this directly, so `{"workflows":[null]}` returns "1 entry is not an object". Do
+ * not remove it as dead.
  *
  * @param {*} workflows
  * @returns {{ok: true} | {ok: false, reason: string}}
@@ -283,10 +245,8 @@ export function validateWorkflows(workflows) {
         return { ok: false, reason: countReason(missingId.length, 'entry has no id', 'entries have no id') };
     }
 
-    // `title` is the heading the client reads. Requiring it (rather than
-    // falling back) keeps a blank heading out of the document; scoring has its
-    // own fallback so a direct caller cannot crash, but the route should not
-    // accept the payload in the first place.
+    // `title` is the heading the client reads, and requiring it keeps a blank heading out of the
+    // document.
     const missingTitle = workflows.filter((w) => typeof w.title !== 'string' || w.title.trim() === '');
     if (missingTitle.length > 0) {
         return { ok: false, reason: countReason(missingTitle.length, 'entry has no title', 'entries have no title') };
@@ -296,13 +256,9 @@ export function validateWorkflows(workflows) {
 }
 
 /**
- * What the participant sees when the round ends with nothing answered.
- *
- * HONEST RATHER THAN A CLOSED DOOR. It does not thank them for answers they did not give, and
- * it does not pretend the interview went well - it says what happened, that this is not their
- * failure, and that somebody can follow up. A participant who declined every question has still
- * told the reader something true: the work is not something they can put into words, which is
- * worth knowing.
+ * What the participant sees when the round ends with nothing answered: honest rather than a closed door,
+ * saying what happened and that somebody can follow up rather than thanking them for answers they did not
+ * give.
  */
 const NOTHING_ANSWERED_CONTENT =
     'Thank you for your time. We did not manage to capture any answers for this one, so there '
@@ -311,68 +267,40 @@ const NOTHING_ANSWERED_CONTENT =
     + 'follow up with you directly if it is worth a conversation.';
 
 /**
- * The closing question's fingerprint, so a version of it can be recognised.
- *
- * MATCHED AS A PHRASE RATHER THAN BY EXACT TEXT, because a model that asks the closing question
- * early rarely quotes the prompt verbatim: the live run that prompted this said "Is there
- * another process you'd like to improve?" and "Thank you. Is there anything else you would like
- * to look at?" within the same interview. A literal comparison would have caught neither.
- *
- * THE RISK OF A PHRASE MATCH IS A FALSE POSITIVE - a real question about a second process being
- * replaced. That direction is safe: the reply becomes a question the interview asked anyway, and
- * the next turn can still close. The opposite direction leaves the participant staring at "is
- * there another process?" with twelve fields unanswered, which is an abandonment trigger, so it
- * is the risk worth taking.
+ * The closing question's fingerprint, matched as a phrase rather than by exact text, because a model that
+ * asks the closing question early rarely quotes the prompt verbatim. A false positive is the accepted
+ * direction: the reply becomes a question the interview asked anyway, while the opposite leaves the
+ * participant staring at "is there another process?" with twelve fields unanswered.
  */
 const CLOSING_QUESTION_SHAPES = [
-    // THE ONE PRINCIPLE: A CLOSING QUESTION OFFERS A NEW PIECE OF WORK. A legitimate question is
-    // about THIS process - its timing, steps, mistakes, buyer - while a closing question is about
-    // ANOTHER one, or about stopping.
-    //
-    // MEASURED BY THE REVIEWER against 22 realistic questions: 8 were wrongly gated, because
-    // `\banything else\b` matched "Is there anything else you would change about THIS step?" and
-    // `\b(shall|should|may)\s+(we|i)\b` matched "Should I record the buyer as a separate
-    // process?". The harm was not theoretical: the participant was shown "Who else is involved in
-    // this?" in place of a specific, well-aimed question.
-    //
-    // SO EACH PATTERN NOW REQUIRES A NEW PIECE OF WORK AFTER IT, and A MISS RATHER THAN A FALSE HIT
-    // is the accepted direction: a closing question that slips through is caught by the prompt,
-    // while a replaced legitimate question loses information the model gathered.
+    // The one principle: a closing question offers a NEW piece of work. A legitimate question is about
+    // this process, while a closing question is about another one, or about stopping. Each pattern
+    // therefore requires a new piece of work after it, and a miss rather than a false hit is the
+    // accepted direction.
     /\b(?:another|any other|more)\s+(?:process|work|task|piece of work|one)\b/i,
     /\bother processes\b/i,
-    // `anything else` ONLY when it offers to continue or to stop. The trailing forms are what
-    // distinguish the offer from a question about this process.
-    // THE OFFER MUST BE THE WHOLE CLAUSE, not merely present in it. "anything else you would
-    // change about THIS step" contains `anything else you would` and is about this process;
-    // `like`/`want` immediately after `you` is what makes it an offer, so the gap between them
-    // is at most two words and the stop-forms are explicit.
-    // `you'd`, `we'd` AND the spelled-out forms, and a straight or curly apostrophe: a model
-    // writes whichever it likes, and matching only one spelling is how a variant escapes. The
-    // apostrophe class covers both characters rather than assuming the plain one.
+    // `anything else` only when it offers to continue or to stop. The offer must be the whole clause,
+    // not merely present in it: "anything else you would change about this step" is about this process.
+    // `you'd`, `we'd` and the spelled-out forms, with a straight or curly apostrophe.
     /\banything else\s+(?:you|we)(?:['\u2019]d|\s+would)?\s+(?:like|want|wish|add|cover)\b/i,
     /\banything else\s+(?:to add|to cover|before we)\b/i,
     /\bsomething else\b/i,
-    // MOVING ON MEANS TO A DIFFERENT PROCESS, NOT THE NEXT STEP OF THIS ONE: matching "move on" alone
-    // would gate "Would you like to move on to the next step?", which asks about the current work.
+    // Moving on means to a different process, not the next step of this one: "move on" alone would gate
+    // "Would you like to move on to the next step?".
     /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:\w+\s+){0,2}(?:move on to\s+(?:the next process|another|a new)|continue with\s+(?:another|the next process))\b/i,
     /\b(?:would|do)\s+you\s+(?:like|want)\s+to\s+(?:stop|finish|wrap up|end)\b/i,
-    // `shall we move on` IS A CLOSING OFFER even with no object, and THE DISTINCTION IS THE SUBJECT
-    // OF THE SENTENCE: "we" moves the conversation somewhere, while "you ... to the next step" asks
-    // about one step of the work in front of them.
+    // `shall we move on` is a closing offer with no object, and the distinction is the subject of the
+    // sentence: "we" moves the conversation somewhere, while "you ... to the next step" does not.
     /\b(?:shall|should)\s+we\s+(?:stop|finish|wrap|move|continue|go on|press on)\b/i
 ];
 
 /**
- * Replaces a closing question with a real one when the matrix is not satisfied.
+ * Replaces a closing question with a real one when the matrix is not satisfied. This is in code and not
+ * only in the prompt because the prompt was watched asking the closing question four times in a row with
+ * twelve fields open, and a prompt is a request while this is the rule.
  *
- * IN CODE AND NOT ONLY IN THE PROMPT: the prompt asks the model to reserve the closing question for
- * an empty `missing`, and a live interview was watched asking it FOUR TIMES IN A ROW with twelve
- * fields open. A prompt is a request; this is the rule, and it cannot be talked out of.
- *
- * WHAT THE REPLY BECOMES: the closing question is REPLACED BY A QUESTION ABOUT THE NEXT OPEN FIELD,
- * so the participant is asked something useful rather than shown a closing line that continues.
- * `have` and `missing` are unchanged - only `content` differs - and the client renders it as an
- * ordinary analyst turn, so nothing stalls waiting for `status`.
+ * The closing question is replaced by a question about the next open field, and `have` and `missing` are
+ * unchanged; only `content` differs.
  *
  * @param {string} content The model's own question.
  * @param {{ missing: string[], have: string[] }} computed The matrix's view.
@@ -385,9 +313,8 @@ function withoutClosingQuestion(content, computed) {
     const open = computed.missing[0];
     if (!open) return text;
 
-    // THE FIELD'S OWN WORDS, so the question reads like something a person would ask rather
-    // than an internal field name. A field with no phrasing falls back to its name, which is
-    // still a question the participant can answer rather than a premature goodbye.
+    // The field's own words, so the question reads like something a person would ask; a field with no
+    // phrasing falls back to its name rather than a premature goodbye.
     const phrasing = FIELD_QUESTIONS[open];
     console.warn(
         `[audit] the model asked the closing question with ${computed.missing.length} field(s) ` +
@@ -397,22 +324,12 @@ function withoutClosingQuestion(content, computed) {
 }
 
 /**
- * What to say when every open field has already been asked and nothing is moving.
+ * What to say when every open field has already been asked and nothing is moving. A function of the open
+ * fields rather than a constant, so it differs each time and is never itself a repeat, and it does not
+ * name the fields because those are internal names.
  *
- * A FUNCTION OF THE OPEN FIELDS RATHER THAN A CONSTANT, so it differs each time and is never itself a
- * repeat. A fixed sentence would become the question of record and be replaced by itself on the next
- * turn, which moves the stall from the model to this gate instead of ending it - MEASURED, and the
- * reason this is not a string constant.
- *
- * IT DOES NOT NAME THE FIELDS: `frustration` and `mistakesPerPeriod` are internal names, so the
- * phrasing counts them, which is honest and reads like a person speaking.
- *
- * COUNTING ALONE WAS NOT ENOUGH: a stall leaves `missing` UNCHANGED, so the same count gave the
- * same sentence and the gate repeated itself - MEASURED at turn 18 of a simulation.
- *
- * THE LOOP IS BROKEN AT THE GUARD, NOT HERE. This line returns only on a model repeat, and the
- * caller has seen that exact text - so the participant is never asked a question they answered.
- * The text invites them to add anything and the interview closes on the next completing turn.
+ * The caller has seen a model repeat, so the participant is never asked a question they answered: the text
+ * invites them to add anything and the interview closes on the next completing turn.
  *
  * @param {string[]} open The fields still unsupplied.
  * @returns {string}
@@ -420,7 +337,7 @@ function withoutClosingQuestion(content, computed) {
 function moveOnLine(open) {
     const count = open.length === 1 ? 'one thing' : `${open.length} things`;
 
-    // Counting alone was not enough; see the caveat above.
+    // A fixed line would repeat itself, so the variant is chosen from the field set.
     const variants = [
         'If you think of something later, it can be added.',
         'Anything you can add now would still be useful.',
@@ -439,31 +356,20 @@ function moveOnLine(open) {
 /**
  * A question this gate wrote, marked so it is not mistaken for the model's.
  *
- * TERMINATION DEPENDS ON THIS MARK, and that is why it exists rather than being inferred. The
- * client replays every assistant turn verbatim, substitutes included, so without the mark the
- * gate matches its own previous sentence, replaces it with another, and the loop moves from the
- * model to the gate. With the mark, a substituted question is never a match target, so each turn
- * either passes a model question through or substitutes exactly once.
- *
- * IT IS A PROPERTY OF THE REPLY, not of the transcript: the client pushes `{ role, content }` and
- * this travels beside them, so nothing about the stored conversation changes.
+ * Termination depends on this mark: the client replays every assistant turn verbatim, so without it the
+ * gate matches its own previous sentence and replaces it with another. With the mark, a substituted
+ * question is never a match target. It is a property of the reply rather than of the transcript, so
+ * nothing about the stored conversation changes.
  */
 const SUBSTITUTED = true;
 
 /**
- * What the participant sees when the round closes because the interview stopped gaining evidence.
+ * What the participant sees when the round closes because the interview stopped gaining evidence. It says
+ * what is true of a stall and of a dip alike, which is a statement about the interviewer's judgement, and
+ * it does not apologise because an admin may read the page.
  *
- * TRUE WHETHER THE CAP FIRED ON A STALL OR ON A DIP. It said "I have not been able to record
- * anything new from the last few answers" - a claim about recent turns, MEASURED FALSE about one
- * time in five, because `evidenced` fluctuates and a dip is counted against the peak. So it says
- * what is true in both cases, which is a statement about the interviewer's judgement.
- *
- * IT STILL SAYS THE ANSWERS ARE SAVED AND COUNT, and IT DOES NOT APOLOGISE: an admin may read this
- * page, and a bare apology invites a support conversation nobody can act on.
- *
- * DISTINCT FROM THE OTHER TWO TERMINAL MESSAGES, which a test compares directly: `nothing_answered`
- * means they declined everything, `exhausted` means every question was asked, and this one means the
- * interview stopped gaining.
+ * Distinct from the other two terminal messages: `nothing_answered` means they declined everything,
+ * `exhausted` means every question was asked, and this one means the interview stopped gaining.
  */
 const EVIDENCE_CAP_CONTENT =
     'Thank you - let us stop here. I have everything I can usefully take from this one, so rather '
@@ -471,35 +377,21 @@ const EVIDENCE_CAP_CONTENT =
     + 'it counts. Someone can follow up with you if there is more to capture.';
 
 /**
- * HOW MANY TURNS THE INTERVIEW MAY GO WITHOUT GAINING ANY EVIDENCE.
+ * How many turns the interview may go without gaining any evidence: the net under the whole guard,
+ * because oscillation, claim churn and rewording all have the same shape, an interview not gaining
+ * evidence, and a cap on turns catches every one of them. That is why it is a property of the conversation
+ * rather than another text heuristic.
  *
- * THE NET UNDER THE WHOLE GUARD: oscillation, claim churn, the all-fifteen loop, rewording and
- * echo/rotation all have the same shape - the interview is not gaining evidence - so a cap on turns
- * catches every one of them and whatever the sixth turns out to be. That is why it is a property of
- * the CONVERSATION rather than a sixth text heuristic, three of which produced false positives.
- *
- * TWENTY IS MEASURED, not guessed: a completing run took 6-31 turns; the mock went SIX with no new
- * evidence and then gained fourteen fields at once; stalled runs ran 100-200 and never gained again;
- * and a run gaining a field every EIGHT turns reached a TWELVE-turn plateau, because `evidenced`
- * counts the effort pair as two fields. THAT IS WHY TWELVE WAS TOO TIGHT.
- *
- * THE COST IS NAMED: a stuck participant sees up to twenty questions. Cutting off a working
- * interview loses evidence the participant gave; a longer wait on a broken one costs patience.
+ * The cost is named: a stuck participant sees up to twenty questions, while cutting off a working
+ * interview would lose evidence the participant gave.
  */
 const TURNS_WITHOUT_EVIDENCE_CAP = 20;
 
 /**
- * How many consecutive turns the conversation has gone without gaining evidence.
- *
- * DERIVED FROM THE CONVERSATION, NOT CARRIED AS STATE, and that is the same principle as the
- * evidence-over-claims fix. Every assistant turn the client replays already carries `evidenced` -
- * the payload's own proof at that moment - so walking the turns gives the count. A counter the
- * client kept and the server trusted would be a CLAIM, and a claim is exactly what this guard
- * exists to stop reading as progress.
- *
- * A TURN WITH NO `evidenced` IS SKIPPED RATHER THAN COUNTED, because a conversation recorded
- * before the field existed cannot be judged, and treating absence as "no evidence" would end a
- * healthy interview at the first replay.
+ * How many consecutive turns the conversation has gone without gaining evidence. Derived from the
+ * conversation rather than carried as state: every assistant turn already carries `evidenced`, and a
+ * counter the client kept and the server trusted would be a claim, which is what this guard exists to
+ * stop reading as progress.
  *
  * @param {Array<{role: string, evidenced?: string[]}>} messages The conversation so far.
  * @returns {number} Turns since the evidence last grew.
@@ -514,26 +406,19 @@ function turnsWithoutEvidence(messages) {
             continue;
         }
 
-        // A TURN THE SERVER WROTE ALWAYS CARRIES SOMETHING WE CAN JUDGE FROM, so an absent
-        // `evidenced` on such a turn means the client did not send it - not that the turn is
-        // unjudgeable. That is read as [] rather than skipped, which is the difference between a
-        // working cap and none.
+        // A turn the server wrote always carries something to judge from, so an absent `evidenced` on
+        // one means the client did not send it, not that the turn is unjudgeable: this is the last
+        // mechanism, so a client omitting the field would make every earlier guard unreachable and the
+        // interview would run forever, silently. `missing` and `substituted` are the server's own
+        // fields, so seeing either proves the turn came from this server.
         //
-        // WHY IT MATTERS: this is the LAST mechanism, so a client that omits the field would make
-        // every earlier guard unreachable again and the interview would run forever, silently.
-        // Measured before this change: `evidenced` replayed -> the cap fires; `evidenced` omitted
-        // -> the cap never fires. `missing` and `substituted` are the server's own fields, so
-        // seeing either proves the turn came from this server and had an `evidenced` to omit.
-        //
-        // A BARE USER TURN, AND A TURN WITH NO SERVER FIELDS AT ALL, ARE STILL SKIPPED. That is
-        // what keeps this from treating a conversation recorded before the field existed - or one
-        // the client built by hand for a test - as a stalled one.
+        // A bare user turn, and a turn with no server fields at all, are still skipped, which keeps a
+        // conversation recorded before the field existed from reading as stalled.
         const fromThisServer = Array.isArray(message.missing) || message.substituted !== undefined;
         if (fromThisServer) counts.push(0);
     }
 
-    // NOTHING TO JUDGE YET. A conversation with no turns the server wrote is left alone, so a new
-    // interview and a hand-built fixture both start uncapped.
+    // Nothing to judge yet, so a new interview and a hand-built fixture both start uncapped.
     if (counts.length === 0) return 0;
 
     let peak = 0;
@@ -550,24 +435,13 @@ function turnsWithoutEvidence(messages) {
 }
 
 /**
- * Whether every field's question has appeared in the conversation.
+ * Whether every field's question has appeared in the conversation. The count of distinct field questions
+ * asked only grows, so once this is true it stays true, where a comparison against the open field set can
+ * be defeated indefinitely.
  *
- * THE MONOTONIC HALF OF EXHAUSTION: the number of DISTINCT FIELD QUESTIONS ASKED only grows, so once
- * this is true it stays true - where a comparison against the open field set, which the model can
- * vary every turn, can be defeated indefinitely.
- *
- * LIMITED TO THE FIELDS CURRENTLY OPEN, which is the fix for a residual stall rather than a
- * convenience. REQUIRING ALL FIFTEEN was too strong: a field the model CLAIMS to hold is never
- * offered as a question, so its phrasing never enters and exhaustion can never fire - MEASURED
- * with a churning model claiming task/trigger/steps, 12 of 15 asked then the move-on line
- * indefinitely. The monotonic property survives: this runs only on a repeat with no progress.
- *
- * AN EMPTY OPEN SET IS NOT THIS FUNCTION'S CALL: `missing` empty with `supplied` empty is
- * `nothing_answered`, and `missing` empty with evidence is a completed round. Both are decided
- * before this is reached.
- *
- * A FIELD WITH NO PHRASING IS NOT COUNTED, deliberately: comparing against the questions that EXIST
- * rather than a fixed fifteen means a field added without a question cannot make this never true.
+ * Limited to the fields currently open: requiring all of them would never fire, because a field the model
+ * claims to hold is never offered as a question. A field with no phrasing is not counted, so a field added
+ * without a question cannot make this never true.
  *
  * @param {Set<string>} askedQuestions The texts already sent to the participant.
  * @returns {boolean}
@@ -581,43 +455,21 @@ function asksEveryField(askedQuestions, openFields) {
 }
 
 /**
- * Replaces a question the conversation has already asked, when nothing has moved since.
+ * Replaces a question the conversation has already asked, when nothing has moved since. Both conditions
+ * must hold: the content is identical to a question already asked, and `missing` has not shrunk, because
+ * asking twice is legitimate and the second condition stops this firing on a legitimate repeat.
  *
- * THE STALL THIS EXISTS FOR, MEASURED on a live interview: the model asked ONE field's question
- * for six consecutive turns while `missing` held six others, byte-identically each time. The
- * two-attempt cap is a PROMPT rule the model enforces on itself, and it did not.
+ * Only the model's own repeats are matched. A substitute this function wrote is never a match target, or
+ * the gate would argue with itself rather than ending the loop; a gate sentence the model echoed is still
+ * the gate's, because the mark travels with the text.
  *
- * BOTH CONDITIONS MUST HOLD: the content is IDENTICAL to a question already asked, AND `missing`
- * has not shrunk since. Asking twice is legitimate - the prompt allows one rephrase - so the
- * second condition stops this firing on a legitimate repeat.
+ * Progress is measured from `evidenced` rather than from a claim, because `computed.missing` is built
+ * partly from the model's own `have`, so a model that re-partitions what it claims shrinks `missing` while
+ * nothing is recorded. The `openCount` branch is a narrow fallback for a conversation recorded before
+ * `evidencedCount` existed.
  *
- * ONLY THE MODEL'S OWN REPEATS ARE GUARDED. A substitute this function wrote is never matched,
- * because matching it is the gate arguing with itself: it would replace its own sentence turn
- * after turn, moving the loop from the model to the gate rather than ending it - MEASURED at
- * turn 18 of a simulation. A GATE SENTENCE THE MODEL ECHOED IS STILL THE GATE'S: the mark is
- * carried by the TEXT, not by which branch it arrived through, or the same sentence reaches a
- * participant twice (every duplicate in a live run was a consecutive pair). An echoed gate
- * sentence with no progress is REPLACED, not re-issued - the `substituted` exemption is about
- * not arguing with itself, and the echo is the defect.
- *
- * PROGRESS IS MEASURED FROM EVIDENCE, NOT FROM A CLAIM. Comparing `computed.missing` is wrong
- * mid-interview because it is built partly from the model's own `have` claim: a model that
- * re-partitions what it CLAIMS shrinks `missing` while nothing is recorded. MEASURED: `have +
- * missing` stayed fifteen, `missing` fell 8 -> 6 -> 1 with nothing stored, and thirty-one
- * identical questions passed the guard in a row. `evidenced` is what a churning model cannot
- * move. The `openCount` branch is a NARROW FALLBACK for a fixture or a conversation recorded
- * before `evidencedCount` existed - reading "no evidence data" as "no progress" there would turn
- * a legitimate second attempt into a wall.
- *
- * EVERY OPEN FIELD ASKED LEAVES NOTHING TO SUBSTITUTE, so the MOVE-ON LINE is used. It carries
- * the fields it moves on from and is sent ONCE - a second would be the gate repeating itself.
- * WHAT REACHES THAT PATH: no field question is left, but not every field has had its question -
- * one with no entry in FIELD_QUESTIONS, or one the model keeps claiming open. THE INTERVIEW
- * CLOSES THERE, which terminates this path; the prompt already sanctions it, and it is NOT
- * `nothing_answered`, which would lie to a participant who answered plenty.
- *
- * IT TERMINATES BECAUSE IT ONLY EVER MOVES TO AN UNASKED FIELD, of which there are fifteen, so the
- * available questions strictly decrease.
+ * It terminates because it only ever moves to an unasked field, so the available questions strictly
+ * decrease.
  *
  * @param {string} content The question, already through the closing-question rule.
  * @param {{ missing: string[], have: string[] }} computed The matrix's view.
@@ -629,7 +481,7 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
     const text = typeof content === 'string' ? content.trim() : '';
     if (text === '') return content;
 
-    // See the gate-owned note above.
+    // A gate-owned or echoed sentence; see the note above.
     const gateOwned = askedBefore.some((entry) => entry.text === text && entry.substituted === true);
     const wasAsked = askedBefore.find((entry) => entry.text === text);
 
@@ -650,10 +502,9 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
         return phrasing !== undefined && !askedQuestions.has(phrasing);
     });
 
-    // EXHAUSTION IS DECIDED BY WHAT HAS BEEN ASKED, NOT BY WHAT IS OPEN, because a comparison against
-    // the open set is not monotonic: a model that rotates its payload produces a new set every turn
-    // and exhaustion is never recognised. MEASURED against a rotating set: 25 turns where 15 were
-    // enough, unbounded under faster rotation, and 40 in the reviewer's live capture.
+    // Exhaustion is decided by what has been asked, not by what is open, because a comparison against the
+    // open set is not monotonic: a model that rotates its payload produces a new set every turn and
+    // exhaustion is never recognised.
     if (fresh === undefined && asksEveryField(askedQuestions, computed.missing)) {
         console.warn(
             '[audit] the model repeated a question with no progress, and every field question has ' +
@@ -669,7 +520,7 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
     }
 
     if (fresh === undefined) {
-        // The move-on line; see the closing note above.
+        // The move-on line.
         console.warn(
             '[audit] the model repeated a question with no progress and every open field has ' +
             `been asked already (${computed.missing.join(', ')}); asking the participant to move on`
@@ -685,11 +536,8 @@ function withoutRepeatedQuestion(content, computed, askedBefore) {
 }
 
 /**
- * How to ask about each field in words a participant recognises.
- *
- * A COSMETIC TABLE, not a rule: the interview's own prompt phrases these better, and this only
- * ever runs when the model closed early. Kept beside the guard that uses it so the two are read
- * together.
+ * How to ask about each field in words a participant recognises. Cosmetic rather than a rule: it only runs
+ * when the model closed early, and the interview's own prompt phrases these better.
  */
 const FIELD_QUESTIONS = {
     task: 'What is the work, in your own words?',
@@ -710,52 +558,27 @@ const FIELD_QUESTIONS = {
 };
 
 /**
- * Parses and validates the model's JSON reply.
+ * Parses and validates the model's JSON reply. Exported so it is unit testable without a provider, and
+ * malformed JSON becomes a structured error rather than an exception.
  *
- * Exported so it is unit testable without a provider. Malformed JSON is an expected failure, so it
- * becomes a structured error the UI can show rather than an exception.
+ * Which shape is authoritative is decided as `workflowsFrom` decides it, so validation and the payload
+ * cannot disagree: an empty `audit.workflows` is unusable alone and merely stale beside a good `processes`
+ * array, which wins.
  *
- * WHICH SHAPE IS AUTHORITATIVE IS DECIDED AS `workflowsFrom` DECIDES IT, so the validation and
- * the payload cannot disagree about which array counts.
+ * Each shape is validated against its own requirements, because `workflowsFrom` prefers `processes`, whose
+ * field matrix never mentions `id` or `title`, while `audit.workflows` keeps the stricter check that the
+ * scorer consumes.
  *
- * AN EMPTY `audit.workflows` IS PINNED FROM TWO DIRECTIONS. Alone it is unusable - an empty
- * audit is not a completed audit and the client would score nothing. Beside a good `processes`
- * array it is merely stale, and `processes` must win, because that is what the interview writes
- * while `audit` is the older shape it also emits. Emptiness is judged only when there is nothing
- * better to fall back to.
- *
- * A REPLY WITH NO OBJECT IS REPORTED AS UNREADABLE rather than parsed into a fragment, so a
- * silently empty model response surfaces as a clear error instead of a downstream field access
- * that fails for no visible reason. WHAT CAME BACK IS LOGGED, not just that it was unreadable:
- * the message alone sent an earlier investigation back to the live API to find out what the
- * model had said, when the answer was a bare prose question. Truncated at 120 characters -
- * enough to see the shape, short enough not to dump a whole reply into the log.
- *
- * EACH SHAPE IS VALIDATED AGAINST ITS OWN REQUIREMENTS. Checking only `status === 'complete'`
- * against the FINAL payload's requirements killed real interviews: `workflowsFrom` prefers
- * `processes`, whose field matrix never mentions `id` or `title`, so a finished interview was
- * refused with "1 entry has no id" - MEASURED on a real deepseek run. `audit.workflows` keeps the
- * stricter check because it is what the scorer consumes.
- *
- * THE MATRIX DECIDES COMPLETION. `status` is read for the payload, but whether the interview is
- * over is computed from `processes`: `missing` empty is the only thing that finishes it. A model
- * claiming `complete` with a field absent is downgraded to `asking`, which is the safe direction -
- * one more question rather than a dropped field.
+ * The matrix decides completion: `missing` empty is the only thing that finishes the interview, and a model
+ * claiming `complete` with a field absent is downgraded to `asking`.
  */
 export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}) {
-    // PARSED OUT OF PROSE, not handed to JSON.parse.
-    //
-    // DeepSeek's JSON mode returns whitespace as a conversation grows, so that
-    // provider is asked in plain mode and its replies arrive with the object
-    // somewhere inside them, often in a ```json fence. The prompt still demands
-    // JSON and nothing outside it; the extractor is what makes a fence or a stray
-    // sentence survivable rather than fatal. See ai/json-extract.js and
-    // NOTES-deepseek-json-mode.md.
-    //
-    // A reply with no object is reported as unreadable; see the note above.
+    // Parsed out of prose rather than handed to JSON.parse: DeepSeek's JSON mode returns whitespace as a
+    // conversation grows, so that provider is asked in plain mode and its replies arrive with the object
+    // somewhere inside them, often in a fence.
     const parsed = extractJsonObject(raw);
     if (parsed === null) {
-        // The reply itself is logged; see the note above.
+        // What came back, truncated at 120 characters, so a blank reply is diagnosable from the log.
         console.error(
             `[audit] no JSON object in the model reply (${String(raw).length} chars): ` +
             (String(raw).trim() === '' ? '(blank reply)' : JSON.stringify(String(raw).slice(0, 120)))
@@ -771,11 +594,8 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         return { status: 'error', content: 'The analysis service returned an unexpected response. Please try again.' };
     }
 
-    // The model's claim and the computed truth, side by side. While the interview
-    // is running the claim is believed for anything the payload does not yet
-    // carry (the payload is a stub early on); on completion only the payload
-    // counts, so a claimed field cannot let a real gap vanish. See
-    // reconcileMatrix for the full rule.
+    // The model's claim and the computed truth side by side: while the interview is running the claim is
+    // believed for anything the payload does not yet carry, and on completion only the payload counts.
     const processes = Array.isArray(parsed.processes) ? parsed.processes : [];
     const claimedHave = Array.isArray(parsed.have) ? parsed.have : null;
     const claimedMissing = Array.isArray(parsed.missing) ? parsed.missing : null;
@@ -787,17 +607,13 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         closing: parsed.status === 'complete'
     });
 
-    // `stepsStillNeed` IS DERIVED HERE AND THE MODEL'S OWN VALUE IS DELETED. `steps` is the only
-    // field whose completeness gate sits inside a container, so a participant who answers the basis
-    // question before the step has a label moves nothing: `steps` stays in `missing` and the
-    // interviewer re-asks in different words, MEASURED three times in one interview. This says WHICH
-    // step fields are absent, so the next question can differ.
+    // `stepsStillNeed` is derived here and the model's own value is deleted. `steps` is the only field
+    // whose completeness gate sits inside a container, so a participant who answers the basis question
+    // before the step has a label moves nothing and the interviewer re-asks in different words; this says
+    // which step fields are absent so the next question can differ.
     //
-    // THE MODEL MUST NOT SUPPLY IT, because it is computed from `processes` and a model that claimed
-    // it would contradict the matrix that computed it. THE DELETION IS RECURSIVE, which is the fix
-    // for a real hole: deleting only the top-level key let
-    // `processes: [{ ..., stepsStillNeed: ["HOSTILE"] }]` survive, and the client persists the
-    // payload verbatim, so the model's string reached the participant's STORED answers.
+    // The deletion is recursive, because deleting only the top-level key let a value inside `processes`
+    // survive, and the client persists the payload verbatim.
     const stripped = stripDerivedFields(parsed, DERIVED_FIELDS);
     if (stripped > 0) {
         console.warn(
@@ -807,56 +623,30 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         );
     }
 
-    // THE UNION ACROSS INCOMPLETE STEPS. The consumer is ONE question for the whole
-    // conversation, so what it needs is the set of fields that would move some step
-    // forward. A per-step breakdown would name `name` for one step while another needs
-    // `needsReasoning`, and choosing between them is a decision this layer cannot make
-    // well. Computed across every process, because a question is asked about the
-    // interview rather than about one process.
-    //
-    // EMPTY WHEN NO STEP IS INCOMPLETE, which coincides with `steps` leaving `missing`.
-    // The two are separate signals from one value: this one says what to ask next, and
-    // `stepIsComplete` still alone decides whether the interview may close.
+    // The union across incomplete steps, because the consumer is one question for the whole
+    // conversation. Empty when no step is incomplete, which coincides with `steps` leaving `missing`.
     const stepsStillNeed = [...new Set(processes.flatMap((process) => stepGapsFor(process && process.steps)))];
-    // The matrix decides completion ONLY when the model is playing the matrix
-    // game. A reply carrying `processes` is an interview turn and its field list
-    // is authoritative; a reply with a valid `audit` and no `processes` is the
-    // older single-shot shape, which has already supplied everything the
-    // downstream payload needs. Judging that shape by the matrix would refuse a
-    // complete audit for having no `frustration` field, which is not this
-    // function's business.
+    // The matrix decides completion only when the model is playing the matrix game: a reply carrying
+    // `processes` is an interview turn and its field list is authoritative, while a reply with a valid
+    // `audit` and no `processes` is the older single-shot shape, already supplying everything downstream
+    // needs.
     const playingTheMatrix = processes.length > 0 || claimedMissing !== null;
 
-    // COMPLETION READS `supplied`, NOT `missing`, AND THE DIFFERENCE IS ONE STATE.
-    //
-    // `missing` empty means there is no question left to ask. That is NOT the same as having
-    // evidence: a field the participant DECLINED is answered-but-unsupplied, so it leaves
-    // `missing` and does not enter `supplied`. Reading `missing` here would let an interview
-    // complete on nothing but refusals - measured on a live run, which recorded
-    // `{"said":"I have no idea"}` against seven fields and closed. See declinedIn in
-    // field-shapes.js.
-    //
-    // A MISSING FIELD STILL BLOCKS, as it always did, so nothing is loosened for the ordinary
-    // case: this is a strictly tighter gate.
+    // Completion reads `supplied`, not `missing`, and the difference is one state: a field the participant
+    // declined leaves `missing` and does not enter `supplied`, so reading `missing` here would let an
+    // interview complete on nothing but refusals. A missing field still blocks, so this is strictly
+    // tighter than before.
     const matrixComplete = computed.supplied.length === computed.have.length
         && computed.missing.length === 0
         && processes.length > 0;
 
-    // NOTHING WAS ANSWERED, SO THE INTERVIEW ENDS AS "NOTHING ANSWERED".
+    // Nothing was answered, so the interview ends as `nothing_answered`. Without this an all-declined round
+    // is a fixed point: every field declined leaves `have` full and `supplied` empty, the model has nothing
+    // to ask, and the completion gate never opens.
     //
-    // AN ALL-DECLINED ROUND IS A FIXED POINT WITHOUT THIS, MEASURED: every field declined leaves
-    // `have` full and `supplied` empty, so the model has nothing to ask and the completion gate
-    // never opens - every turn returns BYTE-IDENTICAL `asking` output forever.
-    //
-    // `submitted_at` IS SET AND THE STATUS IS NOT `complete`: the round has to END and
-    // `submitted_at` is the store's only way to say so, but `complete` would be a lie the roadmap
-    // renders. TO EACH READER: the client finalises and does not score; the console shows every
-    // field "not answered", which is a FINDING - asked, and nobody knew - rather than a gap; nothing
-    // reaches the roadmap, because a process is only created by identification.
-    //
-    // NOT AN ESCAPE HATCH: a model that declined everything to finish early gains nothing, since
-    // declined fields carry no evidence. THE SCHEMA NEEDS NO CHANGE - this is a property of the
-    // conversation, not of the row.
+    // `submitted_at` is set and the status is not `complete`: the round has to end and `submitted_at` is
+    // the store's only way to say so, while `complete` would be a lie the roadmap renders. Nothing reaches
+    // the roadmap, because a process is only created by identification.
     if (playingTheMatrix && computed.missing.length === 0 && computed.supplied.length === 0) {
         console.warn(
             '[audit] every field was declined and none supplied; ending the round as ' +
@@ -872,22 +662,12 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         };
     }
 
-    // THE EVIDENCE CAP, CHECKED BEFORE ANY QUESTION IS CONSIDERED. IT SITS ABOVE THE EXACT-TEXT GUARD
-    // ON PURPOSE, because that guard cannot see a REWORDED repeat: the model appending " (part 2)" is
-    // never a match target, so the guard never fires, the `evidenced` comparison is never reached,
-    // and the interview runs indefinitely - MEASURED at 120 turns with a two-field payload.
+    // The evidence cap, checked before any question is considered, because the exact-text guard below
+    // cannot see a reworded repeat and the interview would then run indefinitely.
     //
-    // IT CLOSES THE ROUND RATHER THAN SUBSTITUTING: after a long run without evidence there is
-    // nothing left worth asking, because whatever the model is doing it is not recording answers.
-    //
-    // AND IT MUST NOT PRE-EMPT COMPLETION, MEASURED IN THREE SEPARATE LIVE RUNS: `evidenced`
-    // plateaued while `missing` reached zero, so the cap ran first and the participant was told "I
-    // have not been able to record anything new" - WHICH WAS FALSE, because the tool had recorded
-    // everything and was finished. The `missing.length > 0` condition below is that guard.
-    //
-    // THE COUNTER CANNOT BE TRUSTED ALONE: `evidenced` is NOT monotonic in practice, because the
-    // model rewrites `processes` each turn and drops fields it had filled, so this counter can
-    // report a long plateau during a healthy interview. `missing` is the authoritative signal.
+    // It closes the round rather than substituting, and it must not pre-empt completion: `evidenced` can
+    // plateau while `missing` reaches zero, so the `missing.length > 0` condition is what keeps a finished
+    // interview from being told it recorded nothing.
     if (playingTheMatrix && computed.supplied.length > 0
         && computed.missing.length > 0
         && turnsWithoutEvidence(messages) >= TURNS_WITHOUT_EVIDENCE_CAP) {
@@ -909,16 +689,15 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
     }
 
     if (parsed.status === 'complete' && playingTheMatrix && !matrixComplete) {
-        // The model thinks it is done and the matrix disagrees. Continue rather
-        // than closing: one more question is cheap, a missing field is not.
+        // The model thinks it is done and the matrix disagrees: one more question is cheap, a missing
+        // field is not.
         const unsupplied = computed.have.filter((field) => !computed.supplied.includes(field));
         const reasons = [];
         if (computed.missing.length > 0) reasons.push(`${computed.missing.length} still missing (${computed.missing.join(', ')})`);
         if (unsupplied.length > 0) reasons.push(`${unsupplied.length} declined (${unsupplied.join(', ')})`);
         console.warn(`[audit] model claimed complete with ${reasons.join(' and ')}; continuing`);
-        // THE SAME TWO GUARDS AS THE FINAL RETURN, and for the same reason: a reply downgraded
-        // from `complete` is still a reply the participant reads, and a repeated question in it
-        // stalls the interview exactly as one anywhere else does.
+        // The same two guards as the final return: a reply downgraded from `complete` is still a reply
+        // the participant reads, and a repeated question in it stalls the interview.
         const question = withoutRepeatedQuestion(
             withoutClosingQuestion(parsed.content, computed),
             computed,
@@ -941,18 +720,11 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         return { status: 'error', content: 'The analysis completed without usable data. Please try again.' };
     }
 
-    // VALIDATE AT THE BOUNDARY: without this the browser posts a malformed payload to /api/score,
-    // gets a 400, and shows a generic network error for what is a model contract violation.
-    //
-    // EACH SHAPE IS VALIDATED AGAINST ITS OWN REQUIREMENTS, and getting that wrong killed real
-    // interviews: the code checked only `status === 'complete'` against the FINAL payload's
-    // requirements, while `workflowsFrom` prefers `processes`, whose field matrix never mentions
-    // `id` or `title` - so a finished interview was refused with "1 entry has no id". MEASURED on a
-    // real deepseek run. `audit.workflows` is the payload the scorer consumes, so it keeps the
-    // stricter check, and `workflowsFrom` resolves the same way so the two cannot disagree.
-    //
+    // Validate at the boundary: without this the browser posts a malformed payload to /api/score and
+    // shows a generic network error for what is a model contract violation. Each shape is validated
+    // against its own requirements, as `workflowsFrom` resolves them.
     if (parsed.status === 'complete') {
-        // Which shape is authoritative; see the note above.
+        // Which shape is authoritative.
         const processesPresent = Array.isArray(parsed.processes) && parsed.processes.length > 0;
         const auditIsArray = Array.isArray(parsed.audit?.workflows);
         const auditUsable = auditIsArray && parsed.audit.workflows.length > 0;
@@ -965,11 +737,9 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
                 return { status: 'error', content: 'The analysis could not read the questionnaire answers. Please try again.' };
             }
         } else if (Array.isArray(parsed.processes) && parsed.processes.length > 0) {
-            // The interview shape, already judged by the matrix. A process here with
-            // fields missing is not an ERROR - it is an interview that has not finished,
-            // and the completion gate above has already downgraded it to `asking` and
-            // named what is absent. So nothing is refused for incompleteness here; only
-            // a shape that cannot be read at all is a fault.
+            // The interview shape, already judged by the matrix. A process here with fields missing is
+            // not an error but an unfinished interview, which the completion gate above has already
+            // downgraded; only a shape that cannot be read at all is a fault.
             const unreadable = parsed.processes.filter(
                 (process) => !process || typeof process !== 'object' || Array.isArray(process)
             );
@@ -982,9 +752,8 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         }
     }
 
-    // The reported lists are the model's; the computed ones are the server's. A
-    // discrepancy is logged, because it means the prompt is not being followed,
-    // and the computed pair is what callers read.
+    // The reported lists are the model's and the computed ones are the server's; a discrepancy means the
+    // prompt is not being followed, and callers read the computed pair.
     if (claimedMissing && claimedMissing.length !== computed.missing.length) {
         console.warn(
             `[audit] the model reported ${claimedMissing.length} missing field(s) and the matrix ` +
@@ -992,28 +761,16 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
         );
     }
 
-    // THE PAYLOAD IS NORMALISED FROM THE BEST AVAILABLE SOURCE, decided on CONTENT rather than
-    // nullness: if a usable workflows array exists anywhere, it wins and is wrapped.
+    // The payload is normalised from the best available source, decided on content rather than nullness:
+    // a merely non-null `audit` kept `audit: { workflows: [] }`, which reached the client as an empty list
+    // and the participant saw the scoring-failed panel after a successful interview.
     //
-    // NOT `parsed.audit ?? normalise(processes)`, which kept `parsed.audit` whenever it was merely
-    // NON-NULL - so `audit: { workflows: [] }` passed `??` and reached the client as an empty list,
-    // which /api/score rejected with a 400 and the participant saw the scoring-failed panel after a
-    // successful interview.
-    //
-    // `workflowsFrom` IS THE ONLY RESOLVER, and that is why there is no fallback
-    // arm here. There used to be one, `: parsed.audit`, which read as a safety net;
-    // it was unreachable. `workflowsFrom` already returns `parsed.audit.workflows`
-    // when that is the only source, so `best` is an array in every case that
-    // reaches this line: a `complete` reply without a payload returned earlier, and
-    // an `asking` reply's `audit` field is meaningless. An arm that cannot run
-    // while looking like protection is worse than no arm, because it suggests a
-    // case is handled that nothing has ever exercised.
+    // `workflowsFrom` is the only resolver, so there is no fallback arm here: it already returns
+    // `parsed.audit.workflows` when that is the only source, so `best` is always an array on this line.
     const best = workflowsFrom(parsed);
 
-    // THE TWO QUESTION GUARDS, IN ORDER. The closing-question rule first, because a repeated
-    // closing line is a closing line; then the repeat guard, which sees the substituted text and
-    // can therefore catch a substitute that is itself a repeat - it never does, because a
-    // substitute is marked, but the order means no path escapes both.
+    // The closing-question rule first, because a repeated closing line is a closing line; then the repeat
+    // guard, which sees the substituted text.
     const question = withoutRepeatedQuestion(
         withoutClosingQuestion(parsed.content, computed),
         computed,
@@ -1022,41 +779,21 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
 
     return {
         ...parsed,
-        // ABSENT WHEN THERE IS NOTHING TO NORMALISE, rather than `{}`. With no
-        // workflows, `normaliseProcessesPayload` builds `{ workflows: undefined }`,
-        // which serialises to an empty object, and AN EMPTY OBJECT IS TRUTHY: a
-        // caller using the `data.audit || ...` idiom the client already uses would
-        // take `{}` and find `.workflows === undefined`. That is the same subtle
-        // class of defect this file has been fixed for twice. On an `asking` turn
-        // there is no payload and no `audit` key at all.
+        // Absent rather than `{}` when there is nothing to normalise: an empty object is truthy, so a
+        // caller using `data.audit || ...` would take `{}` and find `.workflows === undefined`.
         audit: Array.isArray(best) ? normaliseProcessesPayload(parsed, best) : undefined,
-        // THE CLOSING QUESTION IS SUPPRESSED HERE, WHICH IS THE ONE PLACE EVERY REPLY PASSES
-        // THROUGH, and the fix for a real escape. It used to be applied only inside the
-        // "claimed complete and the matrix disagreed" branch - so a model that asked the
-        // closing question while reporting `status: "asking"` was never checked at all, and
-        // that is the ordinary way the defect appears: the live interview watched asking it
-        // four times in a row was doing exactly this, not claiming completion. A gate on one
-        // branch of one status is a gate that most of the traffic goes around.
-        //
-        // It is a no-op when the question is genuine and the matrix is satisfied, which is the
-        // case the prompt asks for, and when the content is an ordinary question.
-        //
-        // AND THE REPEAT GUARD RUNS FIRST, because a repeated question is a question whatever
-        // it is about: a closing line that repeats is caught here too, and only a first-time
-        // closing line reaches the rule below.
+        // The closing question is suppressed here, the one place every reply passes through. It was once
+        // applied only inside the "claimed complete and the matrix disagreed" branch, so a model asking the
+        // closing question while reporting `asking` was never checked, which is the ordinary way the defect
+        // appears. It is a no-op when the question is genuine and the matrix satisfied.
         content: question.text,
-        // TRUE WHEN THE GATE HAS RUN OUT OF QUESTIONS, which the client treats as the end of the
-        // round: every field has been asked, the participant has answered, and what is still open
-        // cannot be settled by asking again. The round finalises on what was supplied.
+        // True when the gate has run out of questions, which the client treats as the end of the round.
         exhausted: question.exhausted === true,
-        // THE PAYLOAD'S OWN EVIDENCE, sent so the next turn can tell real progress from a
-        // change in what the model CLAIMS. A reply without it reads as no progress.
+        // The payload's own evidence, so the next turn can tell real progress from a change in what the
+        // model claims; a reply without it reads as no progress.
         evidenced: computed.evidenced,
-        // TRUE WHEN THIS GATE WROTE THE QUESTION rather than the model. The client replays every
-        // assistant turn, so without this flag the gate would match its own substitute on the
-        // next turn and the loop would move from the model to the gate. Termination rests on it:
-        // a substituted question is never a match target, so a stalled conversation re-asks no
-        // question it has already asked.
+        // True when the gate wrote the question rather than the model. Termination rests on it: a
+        // substituted question is never a match target, so a stalled conversation re-asks nothing.
         substituted: question.substituted,
         have: computed.have,
         missing: computed.missing,
@@ -1066,22 +803,14 @@ export function parseModelResponse(raw, { askedBefore = [], messages = [] } = {}
 }
 
 /**
- * Wraps a workflows array in the payload shape the client reads.
+ * Wraps a workflows array in the payload shape the client reads: the interview shape carries a bare array
+ * under `processes` while the client wants an object with `workflows`.
  *
- * The interview shape carries a bare array under `processes`; the client wants an object with
- * `workflows`, and optionally `illustrative` and `note`. An unknown model yields a payload with
- * neither flag, which reads as "not illustrative" - the correct default for a real interview.
+ * This is the one place the interview payload is built, so the one place the `id` and `title` the scorer
+ * requires are supplied; the prompt's `processes` example carries neither field, and without them the
+ * answers reached `/api/score` and were refused. See `ai/workflow-identity.js`.
  *
- * THE FLAGS ARE READ FROM EITHER PLACE a model might put them, the top level or an `audit` envelope
- * it also sent. The envelope is not preferred for the workflows themselves, which came from the
- * best source, but its labels are worth taking rather than dropping.
- *
- * THE ONE PLACE THE INTERVIEW PAYLOAD IS BUILT, so the one place the `id` and `title` the
- * scorer requires are supplied. `workflowsFrom` resolves the payload from `parsed.processes`
- * on a live interview, and the prompt's `processes` example carries NEITHER field - so without
- * this the participant's answers reached `/api/score` without them and were refused with a 400
- * and "The analysis could not be computed." See `ai/workflow-identity.js` for why the fields are
- * generated rather than the validator relaxed, and how stability is guaranteed.
+ * The flags are read from either place a model might put them, the top level or an `audit` envelope.
  *
  * @param {object} parsed The parsed reply, which may carry the flags.
  * @param {Array<object>} workflows A non-empty array, already resolved.
