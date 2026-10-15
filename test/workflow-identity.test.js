@@ -497,7 +497,16 @@ test('a NEWLY NAMED process ALONE is kept - the case that killed the reverted fi
 // ASSERT THE OUTCOME, NOT THE LOG WORDING: a log line's phrasing is as brittle here as a
 // source-text match.
 
-/** Reads one of the host artefacts, a bare JSON array of workflows. Returns null when absent. */
+/**
+ * Reads one of the HOST artefacts, a bare JSON array of workflows.
+ *
+ * These are captured replies from live interviews, left on the host at `/tmp` rather than committed
+ * because they are not repo content. So they can be absent - `/tmp` clears on reboot - and the
+ * readers below SKIP when that happens, which is stated here so a skip is a visible decision rather
+ * than a silent hole in the coverage.
+ *
+ * Returns null when absent.
+ */
 function readArtefact(file) {
     try {
         const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -512,6 +521,15 @@ const ARTEFACTS = {
     fuelcard: { file: '/tmp/fuelcard.json', inSize: 2, keptKeys: 19, keptSteps: 7 },
     onerow: { file: '/tmp/onerow.json', inSize: 3, keptKeys: 8, keptSteps: 5 }
 };
+
+// A GUARD ON THE SKIP PATH. The three tests below skip when their artefact is absent, which is the
+// right behaviour for a host file - but every one of them skipping means the real-payload coverage
+// has silently stopped running. So at least ONE artefact must be present in a run.
+test('at least one host artefact is present, so the real-payload cases do not all skip silently', () => {
+    const present = Object.entries(ARTEFACTS).filter(([, spec]) => readArtefact(spec.file) !== null);
+    assert.ok(present.length > 0,
+        `all three host artefacts are absent (${Object.values(ARTEFACTS).map((s) => s.file).join(', ')}), so every real-payload case skipped`);
+});
 
 /** Whether ANY fold warning fired, whichever arm caused it. */
 const foldedAnything = (warnings) => warnings.some((w) => /described ONE process twice|earlier wording forward with no steps/.test(w));
