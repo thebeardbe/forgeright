@@ -3,15 +3,13 @@
  *
  * ILLUSTRATIVE DATA. Generated to demonstrate the analysis. Not a real client.
  *
- * This is the structured contract the scoring layer consumes: one record per
- * workflow, with the raw inputs the score is computed from. Real providers must
- * emit this same shape.
+ * The structured contract the scoring layer consumes: one record per workflow with the raw
+ * inputs the score is computed from. Real providers must emit this same shape.
  *
- * The data is deliberately imperfect. `invoice-processing` carries a genuine
- * contradiction: the same workflow is reported by two people with very
- * different time estimates. `proposal-drafting` is judgement-heavy and should
- * score low despite high effort, which is the case that separates a diagnostic
- * from a wish list.
+ * Deliberately imperfect. `invoice-processing` carries a genuine contradiction - the same
+ * workflow reported by two people with very different time estimates. `proposal-drafting`
+ * is judgement-heavy and should score low despite high effort, the case that separates a
+ * diagnostic from a wish list.
  *
  * Each workflow carries:
  *   id                 stable key
@@ -23,15 +21,13 @@
  *   tools              what is used today (the old name for `systems`)
  *   reportedBy         who gave this estimate, so conflicts are visible
  *
- * The DETAIL table below adds the completeness-matrix fields, including steps[]
- * with each step's decidedHow and its DERIVED needsReasoning flag.
+ * The DETAIL table below adds the completeness-matrix fields, including steps[] with each
+ * step's decidedHow and its DERIVED needsReasoning flag.
  *
- * THERE IS NO PROCESS-LEVEL judgementScore, DELIBERATELY. It used to be here, and
- * it contradicted the per-step flags: contract-review was marked 1 ("needs a
- * person") while three of its four steps follow rules, which is exactly the
- * process-level reading the spec says hides the automation boundary. The scorer
- * derives the 1-5 band from the step flags, so keeping both would have meant the
- * stale field winning and the new data being ignored.
+ * THERE IS NO PROCESS-LEVEL judgementScore, DELIBERATELY: it contradicted the per-step
+ * flags, marking contract-review 1 ("needs a person") while three of its four steps follow
+ * rules - the process-level reading that hides the automation boundary. The scorer derives
+ * the 1-5 band from the step flags, so keeping both means the stale field wins.
  */
 
 const WORKFLOWS = [

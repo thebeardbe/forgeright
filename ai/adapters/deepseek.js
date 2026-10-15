@@ -1,32 +1,29 @@
 /**
  * DeepSeek adapter.
  *
- * DeepSeek exposes an OpenAI-compatible /chat/completions endpoint. It gets its
- * own adapter rather than sharing the OpenAI one so the endpoint, JSON-mode
- * handling and error mapping are explicit and can be tested in isolation.
+ * DeepSeek exposes an OpenAI-compatible /chat/completions endpoint. Its own adapter rather
+ * than the OpenAI one, so the endpoint, JSON-mode handling and error mapping can be tested
+ * in isolation.
  *
- * JSON MODE IS NOT SENT TO DEEPSEEK, and that is a measured decision rather than
- * caution. With `response_format: {type:"json_object"}` the API returns 11 to 16
- * SPACES with `finish_reason: "stop"` and HTTP 200, once a conversation has more
- * than about two exchanges, and only in plain mode is the reply stable:
+ * JSON MODE IS NOT SENT TO DEEPSEEK, measured rather than cautious. With
+ * `response_format: {type:"json_object"}` the API returns 11 to 16 SPACES with
+ * `finish_reason: "stop"` and HTTP 200, once a conversation passes about two exchanges.
+ * Only plain mode is stable:
  *
  *   JSON mode, real 7-message conversation:   0/6 non-blank
  *   plain mode, same conversation:            6/6 non-blank
  *   JSON mode by turns:  2->4/4  3->3/4  4->3/4  5->3/4  6->1/4
  *   plain mode by turns: 2->4/4  5->4/4       (stable)
  *
- * It is DeepSeek-specific: Gemini on the same conversation returned 4/4, so the
- * flag stays on there. The full measurements, and every explanation that was
- * tested and falsified (token length, turn count, truncation, rate limiting,
- * the model name), are in NOTES-deepseek-json-mode.md.
+ * DeepSeek-specific: Gemini on the same conversation returned 4/4, so its flag stays on.
+ * Full measurements and every explanation tested and FALSIFIED (token length, turn count,
+ * truncation, rate limiting, model name) are in NOTES-deepseek-json-mode.md.
  *
- * The consequence is that this provider's replies arrive as PROSE with the JSON
- * inside them, so the response is parsed by ai/json-extract.js rather than
- * handed to JSON.parse. The prompt still demands JSON and nothing outside it; the
- * extractor is what makes a fence or a stray sentence survivable.
+ * So this provider's replies arrive as PROSE with the JSON inside, and are parsed by
+ * ai/json-extract.js rather than handed to JSON.parse. The prompt still demands JSON and
+ * nothing outside it; the extractor makes a fence or a stray sentence survivable.
  *
- * The flag is `sendJsonMode` in config/ai-config.json, so this behaviour is a
- * config change per provider rather than a switch in code.
+ * The flag is `sendJsonMode` in config/ai-config.json - a config change per provider.
  */
 export async function generate({ model, messages, systemInstruction, temperature, maxTokens, responseMimeType, providerConfig }) {
     const apiKey = process.env[providerConfig.apiKeyEnv];

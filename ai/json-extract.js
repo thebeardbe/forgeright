@@ -27,27 +27,23 @@ const FENCE_PATTERN = /^\s*```(?:json|JSON)?\s*$/;
 /**
  * The JSON object in a model reply, or null when there is none.
  *
- * ORDER OF ATTEMPTS, and why:
+ * ORDER OF ATTEMPTS:
  *
- *   1. the whole reply parses as-is    the cleanest case, and cheap to check
- *   2. a fenced block's contents       what a model most often produces in plain
- *                                      mode, and the fence removes the ambiguity
- *                                      about which braces are the object
- *   3. every balanced object in turn   prose before and after an unfenced object,
- *                                      and a reply that shows a shape and then
- *                                      answers in it
+ *   1. the whole reply as-is       cleanest, cheap to check
+ *   2. a fenced block's contents   the normal plain-mode output; the fence removes
+ *                                  the ambiguity about which braces are the object
+ *   3. every balanced object       prose around an unfenced object, or a reply that
+ *                                  shows a shape and then answers in it
  *
- * WHY EVERY BALANCED OBJECT, NOT JUST THE FIRST OR THE OUTERMOST. A reply that
- * writes `Shape: {...} Answer: {...}` has two SIBLING objects, and the answer is
- * the second. Taking the first by position would hand back a worked example, and
- * taking the outermost is meaningless for siblings. So each is tried in order and
- * the first that is an acceptable payload is returned. `looksLikePayload` decides
- * that, and a caller can override it: it defaults to "has a `status` field", which
- * is the contract every reply in this system carries.
+ * WHY EVERY BALANCED OBJECT, NOT THE FIRST OR THE OUTERMOST. `Shape: {...} Answer: {...}`
+ * has two SIBLING objects and the answer is the second: taking the first hands back a
+ * worked example, and the outermost is meaningless for siblings. So each is tried in
+ * order and the first acceptable payload wins. `looksLikePayload` decides, defaulting to
+ * "has a `status` field" - the contract every reply here carries - and a caller can
+ * override it.
  *
- * When no candidate qualifies, the FIRST parsed object is returned rather than
- * null: something was found, and the caller's own validation reports what is
- * wrong with it, which is a better message than "no JSON".
+ * When none qualifies, the FIRST parsed object is returned rather than null: the caller's
+ * own validation reports what is wrong with it, a better message than "no JSON".
  *
  * @param {string} raw
  * @param {(value: object) => boolean} [looksLikePayload] Which candidate to prefer.

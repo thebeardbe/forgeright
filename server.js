@@ -338,31 +338,27 @@ app.use((err, req, res, next) => {
     // error in the log.
     if (res.headersSent) return next(err);
 
-    // AN ERROR THAT KNOWS ITS OWN STATUS KEEPS IT, because the page's wording depends on whose
-    // fault it is. Express's body parsers attach one - MEASURED: malformed JSON gives
-    // `err.status = 400` with `type = entity.parse.failed`, and a body over the limit gives
-    // `413` with `entity.too.large`. Answering 500 to those told the sender "this is a fault on
-    // our side, not yours" about a request THEY malformed, which is precisely the distinction
-    // these pages exist to make. The wrong status also hides the problem from a monitor, since a
-    // 400 storm would read as a healthy server.
+    // AN ERROR THAT KNOWS ITS OWN STATUS KEEPS IT, because the page's wording depends on
+    // whose fault it is. Express's body parsers attach one - MEASURED: malformed JSON gives
+    // `err.status = 400` with `type = entity.parse.failed`; an oversized body gives `413`
+    // with `entity.too.large`. Answering 500 told the sender "our fault, not yours" about a
+    // request THEY malformed, and hid the problem from a monitor.
     //
-    // THE STATUS IS VALIDATED RATHER THAN MERELY CONVERTED, which is a fix for a fault in this
-    // handler's own last resort: `Number(err.status) || 500` passes any truthy number through, and
-    // `res.status()` accepts only 100-599 - so a middleware attaching -1 or 99999 made it THROW from
-    // inside the error handler, and the response came from Express's default with a STACK TRACE in
-    // the body. That is the outcome this handler exists to eliminate, arrived at by the handler
-    // itself. MEASURED: `err.status = -1` produced `RangeError [ERR_HTTP_INVALID_STATUS_CODE]`.
+    // VALIDATED, NOT MERELY CONVERTED, which fixes a fault in this handler's own last
+    // resort: `Number(err.status) || 500` passed any truthy number and `res.status()`
+    // accepts only 100-599, so a middleware attaching -1 made it THROW from inside the
+    // error handler and the body carried a STACK TRACE - the outcome this handler exists to
+    // eliminate, arrived at by the handler itself. MEASURED: -1 gave `RangeError
+    // [ERR_HTTP_INVALID_STATUS_CODE]`.
     //
-    // THE BOUNDS ARE 400 TO 599, AND THE FLOOR IS DELIBERATELY NOT 100: everything reaching this
-    // middleware is an error, so a status below 400 is nonsense or a bug - and rendering an error
-    // PAGE with a 2xx or 3xx would be worse than the stack trace it replaced, because a monitor
-    // would count a failure as a success and a client following a redirect would land somewhere
-    // unrelated. Anything outside the band becomes 500.
+    // THE BOUNDS ARE 400 TO 599, THE FLOOR DELIBERATELY NOT 100: everything here is an
+    // error, so a status below 400 is nonsense, and a 2xx or 3xx page is worse than the
+    // stack trace - a monitor counts a failure as success. Outside the band becomes 500.
     //
-    // `Number.isInteger` RATHER THAN A RANGE TEST ALONE, so `NaN`, `Infinity` and a numeric
-    // string like "418" behave predictably: NaN and Infinity fail the test and become 500, while
-    // "418" is coerced by `Number` and passes. Verified against every real case: 400 for a
-    // malformed body, 413 for an oversized one, 418 for a teapot, 400 from the string "400".
+    // `Number.isInteger` RATHER THAN A RANGE TEST, so `NaN`, `Infinity` and "418" behave:
+    // NaN and Infinity fail and become 500, "418" is coerced and passes. Verified: 400 for a
+    // malformed body, 413 for an oversized one, 418 for a teapot, 400 from the string
+    // "400".
     const rawStatus = Number(err.status);
     const status = Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus <= 599
         ? rawStatus

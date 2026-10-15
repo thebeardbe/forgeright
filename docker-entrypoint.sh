@@ -6,28 +6,25 @@
 # WHY THIS EXISTS: THE DEMO MUST BE COPIED, NOT MOUNTED IN PLACE
 # ===========================================================================
 #
-# THE APP CANNOT OPEN A READ-ONLY STORE, which was measured rather than assumed. Every
-# connection runs `prepareDatabase`, which sets `PRAGMA busy_timeout` and applies the
-# schema; both are WRITES, so a `:ro` mount fails with "attempt to write a readonly
-# database" on the first read of an organisation. SQLite in WAL mode also creates `-wal`
-# and `-shm` sidecars beside the database merely by opening it.
+# THE APP CANNOT OPEN A READ-ONLY STORE, measured not assumed. Every connection runs
+# `prepareDatabase`, which sets `PRAGMA busy_timeout` and applies the schema; both are
+# WRITES, so a `:ro` mount fails with "attempt to write a readonly database" on the first
+# read. SQLite in WAL mode also creates `-wal` and `-shm` sidecars just by opening it.
 #
 # SO THE COMMITTED ARTEFACT IS THE SOURCE AND THE VOLUME IS THE WORKING COPY:
 #
-#   /app/data/demo   mounted READ-ONLY from the repository - the committed artefact
-#   /data/store      a writable named volume - what the app actually opens
+#   /app/data/demo   mounted READ-ONLY from the repository
+#   /data/store      a writable named volume - what the app opens
 #
 # THE VOLUME IS NOT UNDER /app, deliberately: the app reads its schema from
 # `/app/data/store/schema.sql`, so a volume there hides it and every connection fails.
 #
-# The copy runs once, when the store is empty. It does NOT run on every start, which
-# matters: re-copying would silently discard anything written since, so a container that
-# was used would lose it on the next restart.
+# The copy runs ONCE, when the store is empty - not on every start. Re-copying would
+# silently discard anything written since.
 #
-# THE ARTEFACT IS NEVER WRITTEN TO. The mount is read-only, and this script only ever
-# reads from it. `data/demo` in the repository is therefore unchanged by a compose run -
-# which is the integrity requirement, because the file is committed and its organisation
-# id is pinned in the compose file.
+# THE ARTEFACT IS NEVER WRITTEN TO. `data/demo` is therefore unchanged by a compose run,
+# which is the integrity requirement: the file is committed and its organisation id is
+# pinned in the compose file.
 set -eu
 
 STORE="${STORE_DIR:-/data/store}"

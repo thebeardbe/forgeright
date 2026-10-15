@@ -25,33 +25,23 @@ function stepKey(step) {
 /**
  * Merges the steps of every response behind ONE process into one ordered sequence.
  *
- * A PROCESS HAS ONE SEQUENCE OF STEPS, not one per response. Each participant
- * describing the same work lists the same steps in the same order, so rendering
- * them per response showed a three-step process six times over. Steps are merged
- * by name, keeping first-seen order, which is each participant's own order.
+ * One sequence per process, not per response: rendering them separately showed a
+ * three-step process six times. Merged by name, first-seen order.
  *
- * THE PESSIMISTIC READING WINS on a disagreement. If one participant says a step
- * follows a rule and another says it needs a person, the step needs a person:
- * `needsReasoning` is true if ANY response says true. This is not a tie-break, it
- * is the point of the merge. The flag marks where a human stays in the loop, and
- * taking the optimistic reading would hide exactly the work the roadmap exists to
- * surface, in favour of a tidier number. The mock fixture carries this case
- * deliberately: two accounts of invoice processing disagree about whether matching
- * the amounts is a two-euro rule or a judgement about the supplier.
+ * THE PESSIMISTIC READING WINS: `needsReasoning` is true if ANY response says true.
+ * Not a tie-break - the flag marks where a human stays in the loop, and the
+ * optimistic reading would hide the work the roadmap exists to surface. The fixture
+ * carries the case: two accounts of invoice processing disagree about whether
+ * matching amounts is a two-euro rule or a judgement.
  *
- * KNOWN TRADE, WITH ITS LIMIT: on a disagreement the merged row carries the PESSIMISTIC FLAG
- * and ONE ACCOUNT'S QUOTATION, so the quote can come from the account whose own reading was the
- * optimistic one. The other accounts' flags and quotes are readable under each answer, where the
- * disagreement is visible as one - but a reader who opens only the roadmap sees the merged row and
- * not that.
+ * On a disagreement the merged row carries the pessimistic flag and ONE account's
+ * quotation, so the quote may come from the optimistic account. The others are
+ * readable under each answer, but a reader who opens only the roadmap sees neither.
  *
- * WHERE ACCOUNTS DIFFER IN WORDING: the LONGER `whatHappens` wins, and the FIRST non-empty
- * `decidedHow` and `reasoningBasis` win - a basis stated once is not made wrong by a second
- * account that omits it.
+ * Differing wording: the LONGER `whatHappens` wins, and the FIRST non-empty
+ * `decidedHow` and `reasoningBasis` win.
  *
- * THE RESPONSE SHAPE IS RESOLVED, NOT ASSUMED. A live round saves `{ workflows: [ { steps } ] }`
- * and an imported one saves the workflow directly; `responseWorkflow` is the one definition of
- * that, so this reader and the console cannot drift apart.
+ * `responseWorkflow` resolves the shape, so this reader and the console cannot drift.
  *
  * @param {Array<object>} responses Response rows, each with `data` in EITHER stored shape.
  * @returns {{steps: Array<object>, reasoningSteps: number, describedBy: Array<[string, number]>,

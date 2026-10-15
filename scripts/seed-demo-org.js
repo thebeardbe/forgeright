@@ -1,44 +1,42 @@
 /**
  * Builds a demo organisation from the illustrative fixture, through the real pipeline.
  *
- * IT USES THE REAL CODE: it registers an organisation in a SEPARATE store, inserts the fixture's
- * responses with real invitations, then runs identification and weighing for real. NOTHING IS
- * PRE-BAKED into the database.
+ * USES THE REAL CODE: it registers an organisation in a SEPARATE store, inserts the
+ * fixture's responses with real invitations, then identifies and weighs for real.
+ * NOTHING IS PRE-BAKED.
  *
- * THE DATA IS ILLUSTRATIVE and comes from `ai/fixtures/mock-audit.js`, which says so itself. It is
- * deliberately imperfect in ways worth keeping in a demo: two fixture processes describe the SAME
- * work with very different time estimates, so the pipeline has a real disagreement to surface, and
- * another is judgement-heavy and should score low despite high effort.
+ * THE DATA IS ILLUSTRATIVE, from `ai/fixtures/mock-audit.js`. Deliberately imperfect:
+ * two fixture processes describe the SAME work with very different time estimates, so the
+ * pipeline has a real disagreement to surface, and another is judgement-heavy and should
+ * score low despite high effort.
  *
  * RUN IT WITH A REAL PROVIDER, and it costs real calls:
  *
  *     AI_PROVIDER=deepseek STORE_DIR=data/demo node scripts/seed-demo-org.js
  *
- * `STORE_DIR` IS REQUIRED AND MAY NOT BE THE DEFAULT STORE: this script DELETES an organisation to
- * make itself re-runnable, and the default store is where real data lives. It also sidesteps the
+ * `STORE_DIR` IS REQUIRED AND MAY NOT BE THE DEFAULT STORE: this DELETES an organisation to
+ * be re-runnable, and the default store is where real data lives. It also sidesteps the
  * pre-v6 files in `data/store/orgs/`, which this code refuses by design. `data/demo` is the
- * COMMITTABLE location - `data/store/orgs/` is gitignored wholesale because it holds live data -
- * and the result is meant to be committed so the demo travels with the repository.
+ * COMMITTABLE location - `data/store/orgs/` is gitignored because it holds live data - and
+ * the result is meant to be committed so the demo travels with the repository.
  *
- * THE COST IS PRINTED BEFORE ANY CALL, so it is known rather than discovered: one identification per
- * response, plus at most one weighing per resulting process, since responses describing the same
- * work merge.
+ * THE COST IS PRINTED BEFORE ANY CALL: one identification per response, plus at most one
+ * weighing per resulting process, since responses describing the same work merge.
  *
- * RE-RUNNABLE MEANS IT DELETES: it matches its own organisation by name and removes it through
- * `orgDbPath`, which refuses an id resolving outside the store directory.
+ * RE-RUNNABLE MEANS IT DELETES, matching its own organisation by name through `orgDbPath`,
+ * which refuses an id resolving outside the store directory.
  *
- * FAILURE IS LOUD AND PARTIAL WORK IS NAMED. A missing key, an unreachable provider or a refused
- * call stops the run with the reason, the organisation id and what was completed, so a half-built
- * organisation is never mistaken for a working one.
+ * FAILURE IS LOUD AND PARTIAL WORK IS NAMED: a missing key, an unreachable provider or a
+ * refused call stops the run with the reason, the organisation id and what was completed.
  *
- * `AI_PROVIDER=mock` CANNOT SEED ANYTHING: the mock answers every call with the next scripted
- * interview question, so identification and weighing cannot work under it. That is the mock doing
- * its job, and both the startup and per-reply checks say so rather than letting it read as a broken
- * demo. `scripts/check-weighing-order.js` handles it the same way.
+ * `AI_PROVIDER=mock` CANNOT SEED ANYTHING: the mock answers every call with the next
+ * scripted interview question, so identification and weighing cannot work. That is the mock
+ * doing its job, and both the startup and per-reply checks say so.
+ * `scripts/check-weighing-order.js` handles it the same way.
  *
- * THE READ-ONLY DEMO LINK IS CONFIGURED ELSEWHERE - see the DEMO_LOGIN block in .env.example, where
- * each variable and its reasoning lives. A deployment serving the committed database needs NO
- * provider and no API key, because the processes are already grouped and scored.
+ * THE READ-ONLY DEMO LINK IS CONFIGURED ELSEWHERE - see the DEMO_LOGIN block in
+ * .env.example. A deployment serving the committed database needs NO provider and no API
+ * key, because the processes are already grouped and scored.
  */
 import 'dotenv/config';
 import fs from 'node:fs';

@@ -388,28 +388,26 @@
         return steps * 100 + filled;
     }
 
-            /**
-     * Gives each process in this reply the identity the round already gave it, and collapses a reply
-     * that describes the SAME process twice.
+    /**
+     * Gives each process in this reply the identity the round already gave it, and collapses
+     * a reply that describes the SAME process twice.
      *
-     * THE DEFECT THIS FIXES, MEASURED: the server derives a process `id` from its `task`, and THE
-     * MODEL REWORDS THE TASK BETWEEN TURNS - so one process accumulated under several ids and the
-     * score came from one variant while the others scored 0. Two runs of one interview gave 385
-     * h/wk and 25.5 h/wk depending on how often the model reworded itself.
+     * THE DEFECT, MEASURED: the server derives a process `id` from its `task`, and THE MODEL
+     * REWORDS THE TASK BETWEEN TURNS - so one process accumulated under several ids and the
+     * score came from one variant while the others scored 0. Two runs of one interview gave
+     * 385 h/wk and 25.5 h/wk depending on how often the model reworded itself.
      *
-     * WHAT THIS DOES, and only this: every workflow in the reply is matched against each process the
-     * round holds on the exact step-name co-test, and takes the id of the process it matches; then a
-     * reply describing one process twice is collapsed to the RICHER entry. The number of entries on
-     * either side is NOT part of the contract.
+     * WHAT THIS DOES, and only this: every workflow is matched against each held process on
+     * the exact step-name co-test and takes the matched id; then a reply describing one
+     * process twice is collapsed to the RICHER entry. Entry counts are NOT part of it.
      *
-     * THE HARM DIRECTION, which is why the matching is per-entry: two genuinely different processes
-     * each matching a DIFFERENT held process keep both ids and both entries - the case that would
-     * break if the rule assumed "one on each side" - while an entry matching nothing keeps its own id.
+     * THE HARM DIRECTION, why the matching is per-entry: two genuinely different processes
+     * each matching a DIFFERENT held process keep both ids - the case that breaks if the rule
+     * assumed "one on each side" - while an entry matching nothing keeps its own id.
      *
-     * THE EVIDENCE FOR THE CO-TEST, and why it is a step name rather than the task, is in
-     * `ai/workflow-identity.js`. THAT IS THE SERVER'S IMPLEMENTATION AND NOT THIS ONE'S MIRROR: it
-     * also decides whether a reply is the round's process at all, while this reattaches an identity
-     * and collapses what is already here.
+     * THE CO-TEST'S EVIDENCE is in `ai/workflow-identity.js`, which is the SERVER'S
+     * implementation and NOT this one's mirror: it also decides whether a reply is the
+     * round's process at all, while this reattaches an identity and collapses what is here.
      *
      * @param {Array<object>} workflows The workflows from this reply.
      * @param {Map<string, object>} held The processes the round already has, by id.
@@ -677,27 +675,25 @@
     }
 
     /**
-     * The four states a stored field can be in, and what each one READS as.
+     * The four states a stored field can be in, and what each READS as.
      *
-     * THIS IS THE BUG THE OWNER SAW: a field answered in words rendered as `[object Object]`
-     * people, because `metaPart` handled absent and assumed everything else was printable.
+     * THE BUG THE OWNER SAW: a field answered in words rendered as `[object Object]` people,
+     * because `metaPart` handled absent and assumed the rest was printable.
      *
      *   absent     -> not measured
      *   prose      -> THE PARTICIPANT'S OWN WORDS, `{ said: "..." }`
-     *   declined   -> their refusal, or a plain statement that they did not say
+     *   declined   -> their refusal, or that they did not say
      *   typed      -> the value, with its unit
      *
-     * THE MARKER IS DELIBERATE AND ITS MEANING IS NOT CHANGED HERE. `{ said: "..." }` is how a
-     * field records an answer that will not fit its declared type, and it counts as SUPPLIED so
-     * the interview stops asking about something the participant has genuinely answered. This
+     * THE MARKER'S MEANING IS NOT CHANGED HERE. `{ said: "..." }` records an answer that will
+     * not fit its declared type and counts as SUPPLIED, so the interview stops asking; this
      * only decides how it LOOKS.
      *
-     * THE SHAPE IS COPIED FROM `views/partials/response-fields.ejs`, whose `show()` already renders
-     * these correctly. It is restated rather than imported because a browser script cannot reach a
-     * view's locals - the same reason that partial restates the markers itself.
+     * COPIED FROM `views/partials/response-fields.ejs`, restated rather than imported because
+     * a browser script cannot reach a view's locals.
      *
-     * AN OBJECT THAT IS NEITHER MARKER IS NOT PRINTED: a marker added later must degrade to "not
-     * measured" rather than `[object Object]`, so the fallthrough is deliberate.
+     * AN OBJECT THAT IS NEITHER MARKER IS NOT PRINTED, so a marker added later degrades to
+     * "not measured" rather than `[object Object]`.
      */
     function isProse(value) {
         return Boolean(value) && typeof value === 'object' && !Array.isArray(value)

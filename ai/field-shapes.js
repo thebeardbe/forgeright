@@ -112,16 +112,16 @@ export function proseSaidIn(value) {
  *   said       a real answer, in their words   -> in `have`, SUPPLIED
  *   declined   asked, and no answer given      -> NOT missing, NOT supplied
  *
- * A REFUSAL PULLS IN TWO DIRECTIONS AND MUST SATISFY BOTH: it must stop the interview asking
- * again, because a participant with nothing to give asked a third time is the loop this system
- * exists to prevent; and it must NOT count as supplied, or refusing everything would finish an
- * interview. So `have` means "do not ask again" and `supplied` means "the analysis has something
- * to work with", and this field is in the first and not the second.
+ * A REFUSAL PULLS IN TWO DIRECTIONS AND MUST SATISFY BOTH: it stops the interview asking
+ * again, because a participant with nothing to give asked a third time is the loop this
+ * system exists to prevent; and it must NOT count as supplied, or refusing everything would
+ * finish an interview. `have` means "do not ask again", `supplied` means "the analysis has
+ * something to work with" - this field is in the first and not the second.
  *
- * WHY IT IS NOT "ANOTHER KIND OF said", measured: before the split, a live interview recorded
- * `{"said":"I have no idea"}` against seven fields and COMPLETED, so a fabrication reached the
- * audit and the weighing. The words are kept, because the roadmap has to report honestly that
- * this was asked and not answered. `{ declined: true }` is accepted with no words.
+ * WHY IT IS NOT "ANOTHER KIND OF said", measured: before the split, a live interview
+ * recorded `{"said":"I have no idea"}` against seven fields and COMPLETED, so a fabrication
+ * reached the audit. The words are kept, so the roadmap reports honestly that this was asked
+ * and not answered. `{ declined: true }` is accepted with no words.
  *
  * @param {*} value
  * @returns {{declined: true, words: string|null}|null}
