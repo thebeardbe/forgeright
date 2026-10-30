@@ -1,21 +1,12 @@
 /**
- * The framework around the interview: the format commitment, the JSON extractor,
- * and the transcript the completed answers carry.
- *
- *   - `ai/format-commitment.js` is a measured framing, so the conditions it wraps under are pinned;
- *   - `ai/json-extract.js` parses a real provider's replies out of prose;
- *   - the transcript is the raw evidence the analysis rests on, and the synthetic format turn must
- *     never reach it.
+ * The format commitment, the JSON extractor, and the transcript the completed answers carry: the
+ * synthetic format turn must never reach the transcript.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { withFormatCommitment } from '../ai/format-commitment.js';
 import { balancedObjects, extractJsonObject } from '../ai/json-extract.js';
-
-// ===========================================================================
-// 4. THE TRAILING FORMAT TURN, ai/format-commitment.js
-// ===========================================================================
 
 test('a format turn is appended when the conversation ends on a user turn', () => {
     const result = withFormatCommitment([{ role: 'user', content: 'Invoices' }]);
@@ -27,7 +18,6 @@ test('a format turn is appended when the conversation ends on a user turn', () =
 });
 
 test('NO format turn is appended when the conversation already ends on an assistant turn', () => {
-    // A caller that sends its own acknowledgement must not get a duplicate.
     const messages = [
         { role: 'user', content: 'Invoices' },
         { role: 'assistant', content: 'Understood, JSON only.' }
@@ -39,8 +29,7 @@ test('NO format turn is appended when the conversation already ends on an assist
 });
 
 test('two calls do not stack a second format turn', () => {
-    // Idempotence: applying it to its own output must be safe, or a caller that
-    // wraps twice puts two commitments in a row.
+    // Idempotence: a caller that wraps twice would put two commitments in a row.
     const once = withFormatCommitment([{ role: 'user', content: 'Invoices' }]);
     const twice = withFormatCommitment(once);
 
@@ -49,8 +38,7 @@ test('two calls do not stack a second format turn', () => {
 });
 
 test('the caller\'s array is NOT mutated', () => {
-    // A real bug class: a synthetic turn leaking into the conversation it was
-    // copied from would appear in the transcript as something never said.
+    // A leak would appear in the transcript as something never said.
     const messages = [{ role: 'user', content: 'Invoices' }];
     const before = JSON.parse(JSON.stringify(messages));
 
@@ -72,15 +60,10 @@ test('a non-array is returned safely rather than throwing', () => {
 });
 
 test('the format turn is a fixed string, not derived from the conversation', () => {
-    // Pinning the shape: it commits to the JSON format and nothing else, so it
-    // cannot accidentally carry participant text into the transcript if it leaked.
+    // Commits to the JSON format and nothing else, so it cannot carry participant text.
     const result = withFormatCommitment([{ role: 'user', content: 'my secret answer' }]);
     assert.equal(result.at(-1).content.includes('my secret answer'), false, 'the added turn carries no participant text');
 });
-
-// ===========================================================================
-// 5. THE JSON EXTRACTION, ai/json-extract.js
-// ===========================================================================
 
 test('a reply that is the object parses directly', () => {
     assert.deepEqual(extractJsonObject('{"status":"asking"}'), { status: 'asking' });
@@ -91,7 +74,6 @@ test('a fenced block with the json label is extracted', () => {
 });
 
 test('a fenced block WITHOUT a label is extracted', () => {
-    // Models emit bare fences; the pattern counts them.
     assert.deepEqual(extractJsonObject('```\n{"status":"asking"}\n```'), { status: 'asking' });
 });
 
@@ -103,8 +85,7 @@ test('prose before and after the object is ignored', () => {
 });
 
 test('a brace INSIDE A STRING does not truncate the object', () => {
-    // The case indexOf('{')..lastIndexOf('}') gets wrong: the inner brace must not
-    // be read as the object's end.
+    // The case `indexOf('{')..lastIndexOf('}')` gets wrong: the inner brace is not the end.
     assert.deepEqual(
         extractJsonObject('{"status":"asking","content":"Use {braces}?"}'),
         { status: 'asking', content: 'Use {braces}?' }
@@ -119,8 +100,6 @@ test('an escaped quote inside a string does not end the string early', () => {
 });
 
 test('a brace after an escaped backslash inside a string does not end the run', () => {
-    // A backslash escape consumes the next character, so a `}` after an escaped backslash is still
-    // inside the string.
     const raw = '{"status":"asking","content":"a \\\\} b"}';
     assert.deepEqual(
         extractJsonObject(raw),
@@ -129,8 +108,8 @@ test('a brace after an escaped backslash inside a string does not end the run', 
 });
 
 test('two sibling objects: the first WITH a status field wins', () => {
-    // Each candidate is tried in order and the first with a string `status` is returned, so a
-    // worked example followed by the answer returns the ANSWER.
+    // The first candidate with a string `status` is returned: a worked example before the answer
+    // does not win.
     assert.deepEqual(
         extractJsonObject('Shape: {"a":1} Answer: {"status":"asking"}'),
         { status: 'asking' }
@@ -145,14 +124,13 @@ test('two siblings that BOTH have a status field: the FIRST is returned', () => 
 });
 
 test('two siblings with NEITHER having a status field: the first found is returned (the fallback)', () => {
-    // When nothing looks like a payload, the first parsed object is returned rather than null, so
-    // the caller can report what is wrong with it instead of "no JSON".
+    // When nothing looks like a payload, the first parsed object is returned so the caller can say
+    // what is wrong with it.
     assert.deepEqual(extractJsonObject('{"a":1} {"b":2}'), { a: 1 });
 });
 
 test('a custom predicate changes which candidate is preferred', () => {
-    // The extractor takes the predicate, so a different contract can pass its own
-    // rather than the default being made vague enough to cover everything.
+    // The extractor takes the predicate, so a different contract passes its own.
     const raw = '{"kind":"example"} {"kind":"answer"}';
     assert.deepEqual(extractJsonObject(raw, (v) => v.kind === 'answer'), { kind: 'answer' });
 });
@@ -163,8 +141,7 @@ test('a reply with NO JSON returns null, not a fragment', () => {
 });
 
 test('an UNBALANCED object returns null rather than a truncated object', () => {
-    // A truncated reply must be reported as no JSON, so the caller says "the model
-    // returned no JSON" rather than surfacing a parse error on a fragment.
+    // A truncated reply is reported as no JSON, not a parse error on a fragment.
     assert.equal(extractJsonObject('{"status":"asking"'), null);
     assert.equal(extractJsonObject('{"status":"asking", "content": "broken'), null);
     assert.equal(extractJsonObject('text {"status":"asking" more text'), null);
@@ -183,14 +160,11 @@ test('a non-string reply returns null rather than throwing', () => {
 });
 
 test('a bare array or scalar is not accepted as an object', () => {
-    // Valid JSON, wrong shape: accepting one would push the failure to a later
-    // field access with a confusing message.
+    // Accepting a wrong shape pushes the failure to a later field access.
     assert.equal(extractJsonObject('[1,2,3]'), null);
     assert.equal(extractJsonObject('42'), null);
     assert.equal(extractJsonObject('"a string"'), null);
 });
-
-// --- balancedObjects directly, since it is exported and load-bearing ---------
 
 test('balancedObjects returns every balanced run in order', () => {
     assert.deepEqual(balancedObjects('{"a":1} {"b":2}'), ['{"a":1}', '{"b":2}']);
