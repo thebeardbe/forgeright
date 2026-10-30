@@ -2,6 +2,17 @@
 
 Open items for this project. Remove entries as they are resolved.
 
+## Deferred: split this file
+
+**This file is 1500+ lines and holds two different things**: known issues in the product, and
+notes about how agents work on it. They have different audiences and different lifetimes, and
+splitting into `KNOWN-ISSUES.md` and `NOTES-agents.md` is the right shape.
+
+**Not done, deliberately, and the reason is operational rather than editorial:** agents in
+this session read this file by `sed -n` line ranges, so moving its sections mid-flight breaks
+their reads and their handoffs. **Do the split in a session where no other agent is reading
+it**, as its own commit, with the section headings kept so a `grep` still finds them.
+
 ## Process notes
 
 - **Attack the claim, do not confirm the behaviour.** The storage layer's central
@@ -133,9 +144,12 @@ The reviewer's full report is the source for these. Ordered by what matters.
   is now validated by the same `validateWorkflows` the model path uses, so a
   malformed audit is a 400 with a reason rather than a blank heading or a crash.
   **What remains is the real issue:** nothing binds the payload to a
-  conversation. Anyone with the access code can POST an invented set of workflows
-  and get a headline back. Combined with a mock that ignores the participant's
-  answers, a fabricated score and an honest demo look identical on screen.
+  conversation. **Anyone holding a valid participant token** can POST an invented set of
+  workflows and get a headline back - the token is the only gate, and it proves the holder
+  was invited rather than that the payload came from a conversation. Combined with a mock
+  that ignores the participant's answers, a fabricated score and an honest demo look
+  identical on screen. (The shared `AUDIT_ACCESS_CODE` this entry used to name has been
+  removed, so the audience is narrower than it was, but the trust problem is unchanged.)
 
   The reviewer's assessment: a third party without the code cannot do this, and
   the endpoint is not public in the intended deployment. The problem is specific
@@ -233,7 +247,6 @@ The reviewer's full report is the source for these. Ordered by what matters.
 
 ## Next up in V1
 
-- **Guardrail demonstration.**
 - **Guardrail demonstration.** A documented injection attempt against the intake
   LLM, what it would have done, the guardrail that stops it, and how it was
   tested. This is the differentiator for the application, not a nice-to-have.
@@ -639,9 +652,13 @@ audit.js:187) - the payload is not in its own history.
 That is why the reconciliation is in the client and cannot be a prompt
 instruction.
 
-## `ai/audit-core.js` is 1412 lines
+## `ai/audit-core.js` is 833 lines, and still doing four jobs
 
-Past the 1000-line hard limit, so per the guidelines it may only shrink from here.
+**833 lines, 331 of them comments.** It came down from 1412 by cutting comments alone,
+which fixed the size symptom without touching the structure - see the note at the end of
+"The comment cull" section. **It is now under the 1000-line limit, and the split is still
+wanted**, because the reason for splitting was never the number.
+
 It was already the largest file before this session's work added to it.
 
 **It is the file every defect above lives in or beside**, which is not a
@@ -971,9 +988,15 @@ removed:       "The sentence describing what forgeright does is WORDED THE SAME 
                ... A shared partial would tie two different purposes together."
 why uncertain: it justifies a structural decision, which the keep list allows - but no
                reader would unify two paragraphs in different files by accident
-survives:      NOWHERE. This is the weakest removal in the cull. If the three paragraphs
-               should stay worded alike, this is the record that they were.
+survives:      test/demo-login.test.js, section 6, "THE COPY, COUNTED". The test counts the
+               product sentence on the console lead, the roadmap lead AND the banner, and
+               states that the banner is deliberately not centralised. A test is a
+               stronger record than a comment: it fails if the three drift apart.
 ```
+
+**Corrected 2026-10-15:** this entry first read `survives: NOWHERE` and called itself the
+weakest removal in the cull. **That was wrong**, and the audit caught it: the decision is
+pinned by a test that counts the sentence in all three places. The removal was safe.
 
 ### `lib/mail/console.js` (commit `75d99d3`)
 
