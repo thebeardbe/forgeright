@@ -122,7 +122,7 @@ test('a PROSE effort factor shows "effort not measured" INSTEAD OF a zero', asyn
 });
 
 test('the TOTAL is marked "at least" when any workflow was incomputable', async () => {
-    // CORRECT as far as it goes, but presented bare it reads as the whole answer.
+    // Correct, but presented bare it reads as the whole answer.
     const client = await loadScoringClient();
     const html = await client.render(analysis([
         scoredWorkflow({ title: 'Measured', effort: 5, recoverable: 5, peopleAffected: 3 }),
@@ -162,7 +162,7 @@ test('a MEASURABLE workload still shows its effort figure, so the label is not a
 });
 
 test('the client does NOT turn prose into a figure - the number displayed is the server\'s', async () => {
-    // The client must display the labelled 0 rather than read `{ said: "56 a week" }` as 56.
+    // The labelled 0, not `{ said: "56 a week" }` read as 56.
     const client = await loadScoringClient();
     const peopleAffected = { said: '56 servers a week, roughly' };
     const html = await client.render(analysis([
@@ -182,7 +182,6 @@ test('the effort formula still refuses prose at the source - the marker is not b
 });
 
 test('a DECLINED effort factor is treated like prose, so neither produces a fake zero', () => {
-    // Both markers mean no number exists, so the label applies to both.
     assert.match(CLIENT, /isProse\(workflow\.timePerPeriod\) \|\| isDeclined\(workflow\.timePerPeriod\)/,
         'a declined timePerPeriod is unmeasurable too');
 });
