@@ -1,15 +1,13 @@
 /**
+/**
  * THE TWO STORED SHAPES, AND THE READERS THAT MUST AGREE ABOUT THEM.
  *
  * A live interview saves `{ workflows: [ ... ] }`; an imported round saves the workflow directly.
  * A reader handling only one shape reports 0 steps and 0 departments, or `{}` for all fourteen
  * fields - a reader failure that reads as a model failure.
  *
- * THE DEMO HIDES IT: `scripts/seed-demo-org.js` writes the FLAT shape, so only a real client
- * interview scores zero. This file builds ONE workflow in TWO shapes and asserts the same result
- * through EACH reader, so a shape change in one module cannot hide from another module's tests.
- *
- * `data/demo/` and the seed are unchanged: the committed scores depend on the flat shape.
+ * THE DEMO HIDES IT: the seed writes the FLAT shape, so only a real client interview scores zero.
+ * ONE workflow in TWO shapes, the same result through EACH reader.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,7 +78,6 @@ test('mergeProcessSteps: TWO nested responses merge, so the shape works through 
     const merged = mergeProcessSteps([nestedResponse(), second]);
 
     assert.equal(merged.stepCount, 3, 'the shared step is merged, not duplicated');
-    // `describedBy` counts people who spoke, not teams the work crosses.
     assert.deepEqual(merged.describedBy, [['Finance', 2]]);
 });
 
@@ -114,7 +111,6 @@ function participantFields(message) {
 }
 
 test('mergeParticipants: a NESTED payload reaches the weighing prompt, not an empty section', () => {
-    // An empty prompt section looks like a MODEL failure, so it is investigated in the wrong place.
     const message = weighingMessage(nestedResponse());
     const fields = participantFields(message);
 
