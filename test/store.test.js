@@ -1,5 +1,3 @@
-// STORE_DIR must be set BEFORE the store module is imported: registry.js reads it into the path
-// helpers on first use.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -215,9 +213,7 @@ test('an accepted id never resolves outside the orgs directory', () => {
     }
 });
 
-// The lexical check above proves only that the NAME is contained, which a symlink satisfies. These
-// assert the requirement: no org id can read another organisation's rows, whatever the filesystem
-// holds.
+// The lexical check proves only that the NAME is contained, which a symlink satisfies.
 
 test('a symlinked org file cannot serve another organisation\'s data', () => {
     const orgsDir = path.join(STORE_DIR, 'orgs');
@@ -532,7 +528,6 @@ test('an update cannot touch a row that belongs to someone else, and says so wit
 });
 
 test('an unknown response id is refused without confirming another participant\'s id exists', () => {
-    // The refusal must not distinguish "no such id" from "not yours".
     const org = newOrg('Probe resistance');
     const mine = invite(org.id, 'mine@example.com');
     const theirs = invite(org.id, 'theirs@example.com');
@@ -561,8 +556,6 @@ test('a wrong (non-empty) token returns nothing from the READ methods', () => {
     assert.deepEqual(store.getResponsesByToken(org.id, 'no-such-token'), []);
     assert.equal(store.invitationForToken(org.id, 'no-such-token'), null);
 });
-
-// Reads return nothing for a token that yields no invitation; writes throw.
 
 test('reads return nothing for an empty or non-string token, and never throw', () => {
     const org = newOrg('Unusable read token');
@@ -621,13 +614,11 @@ test('invitationForToken records the first open and does not move it', () => {
     const org = newOrg('Opened');
     const inv = invite(org.id, 'opened@example.com');
 
-    // invitationForToken resolves the token AND records the visit.
     const first = store.invitationForToken(org.id, inv.token);
     assert.equal(typeof first.opened_at, 'string');
     assert.equal(typeof first.last_seen_at, 'string');
     assert.equal('token' in first, false, 'the returned invitation must not carry the token');
 
-    // COALESCE: a second open keeps the original opened_at.
     const second = store.invitationForToken(org.id, inv.token);
     assert.equal(second.opened_at, first.opened_at);
     assert.ok(second.last_seen_at >= first.last_seen_at, 'last_seen_at advances on the later visit');
@@ -691,7 +682,6 @@ test('the stored token is the hash, never the raw value', () => {
 });
 
 test('the raw token appears nowhere in the database file', () => {
-    // A byte scan finds a token in any table, index or free page.
     const org = newOrg('File scan');
     const inv = invite(org.id, 'scan@example.com');
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
@@ -736,7 +726,6 @@ test('a reset revokes every token and issues one replacement', () => {
 });
 
 test('a reset leaves existing responses attached to the invitation', () => {
-    // A bug here silently loses a participant's work.
     const org = newOrg('Reset keeps answers');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { answer: 'my work' } });
@@ -893,7 +882,7 @@ test('an unknown organisation is reported as null, not as an error, for reads', 
 });
 
 test('a read for an unknown organisation returns nothing and does NOT create a file', () => {
-    // Opening a path CREATES the file, conjuring an empty tenant that then reads as real.
+    // Opening a path CREATES the file, conjuring an empty tenant.
     const orgsDir = path.join(STORE_DIR, 'orgs');
     const filesBefore = fs.readdirSync(orgsDir).filter((n) => n.endsWith('.db'));
 
@@ -928,8 +917,7 @@ test('listOrganisationIds lists every created organisation and nothing else', ()
 });
 
 test('a file at an older schema version is refused, and is NOT rewritten', () => {
-    // There is no upgrade path: an unknown file is refused and left byte-identical, so its data is
-    // still recoverable by hand.
+    // There is no upgrade path: an unknown file is refused and left byte-identical.
     const org = newOrg('Version check');
     const inv = invite(org.id, 'version@example.com');
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { keep: 'me' } });
@@ -975,8 +963,7 @@ test('closeConnection reports whether a connection was open', () => {
     assert.equal(store.getOrganisation(org.id).name, 'Close reporting');
 });
 
-// NOT covered here: two PROCESSES, which need a second entry point that opens the store. The
-// two-connection case already exercises the shared-file behaviour WAL is about.
+// NOT covered: two PROCESSES, which need a second entry point that opens the store.
 
 function secondConnection(orgId) {
     const db = new DatabaseSync(store.orgDbPath(orgId));
@@ -1011,8 +998,6 @@ test('a write through the store is visible through a second connection', () => {
 });
 
 test('a write through a second connection is visible through the store', () => {
-    // `submitted_at NULL` makes a PARTIAL round: in `getAllResponses`, out of
-    // `getResponsesForAnalysis`.
     const org = newOrg('Cross-connection write');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { order: 1 } });
@@ -1079,7 +1064,6 @@ test('two connections do not corrupt the file', () => {
 });
 
 test('a reader is not blocked while another connection holds a write transaction', () => {
-    // The property WAL exists for: a reader sees the last committed snapshot without waiting.
     const org = newOrg('Read during write');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { before: true } });
@@ -1100,15 +1084,12 @@ test('a reader is not blocked while another connection holds a write transaction
     assert.deepEqual(store.getResponsesForAnalysis(org.id)[0].data, { touched: true }, 'the commit is visible after it lands');
 });
 
-// The lock is held and released from a WORKER thread: node:sqlite is synchronous on the calling
-// thread, so a blocked call cannot be unblocked by a timer in the same thread.
+// The lock is held from a WORKER thread: node:sqlite is synchronous on the calling thread, so a
+// blocked call cannot be unblocked by a timer in it.
 
 const LOCK_WORKER = new URL('./helpers/hold-write-lock.mjs', import.meta.url);
 
-/**
- * Takes a write transaction and commits after `holdMs`; never commits when Infinity.
- * Resolves once the worker holds the lock.
- */
+/** Takes a write transaction and commits after `holdMs`; never commits when Infinity. */
 async function holdWriteLock(dbPath, holdMs) {
     const { Worker } = await import('node:worker_threads');
     const worker = new Worker(LOCK_WORKER, { workerData: { dbPath, holdMs } });
@@ -1145,7 +1126,6 @@ test('a contending write waits for the lock and then succeeds', async () => {
 });
 
 test('a genuine, unresolvable contention still surfaces as an error', async () => {
-    // A lock held forever must fail loudly, not hang and not be swallowed.
     const org = newOrg('Write contention forever');
     const inv = invite(org.id);
 
@@ -1163,8 +1143,7 @@ test('a genuine, unresolvable contention still surfaces as an error', async () =
     assert.deepEqual(store.getResponsesForAnalysis(org.id), []);
 });
 
-// tokenHashesMatch and normaliseStoredHash are not on the store interface, so these damage the
-// stored hash directly in the file and observe the public methods.
+// Not on the store interface, so these damage the stored hash in the file and observe the methods.
 
 test('a token resolves while the stored hash is exactly what the code writes', () => {
     const org = newOrg('Correct hash');
@@ -1205,9 +1184,8 @@ test('a truncated stored hash does not authenticate the token', () => {
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
 });
 
-// `WHERE token_hash = ?` compares exact text, so an uppercase row is never selected and the
-// credential fails closed. No normalisation: it could only run after the row was found, and
-// `lower(token_hash) = ?` would lose the index.
+// `WHERE token_hash = ?` compares exact text, so an uppercase row fails closed. `lower(token_hash)`
+// would lose the index.
 test('an uppercase stored hash does not resolve, and fails closed', () => {
     const org = newOrg('Uppercase hash');
     const inv = invite(org.id);
@@ -1224,9 +1202,8 @@ test('an uppercase stored hash does not resolve, and fails closed', () => {
     assert.equal(store.invitationForToken(org.id, inv.token), null);
 });
 
-// `Number('')` is 0, so an EMPTY variable - the usual way to disable one in a container
-// environment - would set the wait to zero and reinstate the "database is locked" failure the
-// setting exists to prevent.
+// `Number('')` is 0, so an EMPTY variable - the usual way to disable one in a container - would set
+// the wait to zero and reinstate "database is locked".
 
 const { busyTimeoutMs } = await import('../lib/store/busy-timeout.js');
 
@@ -1282,7 +1259,6 @@ test('a negative or non-numeric busy timeout falls back to the default', () => {
 });
 
 test('the busy timeout is applied to a real connection', () => {
-    // The pragma must be set on the connection the store opens, not merely returned by the function.
     const previous = process.env.STORE_BUSY_TIMEOUT_MS;
     process.env.STORE_BUSY_TIMEOUT_MS = '1234';
     try {
@@ -1311,8 +1287,7 @@ test('the default busy timeout is applied when the variable is unset', () => {
     }
 });
 
-// tokenHashesMatch is imported from tokens.js, not the index. The comparison is EXACT: lowercase
-// hex is the only accepted form, so it agrees with the SELECT that binds a lowercase hash.
+// The comparison is EXACT: lowercase hex only, agreeing with the SELECT that binds a lowercase hash.
 
 const { tokenHashesMatch } = await import('../lib/store/tokens.js');
 
@@ -1359,8 +1334,7 @@ test('an uppercase stored hash fails closed end to end, and the outcome matches 
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), [], 'and the lookup finds nothing');
 });
 
-// The diagnostic must match every spelling SQLite emits - "database is locked", "database table is
-// locked", different capitalisation, and the driver's numeric code.
+// The diagnostic must match every spelling SQLite emits, plus the driver's numeric code.
 
 const { timedWrite } = await import('../lib/store/write-timing.js');
 
@@ -1434,9 +1408,6 @@ test('timedWrite does not report a fast success as having waited for a lock', ()
         'a fast write must not be logged as contention'
     );
 });
-
-// An answer is only meaningful against its question, so the transcript is the evidence the analysis
-// rests on.
 
 test('a stored transcript reads back with every turn in order, roles and content intact', () => {
     const org = newOrg('Transcript round trip');
