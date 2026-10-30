@@ -1,24 +1,6 @@
 <%
-    // WHAT A BLOCKED ACTION LOOKS LIKE, AND WHY IT IS SHOWN RATHER THAN HIDDEN.
-    //
-    // A DEMO SESSION CANNOT WRITE. The server refuses every mutating request for one
-    // (see `refuseWritesForDemoSessions` in lib/auth/routes.js), which is the control
-    // that matters: a POST can be sent by hand, and this link leaves the owner's hands.
-    //
-    // This partial is the VISIBLE half, and it shows the actions disabled rather than
-    // removing them. A console with the buttons missing reads as broken software to
-    // somebody seeing it for the first time, and the reader's next thought is that the
-    // tool is unfinished rather than that they are looking at a demo. Saying so plainly
-    // costs one line and removes the ambiguity.
-    //
-    // The sentence describing what forgeright does is WORDED THE SAME HERE as in the
-    // console's lead and the roadmap's, and it is deliberately NOT centralised. This banner
-    // is the first thing a demo visitor reads and its job is to explain the safety of the
-    // demo; those paragraphs explain the product. A shared partial would tie two different
-    // purposes together to save one repeated sentence.
-    //
-    // The safety wording itself stays in this one place, so the three console views cannot
-    // drift on what a read-only session means.
+    // Shown rather than hidden: missing buttons read as broken software. The server refuses every
+    // mutating request; this is the visible half, and the safety wording lives here only.
 %>
 <% if (typeof readOnly !== 'undefined' && readOnly) { %>
     <div class="demo-banner">
