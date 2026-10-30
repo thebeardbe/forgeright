@@ -1,16 +1,13 @@
 /**
  * The read-only demo link: the guard and the refusal.
  *
- * `GET /admin/demo?token=...` signs someone into a FIXED demo organisation with a session
- * flagged read-only. The link goes to a prospective client outside the owner's control, so it is
- * treated as untrusted.
+ * `GET /admin/demo?token=...` signs someone into a FIXED demo organisation read-only. The link
+ * goes to a prospective client outside the owner's control.
  *
- * FIXTURE: A SEEDED STORE BUILT IN THIS PROCESS, not `scripts/seed-demo-org.js`, which needs a
- * live provider and DELETES an organisation. This file builds the same shape through the public
- * store API: one organisation with one invitation, response, process and weighing.
+ * FIXTURE: A SEEDED STORE BUILT IN THIS PROCESS, not `scripts/seed-demo-org.js`, which needs a live
+ * provider and DELETES an organisation.
  *
- * Each test spawns its own server, because the demo route is registered at startup from the
- * environment.
+ * Each test spawns its own server: the demo route is registered at startup from the environment.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,13 +26,10 @@ const SERVER = path.join(__dirname, '..', 'server.js');
 const DEMO_TOKEN = 'demo-token-for-tests-0123456789abcdef';
 const ALLOWED_HOST = 'allowed.example.test';
 
-// --- the fixture store -------------------------------------------------------
-
 const store = await import('../lib/store/index.js');
 const processes = await import('../lib/store/processes.js');
 const weighing = await import('../lib/store/weighing.js');
 
-/** A temp STORE_DIR, and the demo organisation seeded into it. */
 function seedStore() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-demo-'));
     process.env.STORE_DIR = dir;
@@ -54,7 +48,6 @@ function seedStore() {
         reply: { score: 42, terms: Object.fromEntries(weighing.TERMS.map((term) => [term, 50])), reasoning: 'a demo paragraph' }
     });
 
-    // A real admin too, so an ordinary session can be tested against the same store.
     const db = new DatabaseSync(path.join(dir, 'admin.db'));
     db.prepare('INSERT OR REPLACE INTO users (id, organisation_id, email, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
         .run('real-admin', org.id, 'real@admin.test', 'admin', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
@@ -66,7 +59,6 @@ function seedStore() {
 
 const { dir: STORE_DIR, orgId: ORG_ID } = seedStore();
 
-/** A free TCP port, released before the child claims it. */
 function freePort() {
     return new Promise((resolve, reject) => {
         const probe = net.createServer();
@@ -78,12 +70,7 @@ function freePort() {
     });
 }
 
-/**
- * Spawns the server with a chosen demo environment.
- *
- * @param {object} demoEnv DEMO_LOGIN / DEMO_LOGIN_ORG / DEMO_LOGIN_TOKEN, or none.
- * @returns {Promise<{port: number, child: object, log: () => string, stop: () => Promise<void>}>}
- */
+/** Spawns the server with a chosen demo environment (DEMO_LOGIN / DEMO_LOGIN_ORG / DEMO_LOGIN_TOKEN). */
 async function startServer(demoEnv = {}) {
     const port = await freePort();
     const child = spawn(process.execPath, [SERVER], {
@@ -101,11 +88,9 @@ async function startServer(demoEnv = {}) {
             STORE_DIR,
             AI_PROVIDER: 'mock',
             MAIL_SENDER: 'console',
-            // THE DEMO KEYS ARE SET TO EMPTY STRINGS RATHER THAN OMITTED, which is what makes the
-            // suite reproducible. `dotenv` fills only ABSENT keys, so a developer's untracked
-            // `.env` with `DEMO_LOGIN=1` would be inherited by every spawned server. A key that IS
-            // PRESENT (even as '') is left alone, so `DEMO_LOGIN: ''` holds the gate closed however
-            // the `.env` reads. `...demoEnv` below still overrides these where the flag is ENABLED.
+            // EMPTY STRINGS, NOT OMITTED: `dotenv` fills only ABSENT keys, so a developer's
+            // untracked `.env` with `DEMO_LOGIN=1` would be inherited. A key that IS present (even
+            // as '') is left alone. `...demoEnv` below overrides these where the flag is ENABLED.
             DEMO_LOGIN: '',
             DEMO_LOGIN_ORG: '',
             DEMO_LOGIN_TOKEN: '',
@@ -119,14 +104,12 @@ async function startServer(demoEnv = {}) {
     child.stdout.on('data', (chunk) => { output += chunk; });
     child.stderr.on('data', (chunk) => { output += chunk; });
 
-    // Wait for liveness.
     const started = Date.now();
     for (;;) {
         try {
             const res = await request(port, { path: '/healthz' });
             if (res.status === 200) break;
         } catch {
-            // Not up yet.
         }
         if (Date.now() - started > 8000) throw new Error('server did not start');
         await new Promise((r) => setTimeout(r, 50));
@@ -149,7 +132,6 @@ async function startServer(demoEnv = {}) {
     };
 }
 
-/** One HTTP request. */
 function request(port, { method = 'GET', path: urlPath = '/', form, cookie, headers = {} } = {}) {
     const payload = form === undefined ? undefined : new URLSearchParams(form).toString();
     return new Promise((resolve, reject) => {
@@ -187,7 +169,6 @@ function request(port, { method = 'GET', path: urlPath = '/', form, cookie, head
     });
 }
 
-/** Signs in an admin through the real route and returns the session cookie. */
 async function signInAdmin(server, email) {
     const link = await request(server.port, { method: 'POST', path: '/admin/login', form: { email } });
     assert.equal(link.status, 200);
@@ -198,14 +179,12 @@ async function signInAdmin(server, email) {
     return verified.setCookie[0].split(';')[0];
 }
 
-/** Opens the demo link and returns the read-only session cookie. */
 async function openDemo(server) {
     const res = await request(server.port, { path: `/admin/demo?token=${DEMO_TOKEN}` });
     assert.ok(res.setCookie, 'the demo link set a cookie');
     return res.setCookie[0].split(';')[0];
 }
 
-/** The stored state a refused write must not change. */
 function storedState() {
     const admin = new DatabaseSync(path.join(STORE_DIR, 'admin.db'));
     const org = new DatabaseSync(path.join(STORE_DIR, 'orgs', `${ORG_ID}.db`));
@@ -223,14 +202,9 @@ function storedState() {
     }
 }
 
-// ===========================================================================
-// 1. THE ROUTE IS ABSENT WITHOUT THE FLAG
-// ===========================================================================
-
 test('with the flag unset, /admin/demo behaves as an UNKNOWN console path', async () => {
     const server = await startServer();
     try {
-        // Signed out: both take the session gate's redirect.
         const demoOut = await request(server.port, { path: `/admin/demo?token=${DEMO_TOKEN}` });
         const unknownOut = await request(server.port, { path: '/admin/nonsense' });
         assert.equal(demoOut.status, unknownOut.status, 'the two paths answer identically when signed out');
@@ -243,10 +217,8 @@ test('with the flag unset, /admin/demo behaves as an UNKNOWN console path', asyn
 });
 
 test('with the flag unset, a CORRECT token still does not sign anyone in', async () => {
-    // Stronger than "same as an unknown path": with the flag off but DEMO_LOGIN_ORG and
-    // DEMO_LOGIN_TOKEN set, a correct token must set NO cookie. A route registered unconditionally
-    // would sign the holder in, and both paths 302 when signed out, so a status comparison would
-    // miss it.
+    // Stronger than "same as an unknown path": with the flag off but a correct token, NO cookie
+    // may be set. Both paths 302 when signed out, so a status comparison would miss it.
     const server = await startServer({ DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const res = await request(server.port, { path: `/admin/demo?token=${DEMO_TOKEN}` });
@@ -282,9 +254,7 @@ test('the demo route logs nothing at startup when the flag is off', async () => 
 // ===========================================================================
 // 2. EVERY MUTATING CONSOLE ROUTE IS REFUSED FOR A DEMO SESSION
 // ===========================================================================
-//
-// A list of the console's mutating routes: six POSTs in `lib/auth/console.js`
-// and two in `lib/auth/console-views.js`.
+// Six POSTs in `lib/auth/console.js`, two in `lib/auth/console-views.js`.
 
 const MUTATING_ROUTES = [
     ['/admin/organisation/name', { name: 'HACKED' }],
@@ -312,7 +282,6 @@ test('the eight mutating console routes are all refused for a demo session', asy
 });
 
 test('a GET on the console still WORKS for a demo session, so the refusal is by method', async () => {
-    // Read-only means it can look: a guard that refused GETs too would make the link useless.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -327,9 +296,8 @@ test('a GET on the console still WORKS for a demo session, so the refusal is by 
 // ===========================================================================
 // 3. NOTHING CHANGED AFTER A REFUSED WRITE
 // ===========================================================================
-//
-// A guard that refuses the RESPONSE but leaves a write half-done would pass a status-code check,
-// so the state is read directly.
+// A guard that refused the RESPONSE but left a write half-done would pass a status check, so the
+// state is read directly.
 
 test('a refused write leaves the stored state EXACTLY as it was', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
@@ -348,7 +316,6 @@ test('a refused write leaves the stored state EXACTLY as it was', async () => {
 });
 
 test('renaming the demo organisation does not change the name', async () => {
-    // The route's real name is /organisation/name.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -379,13 +346,6 @@ test('a refused invitation write does not add an invitation', async () => {
     }
 });
 
-// ===========================================================================
-// 4. AN ORDINARY ADMIN SESSION IS UNAFFECTED
-// ===========================================================================
-//
-// THE CASE THAT WOULD MATTER MOST IF IT BROKE: a guard that accidentally refuses real
-// admins. Asserted by making a REAL WRITE succeed, not by the absence of a banner.
-
 test('a real admin session writes successfully, so the guard does not refuse real admins', async () => {
     const server = await startServer();
     try {
@@ -409,7 +369,6 @@ test('a real admin console page carries no read-only banner or demo tag', async 
         const page = await request(server.port, { path: '/admin', cookie: admin });
 
         assert.equal(page.status, 200);
-        // The demo scope raises a read-only notice; an ordinary session has none.
         assert.equal(/read[- ]only/i.test(page.text), false, 'an ordinary session sees no read-only notice');
         assert.equal(/demo session/i.test(page.text), false, 'and no demo-session tag');
     } finally {
@@ -418,7 +377,6 @@ test('a real admin console page carries no read-only banner or demo tag', async 
 });
 
 test('the demo banner IS shown on a demo session, so the absence above is meaningful', async () => {
-    // The control: if the banner were never rendered, its absence would prove nothing.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -430,10 +388,6 @@ test('the demo banner IS shown on a demo session, so the absence above is meanin
         await server.stop();
     }
 });
-
-// ===========================================================================
-// 5. THE TOKEN COMPARISON
-// ===========================================================================
 
 const { demoTokenMatches } = await import('../lib/auth/demo-login.js');
 
@@ -453,8 +407,8 @@ test('the correct token matches', () => {
 });
 
 test('a wrong-length value does not throw, so the length is never compared first', () => {
-    // Both sides are hashed before comparing, so a length mismatch cannot leak through
-    // `timingSafeEqual` throwing.
+    // Both sides are hashed first, so a length mismatch cannot leak through `timingSafeEqual`
+    // throwing.
     for (const length of [0, 1, 23, 24, 31, 32, 33, 64, 1000]) {
         assert.doesNotThrow(() => demoTokenMatches('x'.repeat(length), DEMO_TOKEN), `length ${length} must not throw`);
     }
@@ -464,7 +418,6 @@ test('a wrong-length value does not throw, so the length is never compared first
 });
 
 test('a WRONG and a MISSING token are indistinguishable over HTTP', async () => {
-    // Same status, same body, and neither reveals whether the demo is configured.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const wrong = await request(server.port, { path: `/admin/demo?token=${'z'.repeat(32)}` });
@@ -483,15 +436,12 @@ test('a WRONG and a MISSING token are indistinguishable over HTTP', async () => 
 });
 
 test('a refused token reveals nothing about whether the demo is configured', async () => {
-    // The refusal page must not say the demo exists, asserted with the demo configured and absent.
     const configured = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     const unconfigured = await startServer();
     try {
         const configuredBody = await request(configured.port, { path: `/admin/demo?token=${'z'.repeat(32)}` });
         const unconfiguredOut = await request(unconfigured.port, { path: `/admin/demo?token=${'z'.repeat(32)}` });
 
-        // The unconfigured path redirects (no route); a REFUSED token on a configured server must
-        // say nothing about the demo in its body.
         assert.equal(/configured|enabled|demo exists/i.test(configuredBody.text), false, 'the refusal does not confirm the demo exists');
     } finally {
         await configured.stop();
@@ -502,9 +452,8 @@ test('a refused token reveals nothing about whether the demo is configured', asy
 // ===========================================================================
 // 6. EXPIRY CANNOT TURN A DEMO SESSION WRITABLE
 // ===========================================================================
-//
-// The demo row's `expires_at` is expired directly while the SESSION stays valid: if the guard read
-// expiry, it might decide "not a demo any more" and allow a write.
+// `expires_at` is expired while the SESSION stays valid: if the guard read expiry, it might decide
+// "not a demo any more" and allow a write.
 
 test('an EXPIRED demo row is still read-only, and the write is refused', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
@@ -512,7 +461,6 @@ test('an EXPIRED demo row is still read-only, and the write is refused', async (
         const demo = await openDemo(server);
         const before = storedState();
 
-        // Expire the demo row, leaving the session row valid.
         const admin = new DatabaseSync(path.join(STORE_DIR, 'admin.db'));
         admin.prepare("UPDATE demo_session SET expires_at = '2000-01-01T00:00:00Z'").run();
         const demoRows = admin.prepare('SELECT COUNT(*) AS n FROM demo_session').get().n;
@@ -529,8 +477,8 @@ test('an EXPIRED demo row is still read-only, and the write is refused', async (
 });
 
 test('a revoked demo session reaches no console page, only the sign-in form', async () => {
-    // A demo cookie whose session is revoked reaches no console page. `GET /admin` serves the
-    // SIGN-IN FORM (200) without a valid session, so the signal is the console content.
+    // `GET /admin` serves the SIGN-IN FORM (200) without a valid session, so the signal is the
+    // console content.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -545,7 +493,6 @@ test('a revoked demo session reaches no console page, only the sign-in form', as
         const after = await request(server.port, { path: '/admin', cookie: demo });
         assert.equal(/read[- ]only/i.test(after.text), false, 'the read-only console does not render');
 
-        // And a protected page redirects rather than rendering.
         const roadmap = await request(server.port, { path: '/admin/roadmap', cookie: demo });
         assert.equal(roadmap.status, 302, 'a console page redirects to the sign-in page');
     } finally {
@@ -553,21 +500,14 @@ test('a revoked demo session reaches no console page, only the sign-in form', as
     }
 });
 
-// ===========================================================================
-// 7. THE FLAG IS ON THE SESSION, NOT THE USER
-// ===========================================================================
-
 test('a demo session whose scope carries the ADMIN role is STILL refused writes', async () => {
-    // The demo scope's synthetic user has role ADMIN. The guard never reads role, so the role
-    // cannot bypass it: the session reaches the console for reading and is still refused a write.
+    // The demo scope's synthetic user has role ADMIN, and the guard never reads role.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
 
-        // An admin-only PAGE renders, which it would not for a plain `user` role.
         assert.equal((await request(server.port, { path: '/admin', cookie: demo })).status, 200, 'the demo has console read access');
 
-        // And the same session is refused every write.
         for (const [route, body] of MUTATING_ROUTES) {
             assert.equal(
                 (await request(server.port, { method: 'POST', path: route, cookie: demo, form: body })).status,
@@ -581,7 +521,6 @@ test('a demo session whose scope carries the ADMIN role is STILL refused writes'
 });
 
 test('there is no third role: the demo flag rides on the session scope', () => {
-    // No new role was added for the demo, asserted on the exported role set.
     const users = fs.readFileSync(path.join(__dirname, '..', 'lib', 'users.js'), 'utf8');
     const roles = users.match(/ROLES\s*=\s*Object\.freeze\(\{([^}]*)\}/);
     assert.ok(roles, 'ROLES is declared as a frozen object');
@@ -594,17 +533,10 @@ test('there is no third role: the demo flag rides on the session scope', () => {
 // 6. THE COPY, COUNTED - the product sentence and the pages that carry it
 // ===========================================================================
 //
-// The product sentence appears on the console lead, the roadmap lead, and the demo banner, and the
-// banner is DELIBERATELY not centralised - so it appears TWICE on a demo session: the banner
-// explains the demo's safety while the leads explain the product.
-//
-// THE COUNT IS ASSERTED so a future reader does not add a de-duplication "fix".
+// The product sentence appears on the console lead, the roadmap lead, and the banner, and the banner
+// is DELIBERATELY not centralised: TWICE on a demo session is the design.
 
-/** The product sentence, as it appears in the leads and the banner.
- *
- * WHITESPACE-TOLERANT because the SOURCE line-breaks differ between the three places, so a regex
- * matching one wrapping would count the other as absent.
- */
+/** WHITESPACE-TOLERANT: the SOURCE line-breaks differ between the three places. */
 const PRODUCT_SENTENCE = /forgeright interviews your team about the\s+work they do by hand, then ranks\s+what it finds by what is worth automating first/g;
 
 const countOf = (text, pattern) => (text.match(pattern) ?? []).length;
@@ -629,7 +561,6 @@ test('the product sentence appears ONCE on an ordinary console and roadmap page'
 });
 
 test('the product sentence appears TWICE on a demo session - the banner AND the lead, by design', async () => {
-    // The deliberate double: a de-duplication "fix" would be a change to the design.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -638,7 +569,6 @@ test('the product sentence appears TWICE on a demo session - the banner AND the 
         assert.equal(page.status, 200);
         assert.equal(countOf(page.text, PRODUCT_SENTENCE), 2,
             'a demo session sees it twice: the banner and the page lead');
-        // Both halves are named, so a failure says which one went missing.
         assert.match(page.text, /read-only demo/i, 'the banner is one occurrence');
     } finally {
         await server.stop();
@@ -646,21 +576,17 @@ test('the product sentence appears TWICE on a demo session - the banner AND the 
 });
 
 test('the roadmap renders TWO lead paragraphs, and the console has a lead where it had none', async () => {
-    // The roadmap lead is two paragraphs (what forgeright is, then what the page shows), and the
-    // console has its own lead paragraph.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
         const roadmap = await request(server.port, { path: '/admin/roadmap', cookie: admin });
         const consolePage = await request(server.port, { path: '/admin', cookie: admin });
 
-        // The roadmap lead paragraphs, counted on the rendered page.
         const roadmapLeads = countOf(roadmap.text, /<p class="intro">/g);
         assert.ok(roadmapLeads >= 2, `the roadmap renders at least two lead paragraphs (found ${roadmapLeads})`);
         assert.match(roadmap.text, /These are the processes your team described/,
             'the second lead says what the page shows');
 
-        // The console has a lead paragraph now.
         assert.match(consolePage.text, /<p class="intro">/,
             'the console has a lead paragraph where it had none');
     } finally {
@@ -669,8 +595,6 @@ test('the roadmap renders TWO lead paragraphs, and the console has a lead where 
 });
 
 test('the OLD copy appears nowhere, and the removed developer sentence is gone', async () => {
-    // The heading was renamed and the roadmap lead replaced. Neither old string may linger, so a
-    // stale copy cannot sit beside the new one.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
@@ -682,7 +606,6 @@ test('the OLD copy appears nowhere, and the removed developer sentence is gone',
 
         for (const page of pages) {
             assert.equal(page.text.includes('Why it got this weight'), false, 'the old heading is gone');
-            // The developer sentence that named the placeholder naming rule was removed.
             assert.equal(page.text.includes('The name starts as a placeholder until it is set here'), false,
                 'the removed developer sentence is not rendered');
         }
@@ -692,7 +615,6 @@ test('the OLD copy appears nowhere, and the removed developer sentence is gone',
 });
 
 test('`weight` is STILL the label beside the number - the metric was not renamed with the heading', async () => {
-    // The owner kept this name on purpose, so the rename of the heading must not have taken it.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
@@ -706,8 +628,7 @@ test('`weight` is STILL the label beside the number - the metric was not renamed
 });
 
 test('the console creation date still renders formatted, and is escaped', async () => {
-    // `shortInstant` renders `YYYY-MM-DD HH:MM UTC`; removing the developer sentence must not have
-    // taken the date with it.
+    // `shortInstant` renders `YYYY-MM-DD HH:MM UTC`.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
@@ -715,17 +636,14 @@ test('the console creation date still renders formatted, and is escaped', async 
 
         assert.match(page.text, /Created \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/,
             'the creation date renders through shortInstant');
-        // Escaped: a raw `<` from the date would be a markup fault, so the entity form is expected
-        // wherever a value could carry one. Asserted on the presence of the formatted value only;
-        // the escaping is covered by the injection tests in console-views.test.js.
+        // Escaping is covered by the injection tests in console-views.test.js.
     } finally {
         await server.stop();
     }
 });
 
 test('no em dash (U+2014) appears on any rendered console page', async () => {
-    // House style: no em dash (U+2014) in user-facing copy; en-dash ranges are allowed. Asserted on
-    // the rendered pages rather than the sources.
+    // House style: no em dash (U+2014) in user-facing copy; en-dash ranges are allowed.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
