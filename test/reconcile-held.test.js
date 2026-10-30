@@ -55,7 +55,6 @@ test('the REAL payload folds to ONE process, keeping the round\'s `frequencyPerW
 });
 
 test('the surviving entry carries the STEPS and the prose the participant gave', () => {
-    // The fold keeps a whole account, not a bare id.
     const { workflows } = reconcileWithHeld(OWNER_PAYLOAD, HELD_FIRST_ENTRY);
     const kept = workflows[0];
 
@@ -104,8 +103,7 @@ test('an EMPTY held set DECLINES, leaving the reply exactly as it stands', () =>
 });
 
 test('a held set with MORE THAN ONE process DECLINES', () => {
-    // With several held, position and step sharing are not evidence enough to say WHICH one is
-    // being reworded.
+    // With several held, position and step sharing cannot say WHICH one is being reworded.
     const held = [
         { id: 'a', task: 'A', steps: [{ name: 'Open the URL' }] },
         { id: 'b', task: 'B', steps: [{ name: 'Something else' }] }
@@ -150,7 +148,6 @@ test('the fold is IDENTITY-WISE on a step name, so a reworded step does not matc
 });
 
 test('the route only reconciles when the client sent a held set, and declines otherwise', () => {
-    // Without `roundProcesses` the route passes the reply through rather than guessing.
     const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'routes-api.js'), 'utf8');
 
     assert.match(source, /import \{ reconcileWithHeld \} from '\.\.\/ai\/workflow-identity\.js'/,
