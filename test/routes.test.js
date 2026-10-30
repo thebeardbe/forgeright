@@ -1,14 +1,10 @@
 /**
  * Route-level tests for server.js.
  *
- * The server has no exported app factory and starts listening on import, so the app is started as
- * a CHILD process on a free port and exercised over HTTP.
+ * The server has no exported app factory and starts listening on import, so it is started as a
+ * CHILD process on a free port and exercised over HTTP.
  *
- * THE ONLY CREDENTIAL IS A PARTICIPANT TOKEN: the /api routes are reached with a real invitation
- * token, seeded into the same STORE_DIR the child reads.
- *
- * Requests use node:http rather than fetch, because fetch silently ignores a manually set Host
- * header and the host check is one of the things under test.
+ * Requests use node:http rather than fetch: fetch silently ignores a manually set Host header.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,12 +22,10 @@ const SERVER = path.join(__dirname, '..', 'server.js');
 
 const ALLOWED_HOST = 'allowed.example.test';
 
-// A temp STORE_DIR per run, so data/store/ is never touched.
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-routes-test-'));
 
-// The credential for the /api routes, seeded in the same STORE_DIR the child reads. The store is
-// imported into THIS process against that directory, which is how a token the child can resolve is
-// created without the child exposing a fixture route.
+// The credential for the /api routes, seeded in the same STORE_DIR the child reads: imported into
+// THIS process, so the child needs no fixture route.
 process.env.STORE_DIR = STORE_DIR;
 process.env.SESSION_SECRET = 'a'.repeat(64);
 const store = await import('../lib/store/index.js');
@@ -40,17 +34,11 @@ const seedInvitation = store.addInvitation(seedOrg.id, { email: 'participant@exa
 const PARTICIPANT_TOKEN = seedInvitation.token;
 store.closeAll();
 
-// The header that makes a request count as HTTPS, seen only because the peer is a trusted proxy
-// (TRUST_PROXY=127.0.0.1). Sent by default; the test that proves a genuine plain-HTTP request is
-// refused passes `forwardedProto: null`.
+// The header that makes a request count as HTTPS, trusted only from the loopback proxy. The
+// plain-HTTP test passes `forwardedProto: null`.
 const FORWARDED_PROTO = { 'x-forwarded-proto': 'https' };
 
-/**
- * Every environment variable the spawned server reads, built once PORT is known.
- *
- * The child is spawned with this as its WHOLE environment, so nothing from .env or a developer's
- * shell can leak in.
- */
+/** Every variable the spawned server reads: the child's WHOLE environment, so nothing leaks in. */
 function spawnedEnv(port) {
     return {
         PATH: process.env.PATH,
@@ -58,27 +46,21 @@ function spawnedEnv(port) {
         NODE_ENV: 'test',
         PORT: String(port),
         HOST: '127.0.0.1',
-        // The app is mounted and visible at the origin root in these tests.
         BASE_PATH: '',
-        // HTTPS so a refused plain-HTTP request has somewhere to be redirected to (the 308 path).
         PUBLIC_BASE_URL: `https://${ALLOWED_HOST}`,
-        // Only the loopback peer may set the forwarded-protocol headers, and the child connects
-        // from 127.0.0.1: the deployment shape these tests reproduce.
         TRUST_PROXY: '127.0.0.1',
         ALLOWED_HOST,
         SESSION_SECRET: 'a'.repeat(64),
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // An empty string is PRESENT, so dotenv (which fills only ABSENT keys) leaves it alone,
-        // holding the demo gate closed against an untracked .env. See test/demo-login.test.js.
+        // PRESENT (empty), so dotenv leaves it alone: the demo gate stays closed.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: ''
     };
 }
 
-/** A free TCP port, released before the child claims it. */
 function freePort() {
     return new Promise((resolve, reject) => {
         const probe = net.createServer();
@@ -93,9 +75,8 @@ function freePort() {
 const PORT = await freePort();
 
 /**
- * One HTTP request, carrying `X-Forwarded-Proto: https` and the allowed Host by default so it
- * reaches the route as a request through the production proxy does. `forwardedProto: null` omits
- * the header, reproducing a genuine plain HTTP request.
+ * One HTTP request with `X-Forwarded-Proto: https` and the allowed Host by default.
+ * `forwardedProto: null` reproduces a genuine plain HTTP request.
  */
 function request({ method = 'GET', path: urlPath = '/', headers = {}, body, forwardedProto = 'https' } = {}) {
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -128,14 +109,11 @@ function request({ method = 'GET', path: urlPath = '/', headers = {}, body, forw
     });
 }
 
-/**
- * POSTs JSON with the allowed host and the trusted HTTPS header. `options` is passed to request().
- */
+/** POSTs JSON with the allowed host and the trusted HTTPS header. */
 function post(urlPath, body, options = {}) {
     return request({ method: 'POST', path: urlPath, body, ...options });
 }
 
-/** Waits until the child answers /healthz, or fails after a timeout. */
 async function waitForServer(deadlineMs = 8000) {
     const start = Date.now();
     while (Date.now() - start < deadlineMs) {
@@ -143,7 +121,6 @@ async function waitForServer(deadlineMs = 8000) {
             const res = await request({ path: '/healthz' });
             if (res.status === 200) return true;
         } catch {
-            // Not up yet.
         }
         await new Promise((r) => setTimeout(r, 50));
     }
@@ -154,7 +131,6 @@ let child;
 
 before(async () => {
     child = spawn(process.execPath, [SERVER], {
-        // spawnedEnv(PORT) is the child's WHOLE environment, not merged with the parent's.
         env: spawnedEnv(PORT),
         stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -166,14 +142,13 @@ before(async () => {
 after(async () => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
     if (!child || child.killed) return;
-    // Wait for the child to actually exit: a bare kill() returns immediately, and a child that
-    // exits while the signal is in flight reparents to init and is left holding its port.
+    // Wait for the child to exit: a child that exits while the signal is in flight reparents to
+    // init and is left holding its port.
     await new Promise((resolve) => {
         const done = () => resolve();
         child.once('exit', done);
         child.kill('SIGTERM');
-        // If the child ignores SIGTERM, escalate; the timer is unref'd so it cannot hold the
-        // process open.
+        // If the child ignores SIGTERM, escalate; the timer is unref'd.
         const force = setTimeout(() => {
             if (!child.killed) child.kill('SIGKILL');
         }, 2000);
@@ -187,17 +162,13 @@ const VALID_PAYLOAD = {
     audit: { workflows: [{ id: 'w1', title: 'Invoice entry', frequencyPerWeek: 2, minutesPerInstance: 30, peopleAffected: 2, judgementScore: 5, stepsConsistent: true }] }
 };
 
-// --- liveness and host check ------------------------------------------------
-
 test('/healthz responds 200 when the Host header matches ALLOWED_HOST', async () => {
     const res = await request({ path: '/healthz' });
     assert.equal(res.status, 200);
     assert.deepEqual(res.json(), { ok: true });
 });
 
-// --- the HTTPS rule is still in force ---------------------------------------
-// The guard on the harness: trusting a forwarded header must not disable the rule for a genuine
-// plain-HTTP request. These deliberately do NOT send the header.
+// Trusting a forwarded header must not disable the rule for a genuine plain-HTTP request.
 
 test('a genuine plain-HTTP request to an API route is still refused, not served', async () => {
     const res = await post('/api/score', VALID_PAYLOAD, { forwardedProto: null });
@@ -206,8 +177,7 @@ test('a genuine plain-HTTP request to an API route is still refused, not served'
 });
 
 test('a plain-HTTP request with no forwarding header never reaches the handler', async () => {
-    // The cleartext rule must hold even for a well-formed, authorised request. A 308 has an
-    // empty-ish body, so the check is that no handler JSON came back.
+    // Holds even for a well-formed, authorised request: no handler JSON may come back.
     const res = await post('/api/score', VALID_PAYLOAD, { forwardedProto: null });
     assert.equal(res.status, 308, 'the request is redirected, not handled');
     assert.equal(res.text.includes('workflowCount'), false, 'no scoring output may come back over HTTP');
@@ -224,12 +194,9 @@ test('the host check runs before the route, so a bad host fails on any path', as
     assert.equal(res.status, 421, 'a bad host must be turned away before scoring');
 });
 
-// --- the /api/score credential -------------------------------------------------
 //
-// `/api/score` takes a participant token. Its rejection is covered in
-// test/participant-routes.test.js, which is where the token machinery lives.
+// Token rejection is covered in test/participant-routes.test.js.
 test('/api/score accepts a valid participant token and scores a valid payload', async () => {
-    // The same scoring assertion as ever, reached the only way in there is.
     const res = await post('/api/score', VALID_PAYLOAD);
     assert.equal(res.status, 200);
     const body = res.json();
@@ -239,12 +206,9 @@ test('/api/score accepts a valid participant token and scores a valid payload', 
     assert.equal(body.scored[0].title, 'Invoice entry');
 });
 
-// --- /api/score validation of the audit shape -------------------------------
 //
-// The route takes the payload straight from the client, so these are the shapes a hostile or buggy
-// caller can send: each must be a 400 carrying a reason, not a 500 and not a scored response.
+// The route takes the payload straight from the client: each shape must be a 400 carrying a reason.
 
-/** A score request carrying the token and the given audit. */
 function scoreWith(audit) {
     return post('/api/score', { participantToken: PARTICIPANT_TOKEN, audit });
 }
@@ -298,14 +262,10 @@ test('/api/score rejects workflows that is not an array with 400', async () => {
 });
 
 test('/api/score never serves a blank heading for a whitespace title', async () => {
-    // The route must validate the heading too, not only the model path: accepting the payload and
-    // serving '   ' as the heading is the failure this covers.
+    // The route must validate the heading too, not only the model path.
     const res = await scoreWith({ workflows: [{ id: 'a', title: '   ' }, { id: 'b', title: '   ' }] });
     assert.equal(res.status, 400, 'a blank heading must never be scored and returned');
 });
-
-// --- /api/chat: the injection guardrail over HTTP ---------------------------
-// Token rejection is covered in test/participant-routes.test.js.
 
 test('/api/chat rejects a missing messages array with 400', async () => {
     const res = await post('/api/chat', { participantToken: PARTICIPANT_TOKEN });
