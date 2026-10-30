@@ -1,6 +1,4 @@
 /**
- * Workflow 1: the completeness matrix and the interview loop.
- *
  * The field lists are read FROM THE MODULE throughout, never restated, so a change to the matrix
  * cannot leave these tests asserting a stale shape.
  */
@@ -21,8 +19,8 @@ import {
 import { parseModelResponse, workflowsFrom } from '../ai/audit-core.js';
 
 /**
- * A process that satisfies EVERY field in the matrix, built from the field lists so adding a field
- * makes this builder supply it. `id` and `title` are required by validateWorkflows, not the matrix.
+ * Built from the field lists, so adding a field to the matrix makes this builder supply it.
+ * `id` and `title` are required by validateWorkflows, not the matrix.
  */
 function completeProcess(overrides = {}) {
     const process = { id: 'process-1', title: 'A complete process' };
@@ -112,7 +110,6 @@ test('a needsReasoning that is NOT a boolean does not satisfy the step', () => {
 });
 
 test('ONE incomplete process among several blocks completion of the whole interview', () => {
-    // The matrix is per process: a half-described second one cannot ride in on a complete first.
     const good = completeProcess();
     const stub = { id: 'process-2', title: 'Half described', task: 'something' };
 
@@ -138,7 +135,7 @@ test('the model cannot skip completion by omitting have/missing entirely', () =>
 });
 
 test('a CLAIMED field cannot make a real gap vanish when closing', () => {
-    // At closing only the payload counts, so a `have` claim must not make an absent field disappear.
+    // At closing only the payload counts, so a `have` claim cannot hide an absent field.
     const incomplete = { id: 'p1', title: 'A stub', task: 'something' };
 
     const result = parseModelResponse(JSON.stringify({
@@ -198,12 +195,9 @@ test('NEITHER half of the effort pair leaves it missing', () => {
     assert.equal(completeWith([process]).status, 'asking');
 });
 
-// ===========================================================================
-// 2. needsReasoning IS DERIVED, NOT ASKED
-// ===========================================================================
 //
-// There is NO function deriving needsReasoning from a decidedHow string: the derivation is the
-// MODEL's reading, stored on the step.
+// There is NO function deriving needsReasoning from a decidedHow string: it is the MODEL's reading,
+// stored on the step.
 
 test('the matrix forces every step to carry the derived flag', () => {
     const step = completeStep();
@@ -230,7 +224,6 @@ test('judgementBandFor: no reasoning steps is band 5', () => {
 });
 
 test('judgementBandFor: one judgement step in five reads as band 4, not as "needs a person"', () => {
-    // A chain almost entirely mechanical with one judgement call must not collapse.
     assert.equal(
         judgementBandFor({
             steps: [
@@ -280,12 +273,8 @@ test('the fixture pairs a rule with false and a variable basis with true, per th
     }
 });
 
-// ===========================================================================
-// 4. BOTH PAYLOAD SHAPES
-// ===========================================================================
 //
-// A reply carrying `processes` and no `audit` must not fall through to the single-shot check and
-// error. `workflowsFrom` is the one place that reads either shape.
+// A reply carrying `processes` and no `audit` must not fall through to the single-shot check.
 
 test('a processes-only reply with a complete process returns complete', () => {
     const result = completeWith([completeProcess()]);
@@ -440,7 +429,6 @@ async function mockTurn(userTurns, lang = 'en') {
 }
 
 test('the mock emits `processes` and NOT `audit` on completion', async () => {
-    // Emitting a second shape to satisfy the parser would hide the defect the parser has.
     const reply = await mockTurn(8);
 
     assert.equal(reply.status, 'complete');
@@ -486,13 +474,9 @@ test('the mock\'s reply survives parseModelResponse as complete with a normalise
     assert.equal(parsed.audit.illustrative, true, 'the illustrative flag survives normalisation');
 });
 
-// ===========================================================================
-// THE PAYLOAD IS RESOLVED BY CONTENT, NOT BY NULLNESS
-// ===========================================================================
 //
-// THE DANGEROUS SHAPE IS A COMPLETE `processes` BESIDE A DEGENERATE `audit`: keeping `audit`
-// whenever it is merely non-null lets an empty or stale one win, so the client scores an empty list.
-// Tested through `result.audit.workflows`, the field the client reads.
+// Keeping `audit` whenever it is merely non-null lets an empty or stale one win over a good
+// `processes`, so the client scores an empty list.
 
 test('a complete processes beats an EMPTY audit.workflows', () => {
     const result = completeWith([completeProcess()], { audit: { workflows: [] } });
@@ -558,8 +542,7 @@ test('the illustrative and note flags are still taken from either place', () => 
 });
 
 test('frequencyPerWeek: 0 asks again, and names the field', () => {
-    // Zero means the process does not happen, which a model without an answer fills as a
-    // placeholder.
+    // Zero means the process does not happen, which a model without an answer fills as a placeholder.
     const result = completeWith([completeProcess({ frequencyPerWeek: 0 })]);
 
     assert.equal(result.status, 'asking');
@@ -583,7 +566,6 @@ test('a NEGATIVE frequency is refused, as a count cannot be negative', () => {
 });
 
 test('mistakesPerPeriod: 0 is STILL SUPPLIED, because "it never goes wrong" is an answer', () => {
-    // Why the minimum is per field rather than a change to the `count` shape.
     const result = completeWith([completeProcess({ mistakesPerPeriod: 0 })]);
 
     assert.equal(result.status, 'complete', 'a process that never goes wrong is a complete answer');
@@ -606,7 +588,6 @@ test('a negative mistakesPerPeriod is still refused, only zero is special', () =
 });
 
 test('a step WITHOUT reasoningBasis still completes the interview', () => {
-    // Requiring it would let a model that forgot the quotation stall a complete interview forever.
     const step = completeStep();
     assert.equal(step.reasoningBasis, undefined, 'the builder does not set it');
 
@@ -649,7 +630,7 @@ test('the band distinguishes one judgement in six from six mechanical', () => {
 
 test('THE FLATTENING POINT: one judgement in EIGHT reads the same as none', () => {
     // The dilution: 1/8 = 0.125, 5 - 0.125*4 = 4.5, which rounds to 5. At eight steps the boundary
-    // vanishes, so one judgement step is indistinguishable from none.
+    // vanishes.
     const oneOfEight = judgementBandFor({ steps: [...Array(1)].map(() => ({ needsReasoning: true })).concat([...Array(7)].map(() => ({ needsReasoning: false }))) });
     const zeroOfEight = judgementBandFor({ steps: [...Array(8)].map(() => ({ needsReasoning: false })) });
 
