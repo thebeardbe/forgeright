@@ -1,9 +1,7 @@
 /**
- * Tests for lib/token-index.js: which organisation a participant token belongs to.
- *
- * This is the ROUTING FACT that decides which tenant a participant's link opens. A second layer in
- * resolveParticipant happens to catch a wrong organisation here, and a later refactor could remove
- * it, so the property is pinned directly.
+ * Which organisation a participant token belongs to: the ROUTING FACT that decides which tenant a
+ * link opens. A second layer in resolveParticipant happens to catch a wrong answer here, so the
+ * property is pinned directly.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,16 +22,11 @@ after(() => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
 
-/** An organisation with one invited participant. */
 function orgWithInvitation(name, email, department) {
     const org = store.createOrganisation(name);
     const invitation = store.addInvitation(org.id, { email, department });
     return { org, invitation };
 }
-
-// ===========================================================================
-// 1. THE TOKEN INDEX RESOLVES A TOKEN TO ITS OWN ORGANISATION
-// ===========================================================================
 
 test('a token resolves to its own organisation and invitation', () => {
     const a = orgWithInvitation('Org A', 'a@orga.example', 'Finance');
@@ -45,7 +38,6 @@ test('a token resolves to its own organisation and invitation', () => {
 });
 
 test('two organisations: each token resolves to its OWN organisation, never the other', () => {
-    // Both directions, because a swap would satisfy one and fail the other.
     const a = orgWithInvitation('Org A', 'a@orga.example', 'Finance');
     const b = orgWithInvitation('Org B', 'b@orgb.example', 'Ops');
 
@@ -62,8 +54,6 @@ test('two organisations: each token resolves to its OWN organisation, never the 
 });
 
 test('a token cannot be induced to resolve elsewhere by a lookalike value', () => {
-    // Near-misses that must not resolve to A: a different case, a truncated form, a different
-    // hash.
     const a = orgWithInvitation('Org A', 'a@orga.example', 'Finance');
 
     for (const bad of [
@@ -99,7 +89,6 @@ test('a forgotten token stops resolving', () => {
     assert.equal(tokenIndex.forgetParticipantToken(hash), true, 'the row was removed');
     assert.equal(tokenIndex.routeForParticipantToken(a.invitation.token), null, 'it resolves to nothing after');
 
-    // Forgetting again is a no-op, not an error.
     assert.equal(tokenIndex.forgetParticipantToken(hash), false);
 });
 
@@ -107,7 +96,6 @@ test('a reset removes every indexed token for an invitation', () => {
     const a = orgWithInvitation('Org A', 'a@orga.example', 'Finance');
     const extra = store.issueAdditionalLink(a.org.id, a.invitation.id);
 
-    // Both tokens route to A before the reset.
     assert.notEqual(tokenIndex.routeForParticipantToken(a.invitation.token), null);
     assert.notEqual(tokenIndex.routeForParticipantToken(extra), null);
 
