@@ -1,14 +1,6 @@
 /**
- * The round model, and the split between visible and scored.
- *
- * ONE INVITATION HAS AT MOST ONE OPEN ROUND. `recordTurn` is the single writer, with three cases:
- *
- *   1. no open round          -> insert a new round (partial, `submitted_at` null)
- *   2. an open round          -> UPDATE it, carrying the transcript
- *   3. `complete: true`       -> update-or-insert and set `submitted_at`
- *
- * A PARTIAL round is VISIBLE AND NOT SCORED. The exclusion lives in the analysis query, so a
- * caller cannot forget it.
+ * ONE INVITATION HAS AT MOST ONE OPEN ROUND. A PARTIAL round is VISIBLE AND NOT SCORED: the
+ * exclusion lives in the analysis query, so a caller cannot forget it.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,7 +23,6 @@ after(() => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
 
-/** An organisation with one invitation, and helpers to record turns against it. */
 function orgWithInvitation() {
     const org = store.createOrganisation('Rounds org');
     const invitation = store.addInvitation(org.id, { email: 'p@example.test', department: 'Finance' });
@@ -44,10 +35,6 @@ function orgWithInvitation() {
 
 const conversation = (n) => Array.from({ length: n }, (_, i) => ({ role: i % 2 === 0 ? 'user' : 'assistant', content: `turn ${i}` }));
 
-// ===========================================================================
-// 1. THE THREE recordTurn CASES
-// ===========================================================================
-
 test('case 1: no open round inserts a PARTIAL round', () => {
     const { org, recordTurn } = orgWithInvitation();
 
@@ -59,7 +46,6 @@ test('case 1: no open round inserts a PARTIAL round', () => {
 });
 
 test('case 2: an OPEN round is UPDATED, not appended', () => {
-    // Two rows for one process would follow from appending rather than updating.
     const { org, recordTurn } = orgWithInvitation();
 
     const first = recordTurn({ data: { step: 1 }, transcript: conversation(1) });
@@ -93,8 +79,7 @@ test('a complete turn with NO open round inserts AND finalises in one step', () 
 });
 
 test('a completed round keeps its original instant: markResponseSubmitted is idempotent', async () => {
-    // A round finalised twice must keep its original instant, or the console's ordering depends on
-    // when somebody last touched the row.
+    // A round finalised twice must keep its original instant, or the console's ordering changes.
     const { org, invitation } = orgWithInvitation();
     const db = registry.connectionFor(org.id);
     const invitationId = db.prepare('SELECT id FROM invitation WHERE email = ?').get('p@example.test').id;
@@ -111,9 +96,8 @@ test('a completed round keeps its original instant: markResponseSubmitted is ide
 });
 
 test('a second COMPLETE after a round closed OPENS A NEW round, rather than moving the instant', () => {
-    // `recordTurn` looks for a round with `submitted_at IS NULL`; once closed there is none, so the
-    // next complete turn begins a NEW round. The original's instant is untouched because it is a
-    // different row.
+    // Once closed there is no `submitted_at IS NULL` row, so the next complete turn begins a NEW
+    // round.
     const { org, recordTurn } = orgWithInvitation();
 
     const firstComplete = recordTurn({ data: { n: 1 }, complete: true });
@@ -124,14 +108,9 @@ test('a second COMPLETE after a round closed OPENS A NEW round, rather than movi
     assert.equal(store.getAllResponses(org.id).length, 2, 'and both are scored');
     assert.equal(store.getResponsesForAnalysis(org.id).length, 2);
 
-    // The first round's instant is unchanged by the second turn.
     const firstRow = store.getAllResponses(org.id).find((r) => r.id === firstComplete.id);
     assert.equal(firstRow.submitted_at, firstComplete.submitted_at, 'the original instant stands');
 });
-
-// ===========================================================================
-// 2. VISIBLE BUT NOT SCORED — BOTH DIRECTIONS
-// ===========================================================================
 
 test('getResponsesForAnalysis EXCLUDES a partial while getAllResponses INCLUDES it', () => {
     const { org, recordTurn } = orgWithInvitation();
@@ -158,7 +137,6 @@ test('a finalised round and a partial exist side by side, and only the finalised
     const { org, recordTurn } = orgWithInvitation();
     recordTurn({ data: { done: true }, complete: true });
 
-    // A SECOND invitation with a partial round.
     const second = store.addInvitation(org.id, { email: 'q@example.test', department: 'Ops' });
     store.recordTurn(org.id, second.token, { data: { stillGoing: true } });
 
@@ -171,8 +149,8 @@ test('a finalised round and a partial exist side by side, and only the finalised
 // 3. THE TRANSCRIPT ON AN UPDATE
 // ===========================================================================
 //
-// `updateResponseData` must write `transcript` as well as `data`, or progressive saving keeps the
-// conversation from the first write and SILENTLY DROPS it on every update after.
+// `updateResponseData` must write `transcript` as well as `data`, or progressive saving SILENTLY
+// DROPS the conversation after the first write.
 
 test('an update CARRIES the transcript, at the sqlite layer', () => {
     const { org } = orgWithInvitation();
@@ -199,8 +177,7 @@ test('an OMITTED transcript PRESERVES the stored one, at the sqlite layer', () =
 });
 
 test('an update CARRIES the transcript through updateResponse, the reachable layer', () => {
-    // THE LAYER THAT WOULD HAVE BEEN MISSED: fixing sqlite alone left this unreachable,
-    // because `updateResponse` did not forward the argument.
+    // Fixing sqlite alone leaves this unreachable: `updateResponse` must forward the argument.
     const { org, invitation } = orgWithInvitation();
     const row = store.addResponse(org.id, invitation.token, { department: 'Finance', data: { n: 1 }, transcript: conversation(1) });
 
@@ -220,8 +197,6 @@ test('an omitted transcript through updateResponse PRESERVES it', () => {
 });
 
 test('progressive saving through recordTurn accumulates rather than losing the conversation', () => {
-    // Several turns against ONE open round, each carrying a longer conversation. The final row must
-    // hold the LAST transcript, not the first.
     const { org, recordTurn } = orgWithInvitation();
 
     recordTurn({ data: { n: 1 }, transcript: conversation(1) });
@@ -232,12 +207,7 @@ test('progressive saving through recordTurn accumulates rather than losing the c
     assert.equal(store.getAllResponses(org.id)[0].transcript.length, 7);
 });
 
-// ===========================================================================
-// 4. addResponse FINALISES
-// ===========================================================================
-
 test('addResponse stores a FINALISED round, not a partial', () => {
-    // A new round finalises: stored as partial it would be invisible to every analysis path.
     const { org, invitation } = orgWithInvitation();
 
     const row = store.addResponse(org.id, invitation.token, { department: 'Finance', data: { seeded: true } });
@@ -247,8 +217,7 @@ test('addResponse stores a FINALISED round, not a partial', () => {
 });
 
 test('addResponse is unaffected by an OPEN round: it always inserts a new finalised row', () => {
-    // It is for data that is already final - a seed, an import, a fixture - so it does
-    // not join an open round the way `recordTurn` does.
+    // For data that is already final, so it does not join an open round the way `recordTurn` does.
     const { org, invitation, recordTurn } = orgWithInvitation();
     recordTurn({ data: { open: true } });
 
@@ -263,13 +232,11 @@ test('addResponse is unaffected by an OPEN round: it always inserts a new finali
 // 5. THE COMPLETION GATE WITH A SINGLE-PROCESS PAYLOAD
 // ===========================================================================
 //
-// The fresh-start model depends on `processes.every(...)` judging ONLY what the payload holds: a
-// fresh round sends one process rather than every process so far.
+// The fresh-start model depends on `processes.every(...)` judging ONLY what the payload holds.
 
 const { parseModelResponse } = await import('../ai/audit-core.js');
 const matrix = await import('../ai/matrix.js');
 
-/** A fully populated process, built from the field lists rather than hardcoded. */
 function completeProcess(overrides = {}) {
     const process = { id: 'p1', title: 'A process' };
     for (const field of matrix.PROCESS_FIELDS) {
@@ -284,7 +251,6 @@ function completeProcess(overrides = {}) {
 }
 
 test('a single complete process reports COMPLETE, with no stepsStillNeed', () => {
-    // The fresh-start case: the round holds only the process being worked on.
     const result = parseModelResponse(JSON.stringify({ status: 'complete', content: 'done', processes: [completeProcess()] }));
 
     assert.equal(result.status, 'complete');
@@ -313,8 +279,6 @@ test('stepsStillNeed is DERIVED, and the model\'s own value is discarded', () =>
 });
 
 test('stepsStillNeed is computed across processes but the completion gate judges the payload it holds', () => {
-    // Two partial processes in one payload: the union of their gaps is reported, and
-    // the round does not close.
     const one = completeProcess({ id: 'p1' });
     delete one.steps[0].needsReasoning;
     const two = completeProcess({ id: 'p2' });
@@ -330,8 +294,8 @@ test('stepsStillNeed is computed across processes but the completion gate judges
 // 6. THE PROMPT'S FRESH-START RULE
 // ===========================================================================
 //
-// The line must NOT require accumulation ("alongside the first"): the fresh-start rule
-// replaces the earlier process. Pinned in both languages so it cannot drift back.
+// The line must NOT require accumulation ("alongside the first"): the fresh-start rule replaces the
+// earlier process.
 
 const PROMPTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'prompts', 'cartiere_audit');
 
@@ -355,13 +319,8 @@ test('neither language prompt requires accumulation', () => {
     }
 });
 
-// ===========================================================================
-// 7. THE RESUME STRINGS ARE KEY-FOR-KEY CONSISTENT
-// ===========================================================================
-
 test('the three language blocks have the same keys, so a resumed interview renders in all three', async () => {
-    // This project has drifted on string keys before, so it is checked rather than
-    // assumed. A key missing from one block renders as a blank or an undefined label.
+    // A key missing from one block renders as a blank or an undefined label.
     const { stringsFor } = await import('../lib/strings.js');
 
     const langs = ['nl', 'en', 'fr'];
