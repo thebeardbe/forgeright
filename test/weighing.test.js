@@ -1,8 +1,8 @@
 /**
  * Workflow 3: weighing.
  *
- * The model composes ONE number for a process from ten terms and writes a paragraph explaining it;
- * the code validates the shape, stores the score against the REVISION, and sorts the roadmap.
+ * The model composes ONE number from ten terms; the code validates the shape, stores the score
+ * against the REVISION, and sorts the roadmap.
  *
  * WHAT THE CODE DOES NOT DO, pinned deliberately: it does not compute the score from the terms, and
  * it does not enforce the direction of a cost term. See the boundary test near the end.
@@ -30,17 +30,14 @@ after(() => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
 
-/** The ten terms at one value, which is enough for every shape test. */
 function termsAt(value = 5) {
     return Object.fromEntries(weighing.TERMS.map((term) => [term, value]));
 }
 
-/** A weighing reply that passes the gate, with overrides. */
 function validReply(overrides = {}) {
     return { score: 50, terms: termsAt(5), reasoning: 'because the work repeats and is plain', ...overrides };
 }
 
-/** An org with one identified process, ready to weigh. */
 function orgWithProcess(name = 'Invoices') {
     const org = store.createOrganisation(`Org ${name}`);
     const invitation = store.addInvitation(org.id, { email: 'p@example.test', department: 'Finance' });
@@ -52,10 +49,6 @@ function orgWithProcess(name = 'Invoices') {
     });
     return { org, invitation, response, processId: identified.process.id, revisionId: identified.revision.id };
 }
-
-// ===========================================================================
-// 1. validateWeighing — THE SHAPE GATE
-// ===========================================================================
 
 test('a valid weighing is accepted, trimmed, and keeps only the required terms', () => {
     const result = weighing.validateWeighing(validReply({ reasoning: '  spaced  ', terms: { ...termsAt(3), invented: 99 } }));
@@ -93,7 +86,7 @@ test('SEVERAL missing terms are ALL named', () => {
 });
 
 test('a term that is a STRING is refused as not-a-number, never coerced', () => {
-    // Coercion is the quiet failure this gate prevents: "5" is a reply that ignored the contract.
+    // "5" is a reply that ignored the contract.
     const result = weighing.validateWeighing(validReply({ terms: { ...termsAt(), time: '5' } }));
 
     assert.equal(result.ok, false);
@@ -108,14 +101,13 @@ test('a NON-NUMERIC, MISSING or INFINITE score is refused, and a string score is
         assert.match(result.reason, /score must be a finite number/);
     }
 
-    // The specific coercion the code refuses to make.
     const coerced = weighing.validateWeighing(validReply({ score: '42' }));
     assert.equal(coerced.ok, false);
     assert.equal(coerced.score, undefined, 'no number is returned for a string score');
 });
 
 test('missing, empty, whitespace and non-string reasoning are ALL refused', () => {
-    // A score nobody can explain cannot be reviewed, which is the protection for this step.
+    // A score nobody can explain cannot be reviewed.
     for (const reasoning of [undefined, '', '   ', '\t\n', 42, null, {}]) {
         const result = weighing.validateWeighing(validReply({ reasoning }));
         assert.equal(result.ok, false, `reasoning ${JSON.stringify(reasoning)} must be refused`);
@@ -150,8 +142,8 @@ test('a missing term is treated the same as an explicit null', () => {
 
 // --- the term RANGE, inclusive at both ends --------------------------------
 //
-// The whole feature is on one 0-100 scale: the ten terms AND the composite score. The live bound is
-// TERM_MIN/TERM_MAX, inclusive, PER TERM. See the score's own bound below.
+// One 0-100 scale: the ten terms AND the composite score. The live bound is TERM_MIN/TERM_MAX,
+// inclusive, PER TERM.
 
 test('the range constants are 0 and 100', () => {
     assert.equal(weighing.TERM_MIN, 0);
@@ -203,21 +195,15 @@ test('the bound is on the VALUE, so a fraction just outside is refused', () => {
 });
 
 test('the SCORE is bounded on the SAME 0-100 scale as the terms', () => {
-    // The score must be bounded exactly as the terms are: the prompt says "0 to 100, the same
-    // scale as the terms", and a validator that checked only that the score was finite would let a
-    // model return 250 and have it stored, displayed and ranked by. This pins the bound.
-    //
-    // `TERM_MIN`/`TERM_MAX` ARE REUSED for both on purpose: a second pair with the
-    // same values is how the two get out of step.
+    // `TERM_MIN`/`TERM_MAX` ARE REUSED for both on purpose: a second pair with the same values is
+    // how the two get out of step.
 
-    // Inclusive at both ends.
     for (const score of [0, 100]) {
         const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
         assert.equal(result.ok, true, `score ${score} must be accepted: the bound is inclusive`);
         assert.equal(result.score, score);
     }
 
-    // Out of range is refused including a fraction just outside, so the bound is on the value.
     for (const score of [-5, 250, 1_000_000, 100.5, -0.5]) {
         const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
         assert.equal(result.ok, false, `score ${score} must be refused`);
@@ -228,8 +214,8 @@ test('the SCORE is bounded on the SAME 0-100 scale as the terms', () => {
 });
 
 test('the SCORE refusal is distinguishable from the TERM refusal', () => {
-    // A reader who saw the term wording for a bad score would look for a term to fix, so the two
-    // messages must not collapse into one.
+    // The two messages must not collapse into one: the term wording would send a reader fixing a
+    // term.
     const badScore = weighing.validateWeighing(validReply({ score: 250, terms: termsAt(50) }));
     const badTerm = weighing.validateWeighing(validReply({ score: 50, terms: { ...termsAt(50), complexity: 140 } }));
 
@@ -241,8 +227,7 @@ test('the SCORE refusal is distinguishable from the TERM refusal', () => {
 });
 
 test('TYPE is checked BEFORE RANGE, so a numeric string is a type error, not a range error', () => {
-    // A string is refused as a TYPE error even when its value is also out of range, so the message
-    // says what is wrong rather than sending the model to adjust a number it never sent.
+    // A string is refused as a TYPE error even when out of range, so the message says what is wrong.
     for (const score of ['42', '5', '250', '999']) {
         const result = weighing.validateWeighing(validReply({ score, terms: termsAt(50) }));
         assert.equal(result.ok, false, `score ${JSON.stringify(score)} must be refused`);
@@ -254,8 +239,8 @@ test('TYPE is checked BEFORE RANGE, so a numeric string is a type error, not a r
 // ===========================================================================
 // 2. COST_TERMS AND isCostTerm — THE CLASSIFICATION
 // ===========================================================================
-// The classification is what the code holds; the DIRECTION (a high cost term counting against the
-// process) is applied by the model in the prompt. See the boundary test at the end.
+// The DIRECTION (a high cost term counting against the process) is applied by the model in the
+// prompt. See the boundary test at the end.
 
 test('isCostTerm is true for exactly the four cost terms', () => {
     assert.deepEqual([...weighing.COST_TERMS], ['departments', 'complexity', 'reasoningSteps', 'buildEffort']);
@@ -272,16 +257,13 @@ test('isCostTerm is false for the six reward terms', () => {
 });
 
 test('EVERY term in TERMS is classified, so a new term cannot be silently unclassified', () => {
-    // The property that keeps the classification honest: if a term is added to
-    // TERMS and not to COST_TERMS, this still holds (it is a reward by default),
-    // but the count assertion below makes that a deliberate change rather than an
-    // accident.
+    // A term added to TERMS and not COST_TERMS is a reward by default, so the count assertion below
+    // makes that a deliberate change.
     assert.equal(weighing.TERMS.every((term) => typeof weighing.isCostTerm(term) === 'boolean'), true);
 
     const costs = weighing.TERMS.filter((term) => weighing.isCostTerm(term));
     assert.equal(costs.length, 4, 'exactly four of the ten terms are costs');
 
-    // Every cost is a real term, and every term appears exactly once.
     for (const cost of weighing.COST_TERMS) {
         assert.ok(weighing.TERMS.includes(cost), `${cost} must be one of the ten terms`);
     }
@@ -294,10 +276,6 @@ test('an unknown term is not a cost, and does not throw', () => {
         assert.equal(weighing.isCostTerm(term), false, `${JSON.stringify(term)} is not a cost term`);
     }
 });
-
-// ===========================================================================
-// 3. THE SCORE FOLLOWS THE REVISION
-// ===========================================================================
 
 test('a scored process reads back with its number, its ten terms and its paragraph', () => {
     const { org, processId } = orgWithProcess('readable');
@@ -351,8 +329,7 @@ test('exactly one weighing is current for a revision', () => {
 });
 
 test('a process with NO current grouping cannot be weighed → refused, not scored as zero', () => {
-    // An unscored process and a scoreless one must not look alike. This is a
-    // grouping fault, so it is a loud error rather than a 0.
+    // An unscored process and a scoreless one must not look alike: a loud error rather than a 0.
     const org = store.createOrganisation('Bare org');
     store.closeAll();
     const db = new DatabaseSync(store.orgDbPath(org.id));
@@ -392,7 +369,6 @@ test('an unscored process still appears in the roadmap, last rather than dropped
     const scored = orgWithProcess('scored one');
     weighing.recordWeighing({ orgId: scored.org.id, processId: scored.processId, reply: validReply({ score: 50 }) });
 
-    // A second process in the same organisation, never weighed.
     const second = store.addResponse(scored.org.id, scored.invitation.token, { department: 'Finance', data: { task: 'unweighed' } });
     const identified = processes.recordIdentification({
         orgId: scored.org.id,
@@ -405,10 +381,6 @@ test('an unscored process still appears in the roadmap, last rather than dropped
     assert.equal(roadmap.at(-1).id, identified.process.id, 'the unscored one sorts last');
     assert.equal(roadmap.at(-1).score, null, 'and its score is null, not zero');
 });
-
-// ===========================================================================
-// 4. listRoadmap — THE RANKING
-// ===========================================================================
 
 test('the roadmap sorts highest score first', () => {
     const { org, invitation } = orgWithProcess('sorting');
@@ -426,7 +398,6 @@ test('the roadmap sorts highest score first', () => {
     make('Bravo', 10);
     make('Charlie', 90);
 
-    // Only the SCORED entries, since the setup leaves one unscored process.
     const values = weighing.listRoadmap(org.id).filter((e) => e.score !== null).map((e) => e.score.value);
     assert.deepEqual(values, [...values].sort((a, b) => b - a), 'the list is in descending score order');
     assert.deepEqual(values, [90, 50, 10], 'and the highest is first');
@@ -481,24 +452,17 @@ test('an empty organisation has an empty roadmap, not an error', () => {
     assert.deepEqual(weighing.listRoadmap(org.id), []);
 });
 
-// ===========================================================================
-// 5. REFUSALS AND THE SHARED EXTRACTION PATH
-// ===========================================================================
-
 test('there is exactly ONE JSON extractor, imported by all three workflows', () => {
-    // Verified by grep as much as by test: a second hand-rolled brace scanner is
-    // how the three workflows would drift apart.
+    // A second hand-rolled brace scanner is how the three workflows would drift apart.
     const projectRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
     const cores = ['ai/audit-core.js', 'ai/identify-core.js', 'ai/weigh-core.js'];
     for (const core of cores) {
         const source = fs.readFileSync(path.join(projectRoot, core), 'utf8');
         assert.match(source, /from '\.\/json-extract\.js'/, `${core} imports the shared extractor`);
         assert.match(source, /from '\.\/format-commitment\.js'/, `${core} imports the shared format turn`);
-        // No hand-rolled scanning: no brace-depth counter outside json-extract.js.
         assert.equal(/inString|depth \+= 1|lastIndexOf\('\}'\)/.test(source), false, `${core} must not scan braces itself`);
     }
 
-    // And only one module defines the scanner.
     const aiDir = path.join(projectRoot, 'ai');
     const definers = fs.readdirSync(aiDir)
         .filter((name) => name.endsWith('.js'))
@@ -511,7 +475,6 @@ test('a malformed weighing reply is a clear error, not a fragment', () => {
     assert.equal(noJson.status, 'error');
     assert.match(noJson.reason, /no JSON object/);
 
-    // A truncated mid-object reply is NOT parsed as a fragment.
     const truncated = weighCore.parseWeighingResponse('{"score": 42, "terms": {"frequency": 3, "time":');
     assert.equal(truncated.status, 'error', 'a truncated object is refused, not partially parsed');
     assert.match(truncated.reason, /no JSON object/);
@@ -557,32 +520,15 @@ test('the admin\'s argument appears only when given', () => {
     assert.ok(withArg.toLowerCase().includes('disputes'));
 });
 
-// ===========================================================================
-// THE BOUNDARY: THE DIRECTION IS NOT ENFORCED BY THIS CODE
-// ===========================================================================
-
 test('BOUNDARY: a score whose cost terms all point the wrong way is ACCEPTED, because nothing recomputes it', () => {
-    // THIS IS A TEST OF THE DESIGN, NOT A DEFECT. The score is composed by the
-    // model in the prompt; this code validates only that the score is a finite
-    // number and that the ten terms are present, numeric and in range. It does not
-    // recompute the score from the terms, and it does not check that a high
-    // `complexity` was treated as a cost.
-    //
-    // So a reply whose four cost terms are all at their WORST (100 on the 0-100
-    // scale) and whose score is also at the top is accepted, even though the prompt
-    // says a high complexity should pull the process DOWN. Nothing here can fail on
-    // that, and this test records it so the next reader does not assume the
-    // direction is enforced.
-    //
-    // THE VALUES WERE 10 UNDER THE OLD 1-5 SCALE, where 10 was out of range but
-    // still accepted because nothing checked. The scale is now 0-100 per term, so
-    // 100 is the genuine worst value and valid: the point is unchanged and now
-    // stated on the scale that exists. The range itself is pinned beside it.
+    // A TEST OF THE DESIGN, NOT A DEFECT. The score is composed by the model; this code validates
+    // only that it is finite and that the ten terms are present, numeric and in range. So four cost
+    // terms at their WORST alongside a top score are accepted. Recorded so the next reader does not
+    // assume the direction is enforced.
     const wrongWayRound = {
         score: 100,
         terms: {
             frequency: 100, time: 100, people: 100, results: 100, consequences: 100, automatableShare: 100,
-            // The four costs, all set to their WORST value, alongside a top score.
             departments: 100, complexity: 100, reasoningSteps: 100, buildEffort: 100
         },
         reasoning: 'a high complexity, which the prompt says counts against it, but a high score anyway'
@@ -592,16 +538,12 @@ test('BOUNDARY: a score whose cost terms all point the wrong way is ACCEPTED, be
     assert.equal(result.ok, true, 'the gate accepts it: the direction is not its business');
     assert.equal(result.score, 100);
 
-    // THE HONEST PAIRING WITH THE RANGE TESTS BESIDE THIS ONE: every value here is
-    // IN RANGE, so the acceptance is about the direction alone and does not lean on
-    // an invalid number. If a future change made these out of range, the test would
-    // be proving the wrong thing and this assertion would fail.
+    // Every value here is IN RANGE, so the acceptance is about the direction alone.
     assert.equal(result.score >= weighing.TERM_MIN && result.score <= weighing.TERM_MAX, true, 'the score is in range');
     for (const [term, value] of Object.entries(result.terms)) {
         assert.equal(value >= weighing.TERM_MIN && value <= weighing.TERM_MAX, true, `the term ${term} is in range`);
     }
 
-    // And it is stored and read back, so the acceptance is not merely the gate's.
     const { org, processId } = orgWithProcess('wrong way round');
     const recorded = weighing.recordWeighing({ orgId: org.id, processId, reply: wrongWayRound });
     assert.equal(recorded.score.score, 100);
@@ -611,9 +553,7 @@ test('BOUNDARY: a score whose cost terms all point the wrong way is ACCEPTED, be
 });
 
 test('THE RANGE, paired with the boundary above: 100 is accepted and 101 refused', () => {
-    // The honest pairing: this test says what the terms ARE checked for, right
-    // beside the test that says what they are not. Direction: unchecked. Range:
-    // checked, per term, inclusive.
+    // Direction: unchecked. Range: checked, per term, inclusive.
     assert.equal(weighing.validateWeighing(validReply({ terms: termsAt(100) })).ok, true, '100 is the top of the range');
 
     const over = weighing.validateWeighing(validReply({ terms: termsAt(101) }));
@@ -625,19 +565,15 @@ test('THE RANGE, paired with the boundary above: 100 is accepted and 101 refused
 // THE SCORE FOLLOWS THE REVISION ACROSS A REJUDGE
 // ===========================================================================
 //
-// A rejudge creates a NEW revision (workflow 2 re-identifies first), and the score
-// is keyed on the revision, so the roadmap reads the CURRENT revision's weighing.
-// A score keyed on the PROCESS would keep showing the old number after a rejudge,
-// which is exactly the drift this keying prevents.
+// A rejudge creates a NEW revision, and the score is keyed on the revision. Keyed on the PROCESS,
+// the roadmap would keep showing the old number after a rejudge.
 
 test('after a rejudge, the roadmap shows the score of the CURRENT revision', () => {
     const { org, response, processId } = orgWithProcess('revision keying');
 
-    // First grouping, weighed at 10.
     weighing.recordWeighing({ orgId: org.id, processId, reply: validReply({ score: 10, reasoning: 'before the rejudge' }) });
     assert.equal(weighing.listRoadmap(org.id).find((e) => e.id === processId).score.value, 10);
 
-    // The admin disputes it: workflow 2 re-identifies, adding revision 2.
     processes.recordIdentification({
         orgId: org.id,
         reply: { matches: processId, reasoning: 'regrouped on the argument', confidence: 'high' },
@@ -646,7 +582,6 @@ test('after a rejudge, the roadmap shows the score of the CURRENT revision', () 
         decidedBy: processes.DECIDED_BY.ADMIN
     });
 
-    // Workflow 3 regenerates from the corrected grouping, at 90.
     weighing.recordWeighing({ orgId: org.id, processId, reply: validReply({ score: 90, reasoning: 'after the rejudge' }) });
 
     const entry = weighing.listRoadmap(org.id).find((e) => e.id === processId);
@@ -654,16 +589,12 @@ test('after a rejudge, the roadmap shows the score of the CURRENT revision', () 
     assert.equal(entry.score.value, 90, 'the roadmap shows the CURRENT revision\'s score, not the process\'s first');
     assert.equal(entry.score.reasoning, 'after the rejudge');
 
-    // The earlier score is not lost: it belongs to revision 1, and the console
-    // history still carries both revisions.
     const consoleRow = processes.listProcessesForConsole(org.id).find((p) => p.id === processId);
     assert.equal(consoleRow.history.length, 2, 'both groupings are kept');
     assert.equal(consoleRow.current.revision, 2);
 });
 
 test('a rendering of the score keyed on the process would show the wrong number after a rejudge', () => {
-    // The property stated as its consequence: if the score were read from the
-    // process's FIRST revision, the roadmap would still say 10 here.
     const { org, response, processId } = orgWithProcess('keying consequence');
     weighing.recordWeighing({ orgId: org.id, processId, reply: validReply({ score: 10, reasoning: 'first' }) });
     processes.recordIdentification({
