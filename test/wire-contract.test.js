@@ -1,25 +1,13 @@
 /**
  * The SERIALISED contract of /api/chat: what the browser can actually see.
  *
- * WHY THE ASSERTIONS ARE ON A RE-PARSE. The object the server holds and the JSON
- * the client receives are NOT the same thing:
+ * WHY THE ASSERTIONS ARE ON A RE-PARSE: the server's reply has an OWN `audit` property whose value
+ * is `undefined`, and `JSON.stringify` DROPS it. So an assertion against the returned object passes
+ * while proving nothing about the client, and `assert.equal(body.audit, undefined)` passes on both
+ * shapes because it cannot tell an absent key from a present-`undefined` one.
  *
- *     in-memory:  Object.hasOwn(result, 'audit') === true,   result.audit === undefined
- *     wire:       no `audit` key at all
- *
- * `parseModelResponse` builds its reply with `{ ...parsed, audit: ... }`, so an
- * empty payload slot leaves an OWN property whose value is `undefined`, and
- * `JSON.stringify` DROPS it. An assertion against the returned object passes while
- * proving nothing about the client, and `assert.equal(body.audit, undefined)` passes
- * on both shapes because it cannot tell an absent key from a present-`undefined` one.
- *
- * THE PROPERTY IS THE CLIENT'S OWN TEST. `public/js/audit.js` shows an analysis
- * with `const payload = data.audit || ...`, so `Boolean(body.audit)` is that test
- * verbatim - and it fails for `{}`, `[]`, `''`, `0` and `false` alike.
- *
- * Both shapes are covered because either can satisfy the payload: the interview
- * shape carries `processes` and the older single-shot shape carries
- * `audit.workflows`. See ARCHITECTURE.md, "The questionnaire turn".
+ * THE PROPERTY IS THE CLIENT'S OWN TEST: `public/js/audit.js` uses `data.audit || ...`, so
+ * `Boolean(body.audit)` is that test verbatim, failing for `{}`, `[]`, `''`, `0` and `false` alike.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,21 +16,16 @@ import { parseModelResponse, runAuditTurn } from '../ai/audit-core.js';
 import { ALL_PROCESS_FIELD_NAMES, PROCESS_FIELDS, STEP_FIELDS } from '../ai/matrix.js';
 
 /**
- * The reply as the client receives it: serialised and parsed again. `structuredClone` would keep
- * an own `undefined` property, reproducing the in-memory shape rather than the wire one.
- *
- * @param {object} reply The value `parseModelResponse` returned.
- * @returns {object} What the HTTP response body parses to.
+ * The reply as the client receives it. `structuredClone` would keep an own `undefined` property,
+ * reproducing the in-memory shape rather than the wire one.
  */
 function overTheWire(reply) {
     return JSON.parse(JSON.stringify(reply));
 }
 
 /**
- * A process that satisfies the completeness matrix, built from the field lists so adding a field
- * to the matrix supplies it here too.
- *
- * `id` and `title` are not matrix fields but are required by `validateWorkflows`.
+ * A process satisfying the completeness matrix, built from the field lists. `id` and `title` are
+ * required by `validateWorkflows`, not the matrix.
  */
 function completeProcess(overrides = {}) {
     const process = { id: 'w1', title: 'Invoice intake' };
@@ -61,7 +44,6 @@ function completeProcess(overrides = {}) {
     return { ...process, ...overrides };
 }
 
-/** A step satisfying every STEP_FIELDS entry, including the boolean flag. */
 function completeStep(overrides = {}) {
     const step = {};
     for (const field of STEP_FIELDS) {
@@ -70,21 +52,11 @@ function completeStep(overrides = {}) {
     return { ...step, ...overrides };
 }
 
-/** A completion reply carrying the given fields alongside a complete process. */
 function wire(raw) {
     return overTheWire(parseModelResponse(raw));
 }
 
-// ===========================================================================
-// 1. THE PRIMARY PROPERTY: NO USABLE CLIENT PAYLOAD MEANS FALSY `audit`
-// ===========================================================================
-//
-// `data.audit || fallback` must take the fallback. The assertion is on `Boolean(body.audit)`, so
-// a reply carrying something merely truthy ({}, [], 'x', 1, true) fails too.
-
 test('the ASKING reply carries no usable audit over the wire', () => {
-    // The only path where the code decides NOT to build a payload, so the only one where a stray
-    // `{}` can reach the client's payload slot.
     const body = wire('{"status":"asking","content":"How often does this happen?"}');
 
     assert.equal(body.status, 'asking', 'it is still an asking turn');
@@ -96,8 +68,6 @@ test('the ASKING reply carries no usable audit over the wire', () => {
 });
 
 test('an asking reply whose payload slot holds a non-array carries no usable audit', () => {
-    // Every way the payload source can be a non-array. `false` and `0` are falsy but wrong values
-    // in the slot; `{}` and `[]` are TRUTHY and unusable.
     const processValues = ['null', '"a string"', '{}', '0', 'false', '[]'];
     for (const processes of processValues) {
         const body = wire(`{"status":"asking","content":"Next?","processes":${processes}}`);
@@ -111,7 +81,6 @@ test('an asking reply whose payload slot holds a non-array carries no usable aud
 });
 
 test('a complete reply whose ONLY payload source is unusable is not completed, and carries no usable audit', () => {
-    // The same non-arrays on the completion path: nothing to score, so the reply is refused.
     for (const processes of ['null', '"a string"', '{}', '0', 'false']) {
         const body = wire(`{"status":"complete","content":"Done","processes":${processes}}`);
 
@@ -125,7 +94,6 @@ test('a complete reply whose ONLY payload source is unusable is not completed, a
 });
 
 test('an audit that is a string, or an empty array, carries no usable audit', () => {
-    // The older single-shot shape with a payload that is not a workflows object.
     for (const audit of ['"nope"', '[]', '{}', '{"workflows":null}']) {
         const body = wire(`{"status":"complete","content":"Done","audit":${audit}}`);
 
@@ -138,7 +106,6 @@ test('an audit that is a string, or an empty array, carries no usable audit', ()
 });
 
 test('an audit.workflows that is a string, or an empty array, carries no usable audit', () => {
-    // The envelope is present and truthy while the list inside it is not a list.
     for (const workflows of ['"nope"', '[]', '{}', '0', 'false', 'null']) {
         const body = wire(`{"status":"complete","content":"Done","audit":{"workflows":${workflows}}}`);
 
@@ -151,9 +118,6 @@ test('an audit.workflows that is a string, or an empty array, carries no usable 
 });
 
 test('a complete processes wins over an unusable audit, over the wire', () => {
-    // A truthy-but-unusable `audit` must not beat a good `processes`: it would make the client
-    // score an empty list, so the participant sees the scoring-failed panel after a successful
-    // interview.
     for (const audit of ['{"workflows":[]}', '"nope"', '{}', '[]']) {
         const body = wire(JSON.stringify({
             status: 'complete',
@@ -169,15 +133,7 @@ test('a complete processes wins over an unusable audit, over the wire', () => {
     }
 });
 
-// ===========================================================================
-// 2. THE SECONDARY PROPERTY: A PRESENT PAYLOAD IS USABLE
-// ===========================================================================
-//
-// Together with section 1: the client either takes its fallback, or gets an object whose
-// `workflows` is an array it can score.
-
 test('the COMPLETE reply over processes carries a usable workflows array', () => {
-    // The control: without it, section 1 could be satisfied by never sending a payload.
     const body = wire(JSON.stringify({ status: 'complete', content: 'Done', processes: [completeProcess()] }));
 
     assert.equal(body.status, 'complete');
@@ -197,7 +153,6 @@ test('the COMPLETE reply over audit.workflows carries a usable workflows array',
 });
 
 test('the illustrative flag and the note survive serialisation', () => {
-    // Part of what the client receives, not server-side bookkeeping.
     const body = wire(JSON.stringify({
         status: 'complete',
         content: 'Done',
@@ -210,16 +165,8 @@ test('the illustrative flag and the note survive serialisation', () => {
     assert.equal(body.audit.note, 'Illustrative data');
 });
 
-// ===========================================================================
-// 3. EVERY REPLY THIS FUNCTION CAN PRODUCE OBEYS THE PATTERN
-// ===========================================================================
-//
-// One invariant rather than case by case, so a shape nobody thought of is caught: the body either
-// has no usable `audit`, or one whose `workflows` is an array.
-
 test('every reply obeys: no usable audit, or a usable workflows array', () => {
-    // JSON.stringify, NOT a template literal: `[completeProcess()]` inside a quoted string is just
-    // text, so `wire()` would hand the parser a reply with no `processes` key.
+    // JSON.stringify, NOT a template literal: inside a quoted string it is just text.
     const usableProcesses = JSON.stringify({ status: 'complete', content: 'Done', processes: [completeProcess()] });
     const usableProcessesWithEmptyAudit = JSON.stringify({
         status: 'complete',
@@ -245,7 +192,6 @@ test('every reply obeys: no usable audit, or a usable workflows array', () => {
         ''
     ];
 
-    // Guard the guard: a case carrying no `processes` would pass the invariant for the wrong reason.
     assert.match(usableProcesses, /"processes":\[/, 'the built control really carries a processes array');
     assert.match(usableProcessesWithEmptyAudit, /"audit":\{"workflows":\[\]\}/, 'and the bad-audit control really carries the empty audit');
 
@@ -260,17 +206,8 @@ test('every reply obeys: no usable audit, or a usable workflows array', () => {
     }
 });
 
-// ===========================================================================
-// 4. THE SAME PROPERTY FOR A REAL TURN, THROUGH runAuditTurn
-// ===========================================================================
-//
-// The route reaches `parseModelResponse` through `runAuditTurn`, whose reply `res.json(result)`
-// serialises, so the property is asserted on the mock provider's real output as well.
-
 test('a real asking turn WITH a partial process carries a usable workflows array', async () => {
-    // The mock sends a partial process on an asking turn, so `audit` IS present there. The property
-    // that matters is the secondary one: a truthy `audit` is USABLE. It is acted on only when
-    // `status === 'complete'`, so a partial process cannot open the analysis.
+    // Acted on only when `status === 'complete'`, so a partial process cannot open the analysis.
     const messages = [
         { role: 'user', content: 'I enter invoices' },
         { role: 'user', content: 'Every morning' }
@@ -300,8 +237,6 @@ test('a real completed turn over the wire carries a usable workflows array', asy
 });
 
 test('a real completed turn survives being re-parsed from its own serialisation, deterministically', async () => {
-    // Serialising and parsing twice must give the same body, so nothing depends on object identity
-    // or property order that JSON cannot carry.
     const messages = [];
     for (let i = 0; i < ALL_PROCESS_FIELD_NAMES.length; i += 1) {
         messages.push({ role: 'user', content: `answer ${i}` });
@@ -311,24 +246,6 @@ test('a real completed turn survives being re-parsed from its own serialisation,
     assert.deepEqual(overTheWire(turn), overTheWire(turn));
 });
 
-// ===========================================================================
-// 5. NOT COVERED HERE: public/js/audit.js HAS NO AUTOMATED COVERAGE
-// ===========================================================================
-//
-// The client makes the same payload decision this file pins on the server side
-// (`data.audit || Array.isArray(data.processes) && ...`), and there is NO test of it. Nothing in
-// this repository loads that file: there is no browser harness and no driver (`puppeteer` was
-// removed as unused; no jsdom, no playwright), and `public/js/audit.js` is one IIFE with no exports
-// and no seam.
-//
-// What that costs: a client guard of `data.audit || ...` short-circuits on a truthy-but-unusable
-// `audit` and discards a good `processes` array beside it. A hand-copied replica of the expression
-// AGREES WITH ITSELF and certifies nothing, so do not re-create the replica.
-//
-// THE TWO WAYS TO CLOSE IT:
-//   1. Extract the payload decision into a small pure module the client calls and `node --test`
-//      can import.
-//   2. Drive the real page in a browser harness with `fetch` intercepted, which needs a driver
-//      installed first (a system Chromium exists at /usr/bin/chromium).
-//
+// NOT covered: the client's own payload decision. Nothing here loads `public/js/audit.js` (one IIFE,
+// no exports, no browser driver). A hand-copied replica AGREES WITH ITSELF, so do not re-create it.
 
