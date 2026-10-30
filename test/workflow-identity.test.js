@@ -449,33 +449,30 @@ test('a NEWLY NAMED process ALONE is kept - the case that killed the reverted fi
 // THE PARTICIPANT HAD JUST NAMED.
 //
 // ASSERT THE OUTCOME, NOT THE LOG WORDING.
+//
+// Provenance of each fixture is in `test/fixtures/README.md`: `onerow.json` is verbatim from the
+// owner's VPS, the other two are reconstructed from these assertions. `bills` shares three step
+// names so it folds; `fuelcard` and `onerow` share none, so they do not.
 
-/**
- * Reads one of the HOST artefacts: a captured reply from a live interview, left on the host at
- * `/tmp` rather than committed because it is not repo content. So it can be absent (`/tmp` clears
- * on reboot), and the readers below SKIP when it is. Returns null when absent.
- */
+/** Reads one committed artefact from `test/fixtures/`: a bare array of workflows. */
 function readArtefact(file) {
-    try {
-        const parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-        return Array.isArray(parsed) ? parsed : null;
-    } catch {
-        return null;
-    }
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+const FIXTURES = path.join(__dirname, 'fixtures');
+
 const ARTEFACTS = {
-    bills: { file: '/tmp/bills.json', inSize: 2, keptKeys: 19, keptSteps: 5 },
-    fuelcard: { file: '/tmp/fuelcard.json', inSize: 2, keptKeys: 19, keptSteps: 7 },
-    onerow: { file: '/tmp/onerow.json', inSize: 3, keptKeys: 8, keptSteps: 5 }
+    bills: { file: path.join(FIXTURES, 'bills.json'), keptKeys: 19, keptSteps: 5 },
+    fuelcard: { file: path.join(FIXTURES, 'fuelcard.json'), keptKeys: 19, keptSteps: 7 },
+    onerow: { file: path.join(FIXTURES, 'onerow.json'), keptKeys: 8, keptSteps: 5 }
 };
 
-// NOT COVERED when all three artefacts are absent: the real-payload cases below then all skip, so
-// at least one must be present in a run.
-test('at least one host artefact is present, so the real-payload cases do not all skip silently', () => {
-    const present = Object.entries(ARTEFACTS).filter(([, spec]) => readArtefact(spec.file) !== null);
-    assert.ok(present.length > 0,
-        `all three host artefacts are absent (${Object.values(ARTEFACTS).map((s) => s.file).join(', ')}), so every real-payload case skipped`);
+// The fixtures are committed, so a missing or unparsable one is a defect rather than a host quirk.
+test('every committed artefact parses to a non-empty array of workflows', () => {
+    for (const [name, spec] of Object.entries(ARTEFACTS)) {
+        const workflows = readArtefact(spec.file);
+        assert.ok(Array.isArray(workflows) && workflows.length > 0, `${name} is a non-empty array`);
+    }
 });
 
 const foldedAnything = (warnings) => warnings.some((w) => /described ONE process twice|earlier wording forward with no steps/.test(w));
@@ -488,9 +485,8 @@ async function savedWorkflows(workflows) {
 
 const idsOf = (workflows) => workflows.map((w) => w.id).sort();
 
-test('the REAL phone-bills reply folds to ONE entry on its three shared step names', async (t) => {
+test('the REAL phone-bills reply folds to ONE entry on its three shared step names', async () => {
     const workflows = readArtefact(ARTEFACTS.bills.file);
-    if (workflows === null) { t.skip(`${ARTEFACTS.bills.file} is not present on this host`); return; }
 
     // 2 entries, both 5 steps, 3 SHARED step names, one without `minutesPerInstance`.
     assert.equal(workflows.length, 2, 'the artefact holds two entries');
@@ -507,9 +503,8 @@ test('the REAL phone-bills reply folds to ONE entry on its three shared step nam
     assert.equal(foldedAnything(warnings), true, 'and a fold was announced, not silent');
 });
 
-test('the REAL fuel-card reply is LEFT ALONE - its stub carries no steps to co-test on', async (t) => {
+test('the REAL fuel-card reply is LEFT ALONE - its stub carries no steps to co-test on', async () => {
     const workflows = readArtefact(ARTEFACTS.fuelcard.file);
-    if (workflows === null) { t.skip(`${ARTEFACTS.fuelcard.file} is not present on this host`); return; }
 
     // The count is the assertion. The reasoning lives in the by-absence note in `ai/audit.js`, with
     // its four-versus-two word-overlap measurement.
@@ -525,9 +520,8 @@ test('the REAL fuel-card reply is LEFT ALONE - its stub carries no steps to co-t
     assert.equal(foldedAnything(warnings), false, 'and no fold is announced, because none was made');
 });
 
-test('the NEW artefact: TWO step-less stubs beside one rich entry are ALL KEPT', async (t) => {
+test('the NEW artefact: TWO step-less stubs beside one rich entry are ALL KEPT', async () => {
     const workflows = readArtefact(ARTEFACTS.onerow.file);
-    if (workflows === null) { t.skip(`${ARTEFACTS.onerow.file} is not present on this host`); return; }
 
     assert.equal(workflows.length, 3, 'the artefact holds three entries');
     assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 2,
@@ -541,7 +535,7 @@ test('the NEW artefact: TWO step-less stubs beside one rich entry are ALL KEPT',
     assert.equal(foldedAnything(warnings), false, 'and no fold is announced, because none was made');
 });
 
-test('EVERY PERMUTATION of each artefact gives the same result', async (t) => {
+test('EVERY PERMUTATION of each artefact gives the same result', async () => {
     const permutations = (items) => {
         if (items.length <= 1) return [items];
         const out = [];
@@ -554,7 +548,6 @@ test('EVERY PERMUTATION of each artefact gives the same result', async (t) => {
     const expectedOut = { bills: 1, fuelcard: 2, onerow: 3 };
     for (const [name, spec] of Object.entries(ARTEFACTS)) {
         const workflows = readArtefact(spec.file);
-        if (workflows === null) { t.skip(`${spec.file} is not present on this host`); continue; }
 
         for (const order of permutations(workflows)) {
             const { saved } = await savedWorkflows(order);
