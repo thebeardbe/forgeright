@@ -1,10 +1,6 @@
 /**
  * Workflow 1: the completeness matrix and the interview loop.
  *
- * THE SAFETY PROPERTY THE DESIGN RESTS ON: the matrix decides completion, not the model's
- * `status`. A model that claims `complete` while a field is absent must be sent back to `asking`
- * with that field named.
- *
  * The field lists are read FROM THE MODULE throughout, never restated, so a change to the matrix
  * cannot leave these tests asserting a stale shape.
  */
@@ -25,10 +21,8 @@ import {
 import { parseModelResponse, workflowsFrom } from '../ai/audit-core.js';
 
 /**
- * A process that satisfies EVERY field in the matrix, built from the field lists so adding a
- * field to the matrix makes this builder supply it.
- *
- * `id` and `title` are not matrix fields but are required by validateWorkflows.
+ * A process that satisfies EVERY field in the matrix, built from the field lists so adding a field
+ * makes this builder supply it. `id` and `title` are required by validateWorkflows, not the matrix.
  */
 function completeProcess(overrides = {}) {
     const process = { id: 'process-1', title: 'A complete process' };
@@ -50,7 +44,6 @@ function completeProcess(overrides = {}) {
     return { ...process, ...overrides };
 }
 
-/** A step that satisfies every STEP_FIELDS entry, including a boolean flag. */
 function completeStep(overrides = {}) {
     const step = {};
     for (const field of STEP_FIELDS) {
@@ -59,14 +52,9 @@ function completeStep(overrides = {}) {
     return { ...step, ...overrides };
 }
 
-/** Parses a completion reply carrying the given processes. */
 function completeWith(processes, extra = {}) {
     return parseModelResponse(JSON.stringify({ status: 'complete', content: 'done', processes, ...extra }));
 }
-
-// ===========================================================================
-// 1. THE MATRIX GATES COMPLETION
-// ===========================================================================
 
 test('a complete reply with a COMPLETE process is accepted', () => {
     const result = completeWith([completeProcess()]);
@@ -87,8 +75,6 @@ test('a claimed complete with a field absent comes back asking, naming the field
 });
 
 test('EVERY matrix field, removed one at a time, blocks completion', () => {
-    // Each field the matrix requires is removed in turn and the reply must be downgraded, naming
-    // that field.
     for (const field of PROCESS_FIELDS) {
         const process = completeProcess();
         delete process[field];
@@ -100,7 +86,6 @@ test('EVERY matrix field, removed one at a time, blocks completion', () => {
 });
 
 test('a step missing a required field blocks completion of the PROCESS', () => {
-    // `steps` counts only when every step is complete.
     for (const field of STEP_FIELDS) {
         const process = completeProcess({ steps: [completeStep()] });
         delete process.steps[0][field];
@@ -119,7 +104,6 @@ test('an empty steps array does not satisfy the steps requirement', () => {
 });
 
 test('a needsReasoning that is NOT a boolean does not satisfy the step', () => {
-    // The flag must be a boolean; a string or a number leaves the step incomplete.
     for (const bad of ['true', 1, null, undefined, {}]) {
         const process = completeProcess({ steps: [completeStep({ needsReasoning: bad })] });
         const result = completeWith([process]);
@@ -128,8 +112,7 @@ test('a needsReasoning that is NOT a boolean does not satisfy the step', () => {
 });
 
 test('ONE incomplete process among several blocks completion of the whole interview', () => {
-    // The matrix is per process: a half-described second process cannot ride in on a complete
-    // first one.
+    // The matrix is per process: a half-described second one cannot ride in on a complete first.
     const good = completeProcess();
     const stub = { id: 'process-2', title: 'Half described', task: 'something' };
 
@@ -146,7 +129,6 @@ test('a claimed complete with NO processes at all is not completed', () => {
 });
 
 test('the model cannot skip completion by omitting have/missing entirely', () => {
-    // No claimed lists and a complete status, yet the computed matrix must still decide.
     const process = completeProcess();
     delete process.trigger;
 
@@ -156,8 +138,7 @@ test('the model cannot skip completion by omitting have/missing entirely', () =>
 });
 
 test('a CLAIMED field cannot make a real gap vanish when closing', () => {
-    // At closing only the payload counts, so a claim of `have` holding everything must not make an
-    // absent field disappear.
+    // At closing only the payload counts, so a `have` claim must not make an absent field disappear.
     const incomplete = { id: 'p1', title: 'A stub', task: 'something' };
 
     const result = parseModelResponse(JSON.stringify({
@@ -174,8 +155,6 @@ test('a CLAIMED field cannot make a real gap vanish when closing', () => {
 });
 
 test('a claim of missing for a field that IS present does not stall the interview', () => {
-    // The other direction: believing a `missing` claim about a supplied field would ask an
-    // already-answered question forever.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -187,10 +166,6 @@ test('a claim of missing for a field that IS present does not stall the intervie
     assert.equal(result.status, 'complete', 'the payload settles it, the claim does not stall');
     assert.deepEqual(result.missing, []);
 });
-
-// ===========================================================================
-// 1b. THE EITHER/OR EFFORT PAIR
-// ===========================================================================
 
 test('frequencyPerWeek ALONE satisfies the effort requirement', () => {
     const process = completeProcess();
@@ -217,7 +192,6 @@ test('NEITHER half of the effort pair leaves it missing', () => {
     delete process.timePerPeriod;
 
     const missing = fieldsMissingFrom(process);
-    // The effort requirement surfaces as one of the pair, not both.
     assert.ok(EFFORT_FIELDS.some((f) => missing.includes(f)), 'the effort requirement is reported missing');
     assert.equal(missing.includes(EFFORT_FIELDS[0]), true);
     assert.equal(missing.includes(EFFORT_FIELDS[1]), true);
@@ -228,13 +202,10 @@ test('NEITHER half of the effort pair leaves it missing', () => {
 // 2. needsReasoning IS DERIVED, NOT ASKED
 // ===========================================================================
 //
-// There is NO function that derives needsReasoning from a decidedHow string: the derivation is the
-// MODEL's reading, instructed by the prompt, and stored on the step. What the code holds, and what
-// is tested here, is that judgementBandFor reads the flag correctly and that the matrix refuses a
-// step whose flag is absent.
+// There is NO function deriving needsReasoning from a decidedHow string: the derivation is the
+// MODEL's reading, stored on the step.
 
 test('the matrix forces every step to carry the derived flag', () => {
-    // A step with a basis but no derived flag is INCOMPLETE.
     const step = completeStep();
     delete step.needsReasoning;
     assert.equal(stepIsComplete(step), false, 'a step without the flag is not complete');
@@ -259,8 +230,7 @@ test('judgementBandFor: no reasoning steps is band 5', () => {
 });
 
 test('judgementBandFor: one judgement step in five reads as band 4, not as "needs a person"', () => {
-    // A chain almost entirely mechanical with one judgement call must not collapse to the
-    // judgement-bound band.
+    // A chain almost entirely mechanical with one judgement call must not collapse.
     assert.equal(
         judgementBandFor({
             steps: [
@@ -276,7 +246,6 @@ test('judgementBandFor: one judgement step in five reads as band 4, not as "need
 });
 
 test('judgementBandFor falls back to 3 when there is nothing to read', () => {
-    // The honest "not enough information" answer, not a flattering 5.
     assert.equal(judgementBandFor({ steps: [] }), 3);
     assert.equal(judgementBandFor({}), 3);
     assert.equal(judgementBandFor({ steps: [{ name: 'no flag' }] }), 3);
@@ -290,13 +259,10 @@ test('judgementBandFor honours an explicit judgementScore and clamps it', () => 
 });
 
 test('the scale is INVERTED as documented: judgement is 1, rules are 5', () => {
-    // Everything downstream is written against this direction, so it is pinned.
     assert.ok(judgementBandFor({ steps: [{ needsReasoning: true }] }) < judgementBandFor({ steps: [{ needsReasoning: false }] }));
 });
 
 test('the fixture pairs a rule with false and a variable basis with true, per the prompt', async () => {
-    // The prompt's own examples as the fixture holds them: a threshold is a rule, "depends on..."
-    // is judgement.
     const { buildMockAudit } = await import('../ai/fixtures/mock-audit.js');
     const audit = buildMockAudit('en');
     const steps = audit.workflows.flatMap((w) => (w.steps || []).map((s) => ({ decidedHow: s.decidedHow, needsReasoning: s.needsReasoning })));
@@ -318,9 +284,8 @@ test('the fixture pairs a rule with false and a variable basis with true, per th
 // 4. BOTH PAYLOAD SHAPES
 // ===========================================================================
 //
-// A reply carrying `processes` and no `audit` must not fall through to the older single-shot
-// check and error. Both directions are pinned here so it cannot return. `workflowsFrom` is the
-// one place that reads either shape, so it is tested directly as well as through parseModelResponse.
+// A reply carrying `processes` and no `audit` must not fall through to the single-shot check and
+// error. `workflowsFrom` is the one place that reads either shape.
 
 test('a processes-only reply with a complete process returns complete', () => {
     const result = completeWith([completeProcess()]);
@@ -347,7 +312,6 @@ test('a reply with NEITHER shape is an error', () => {
 });
 
 test('a reply with an EMPTY processes array and no audit is an error or asking, never complete', () => {
-    // An interview that produced no process has produced nothing to score.
     const result = parseModelResponse(JSON.stringify({ status: 'complete', content: 'done', processes: [] }));
     assert.notEqual(result.status, 'complete');
 });
@@ -367,12 +331,10 @@ test('workflowsFrom returns undefined when neither shape is present', () => {
 });
 
 test('workflowsFrom treats an EMPTY processes array as no payload', () => {
-    // Empty is not a payload: it must not shadow a valid audit, nor read as success on its own.
     assert.equal(workflowsFrom({ processes: [] }), undefined);
 });
 
 test('workflowsFrom prefers processes when BOTH shapes are present', () => {
-    // The interview shape wins when a model emits both: a behaviour, pinned so a change is visible.
     assert.deepEqual(
         workflowsFrom({ processes: [{ id: 'interview' }], audit: { workflows: [{ id: 'singleshot' }] } }),
         [{ id: 'interview' }]
@@ -380,8 +342,6 @@ test('workflowsFrom prefers processes when BOTH shapes are present', () => {
 });
 
 test('an interview reply with a stub processes and a complete audit does not complete', () => {
-    // The consequence of the precedence above: the stub wins, so the reply is downgraded rather
-    // than closing on the audit.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -390,10 +350,6 @@ test('an interview reply with a stub processes and a complete audit does not com
     }));
     assert.equal(result.status, 'asking', 'the incomplete interview shape governs');
 });
-
-// ===========================================================================
-// 5. COMPLETE VERSUS INCOMPLETE
-// ===========================================================================
 
 test('a fully populated process built from the field lists is COMPLETE', () => {
     const process = completeProcess();
@@ -422,7 +378,6 @@ test('an empty steps array is incomplete', () => {
 });
 
 test('a null or empty-string field is NOT supplied, and the code says so', () => {
-    // An empty value must leave the field missing, or a blank answer would count.
     for (const field of PROCESS_FIELDS) {
         if (field === 'steps') continue; // steps has its own rule, covered above
         for (const empty of [null, '', '   ']) {
@@ -433,7 +388,6 @@ test('a null or empty-string field is NOT supplied, and the code says so', () =>
                 `${field}=${JSON.stringify(empty)} must count as not supplied`
             );
         }
-        // And a zero NUMBER is not empty: 0 is a real answer for a count.
         if (['mistakesPerPeriod', 'peopleAffected'].includes(field)) {
             const process = completeProcess();
             process[field] = 0;
@@ -443,8 +397,6 @@ test('a null or empty-string field is NOT supplied, and the code says so', () =>
 });
 
 test('an EMPTY ARRAY is not supplied, because it is a statement nobody made', () => {
-    // handoffTo: [] says "the work does not go anywhere else" - a real answer only if the
-    // participant said so.
     for (const field of ['handoffTo', 'waitsFor', 'dependsOn', 'systems', 'touchedDepartments']) {
         const process = completeProcess();
         process[field] = [];
@@ -473,7 +425,6 @@ test('the either/or pair: neither leaves it missing', () => {
 });
 
 test('the either/or pair: BOTH present is not an error', () => {
-    // Giving both a frequency and a time per period is answering more fully, not a mistake.
     const process = completeProcess();
     process.frequencyPerWeek = 3;
     process.timePerPeriod = '2 hours a day';
@@ -482,11 +433,6 @@ test('the either/or pair: BOTH present is not an error', () => {
     assert.equal(completeWith([process]).status, 'complete');
 });
 
-// ===========================================================================
-// 6. THE MOCK'S SHAPE MATCHES THE PROMPT'S
-// ===========================================================================
-
-/** One mock turn for the given number of prior user answers. */
 async function mockTurn(userTurns, lang = 'en') {
     const { generate } = await import('../ai/adapters/mock.js');
     const messages = Array.from({ length: userTurns }, (_, i) => ({ role: 'user', content: `answer ${i}` }));
@@ -494,8 +440,7 @@ async function mockTurn(userTurns, lang = 'en') {
 }
 
 test('the mock emits `processes` and NOT `audit` on completion', async () => {
-    // Emitting a second shape to satisfy the parser would hide exactly the defect the parser has,
-    // so the absence is asserted explicitly: a future change that re-adds the old key fails here.
+    // Emitting a second shape to satisfy the parser would hide the defect the parser has.
     const reply = await mockTurn(8);
 
     assert.equal(reply.status, 'complete');
@@ -525,7 +470,6 @@ test('the mock reports an empty missing list on completion', async () => {
 });
 
 test('the mock\'s reported matrix narrows as the conversation goes on', async () => {
-    // The pair must CHANGE turn by turn, which the server's loop relies on.
     const early = await mockTurn(1);
     const late = await mockTurn(8);
 
@@ -534,7 +478,6 @@ test('the mock\'s reported matrix narrows as the conversation goes on', async ()
 });
 
 test('the mock\'s reply survives parseModelResponse as complete with a normalised payload', async () => {
-    // The mock's actual output, not a hand-built reply, must complete the interview.
     const reply = await mockTurn(8);
     const parsed = parseModelResponse(JSON.stringify(reply));
 
@@ -547,13 +490,9 @@ test('the mock\'s reply survives parseModelResponse as complete with a normalise
 // THE PAYLOAD IS RESOLVED BY CONTENT, NOT BY NULLNESS
 // ===========================================================================
 //
-// THE DANGEROUS SHAPE IS A COMPLETE `processes` BESIDE A DEGENERATE `audit`. Keeping `audit`
-// whenever it is merely non-null lets an empty, wrong-typed or stale one win over a good
-// `processes`, so the client scores an empty list and the participant sees the scoring-failed
-// panel after a successful interview.
-//
-// Tested THROUGH parseModelResponse on `result.audit.workflows`, the field the client reads. The
-// mock emits `processes` only, so every case here is a literal payload.
+// THE DANGEROUS SHAPE IS A COMPLETE `processes` BESIDE A DEGENERATE `audit`: keeping `audit`
+// whenever it is merely non-null lets an empty or stale one win, so the client scores an empty list.
+// Tested through `result.audit.workflows`, the field the client reads.
 
 test('a complete processes beats an EMPTY audit.workflows', () => {
     const result = completeWith([completeProcess()], { audit: { workflows: [] } });
@@ -583,7 +522,6 @@ test('a complete processes beats an audit with NO workflows key', () => {
 });
 
 test('a complete processes beats a STALE audit.workflows carrying an older entry', () => {
-    // audit.workflows is a valid array but not what the model just produced; content wins.
     const result = completeWith([completeProcess()], {
         audit: { workflows: [{ id: 'a-stale-entry', title: 'From an earlier turn' }] }
     });
@@ -599,7 +537,6 @@ test('a complete processes beats a STALE audit.workflows carrying an older entry
 });
 
 test('an audit.workflows still resolves when there are NO processes', () => {
-    // The other direction must not regress: the single-shot shape still works.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -611,7 +548,6 @@ test('an audit.workflows still resolves when there are NO processes', () => {
 });
 
 test('the illustrative and note flags are still taken from either place', () => {
-    // The envelope is not preferred for the WORKFLOWS, but its labels are still taken.
     const fromRoot = completeWith([completeProcess()], { illustrative: true, note: 'at the root' });
     assert.equal(fromRoot.audit.illustrative, true);
     assert.equal(fromRoot.audit.note, 'at the root');
@@ -621,12 +557,8 @@ test('the illustrative and note flags are still taken from either place', () => 
     assert.equal(fromEnvelope.audit.note, 'in the envelope');
 });
 
-// ===========================================================================
-// frequencyPerWeek: 0 ASKS AGAIN; mistakesPerPeriod: 0 IS AN ANSWER
-// ===========================================================================
-
 test('frequencyPerWeek: 0 asks again, and names the field', () => {
-    // Zero means the process does not happen, which a model without an answer can fill as a
+    // Zero means the process does not happen, which a model without an answer fills as a
     // placeholder.
     const result = completeWith([completeProcess({ frequencyPerWeek: 0 })]);
 
@@ -635,7 +567,6 @@ test('frequencyPerWeek: 0 asks again, and names the field', () => {
 });
 
 test('any NON-ZERO frequency counts, so the intended range is preserved', () => {
-    // 0.25 (monthly) must work, and 0.01 must not be rounded away by a minimum of 1.
     for (const frequency of [0.01, 0.08, 0.25, 1, 52]) {
         const result = completeWith([completeProcess({ frequencyPerWeek: frequency })]);
         assert.equal(result.status, 'complete', `frequency ${frequency} must count as supplied`);
@@ -652,8 +583,7 @@ test('a NEGATIVE frequency is refused, as a count cannot be negative', () => {
 });
 
 test('mistakesPerPeriod: 0 is STILL SUPPLIED, because "it never goes wrong" is an answer', () => {
-    // The reason the minimum is per field rather than a change to the `count` shape, pinned beside
-    // the frequency case so a future change cannot collapse them into one rule.
+    // Why the minimum is per field rather than a change to the `count` shape.
     const result = completeWith([completeProcess({ mistakesPerPeriod: 0 })]);
 
     assert.equal(result.status, 'complete', 'a process that never goes wrong is a complete answer');
@@ -661,7 +591,6 @@ test('mistakesPerPeriod: 0 is STILL SUPPLIED, because "it never goes wrong" is a
 });
 
 test('the two zero rules are DIFFERENT, asserted together', () => {
-    // Same value (0), same shape (count), opposite outcomes.
     const frequencyZero = completeWith([completeProcess({ frequencyPerWeek: 0 })]);
     const mistakesZero = completeWith([completeProcess({ mistakesPerPeriod: 0 })]);
 
@@ -676,13 +605,8 @@ test('a negative mistakesPerPeriod is still refused, only zero is special', () =
     assert.ok(result.missing.includes('mistakesPerPeriod'));
 });
 
-// ===========================================================================
-// reasoningBasis IS OPTIONAL, AND THAT IS THE TRADE
-// ===========================================================================
-
 test('a step WITHOUT reasoningBasis still completes the interview', () => {
-    // Requiring it would let a model that forgot the quotation stall an otherwise complete
-    // interview forever.
+    // Requiring it would let a model that forgot the quotation stall a complete interview forever.
     const step = completeStep();
     assert.equal(step.reasoningBasis, undefined, 'the builder does not set it');
 
@@ -692,7 +616,6 @@ test('a step WITHOUT reasoningBasis still completes the interview', () => {
 });
 
 test('a PRESENT reasoningBasis must be real prose, or the step is incomplete', () => {
-    // Absent is fine; present-and-wrong is not: a blank quotation reads as having nothing to say.
     for (const bad of ['', '   ', '\t\n', 42, {}, []]) {
         const result = completeWith([completeProcess({ steps: [completeStep({ reasoningBasis: bad })] })]);
         assert.equal(result.status, 'asking', `reasoningBasis ${JSON.stringify(bad)} must not count`);
@@ -715,13 +638,7 @@ test('a well-formed reasoningBasis completes and is kept', () => {
     assert.equal(result.audit.workflows[0].steps[0].reasoningBasis, 'if stock is under ten');
 });
 
-// ===========================================================================
-// THE BAND'S DILUTION, INCLUDING WHERE IT FLATTENS
-// ===========================================================================
-
 test('the band distinguishes one judgement in six from six mechanical', () => {
-    // Five mechanical plus one judgement reads differently from six mechanical, so a single
-    // boundary is not collapsed into "all rules".
     const oneOfSix = judgementBandFor({ steps: [...Array(1)].map(() => ({ needsReasoning: true })).concat([...Array(5)].map(() => ({ needsReasoning: false }))) });
     const zeroOfSix = judgementBandFor({ steps: [...Array(6)].map(() => ({ needsReasoning: false })) });
 
@@ -731,9 +648,8 @@ test('the band distinguishes one judgement in six from six mechanical', () => {
 });
 
 test('THE FLATTENING POINT: one judgement in EIGHT reads the same as none', () => {
-    // The dilution, pinned so the arithmetic cannot drift: 1/8 = 0.125, 5 - 0.125*4 = 4.5, which
-    // rounds to 5. At eight steps the boundary vanishes, so a single judgement step is
-    // indistinguishable from none.
+    // The dilution: 1/8 = 0.125, 5 - 0.125*4 = 4.5, which rounds to 5. At eight steps the boundary
+    // vanishes, so one judgement step is indistinguishable from none.
     const oneOfEight = judgementBandFor({ steps: [...Array(1)].map(() => ({ needsReasoning: true })).concat([...Array(7)].map(() => ({ needsReasoning: false }))) });
     const zeroOfEight = judgementBandFor({ steps: [...Array(8)].map(() => ({ needsReasoning: false })) });
 
@@ -748,7 +664,6 @@ test('one judgement in SEVEN is still band 4, so the flattening starts at eight'
 });
 
 test('the band monotonicity holds: more reasoning steps never raises the band', () => {
-    // Across a spread of lengths and counts, so one case cannot hide a reversed comparison.
     for (const total of [2, 3, 5, 6, 8, 10]) {
         let previous = 6;
         for (let reasoning = 0; reasoning <= total; reasoning += 1) {
