@@ -1,11 +1,6 @@
 /**
- * Workflow identity: the identity rule and the two client fixes.
- *
  * THE RULE IS AN EXACT STEP-NAME CO-TEST with no similarity threshold, tested by driving the REAL
  * client in a sandbox rather than re-implementing the rule.
- *
- * `data/demo/` and the seed are unchanged: every demo response holds ONE flat workflow with an
- * explicit id, which `withWorkflowIdentity` passes through untouched.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,13 +14,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.join(__dirname, '..');
 
 const { slugForTask, titleForTask, withWorkflowIdentity } = await import('../ai/workflow-identity.js');
-
-// ===========================================================================
-// THE CLIENT SANDBOX - the real `public/js/audit.js`, driven through real turns
-// ===========================================================================
-//
-// Not exported, so they are exercised through the real client and its recorded `/api/response`
-// POSTs.
 
 async function loadClient({ replies }) {
     const { createContext, runInContext } = await import('node:vm');
@@ -102,7 +90,6 @@ function lastPostedWorkflows(client) {
 const STEP = (name) => ({ name, whatHappens: `${name} happens`, decidedHow: 'a rule', needsReasoning: false });
 
 test('the SAME task produces the SAME id on consecutive turns', () => {
-    // An id that changes between turns makes one process look like several.
     const first = withWorkflowIdentity([{ task: 'Triaging overnight complaints' }]);
     const second = withWorkflowIdentity([{ task: 'Triaging overnight complaints' }]);
 
@@ -111,8 +98,7 @@ test('the SAME task produces the SAME id on consecutive turns', () => {
 });
 
 test('two SAME-TASK processes in ONE payload get DISTINCT ids', () => {
-    // `findConflictGroups` keys a union-find on `id`, so uniqueness is enforced within the payload,
-    // not only across turns.
+    // `findConflictGroups` keys a union-find on `id`, so uniqueness is enforced within the payload.
     const workflows = withWorkflowIdentity([{ task: 'Same task' }, { task: 'Same task' }, { task: 'Same task' }]);
 
     assert.deepEqual(workflows.map((w) => w.id), ['same-task', 'same-task-2', 'same-task-3']);
@@ -120,7 +106,6 @@ test('two SAME-TASK processes in ONE payload get DISTINCT ids', () => {
 });
 
 test('an explicit id and title WIN, always - the demo seed is not rewritten', () => {
-    // The demo seed writes its own id and title; overwriting them would change what the demo scores.
     const workflows = withWorkflowIdentity([{ id: 'example-ltd-demo-process', title: 'Invoice intake', task: 'ignored' }]);
 
     assert.equal(workflows[0].id, 'example-ltd-demo-process', 'the explicit id is kept');
@@ -128,7 +113,6 @@ test('an explicit id and title WIN, always - the demo seed is not rewritten', ()
 });
 
 test('a generated id cannot collide with an explicit one carried beside it', () => {
-    // The explicit id is claimed through the same counter, so a slug cannot be handed the same key.
     const workflows = withWorkflowIdentity([
         { id: 'shared-task', title: 'T', task: 'x' },
         { task: 'Shared task' }
@@ -148,8 +132,7 @@ test('the input is NOT mutated, so a later reader of the original is unaffected'
 });
 
 test('a task with no surviving characters falls back rather than producing an empty id', () => {
-    // `validateWorkflows` refuses an empty id, so the fallback stops the scorer rejecting a
-    // non-Latin task.
+    // `validateWorkflows` refuses an empty id, so a non-Latin task needs the fallback.
     assert.equal(slugForTask('日本語'), 'process', 'non-Latin falls back');
     assert.equal(slugForTask(''), 'process', 'empty falls back');
     assert.equal(slugForTask(undefined), 'process', 'absent falls back');
@@ -184,7 +167,6 @@ test('a REWORDED task with a SHARED STEP reattaches the round\'s id', async () =
 });
 
 test('the case the fix must NOT catch: a DIFFERENT process that shares no step is NOT merged', async () => {
-    // Merging a genuinely new process would DISCARD a participant's answers.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-one', title: 'One', steps: [STEP('Open the invoice')] }] } },
@@ -201,7 +183,6 @@ test('the case the fix must NOT catch: a DIFFERENT process that shares no step i
 });
 
 test('a reply with NO steps is DECLINED, not merged', async () => {
-    // A reply carrying no steps is not evidence of anything.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-one', title: 'One', steps: [STEP('Open the invoice')] }] } },
@@ -234,7 +215,7 @@ test('a reply that ALREADY matches is left alone, with nothing announced', async
 });
 
 test('a merge is LOUD - the console.warn fires, because a silent merge is worse than a split', async () => {
-    // A merge discards one process, a split leaves a visible extra: when the rule fires, it says so.
+    // A merge discards one process, a split leaves a visible extra: the rule announces itself.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-one', title: 'One', steps: [STEP('Open the invoice')] }] } },
@@ -251,7 +232,6 @@ test('a merge is LOUD - the console.warn fires, because a silent merge is worse 
 });
 
 test('the rule runs on a MULTI-ENTRY reply - several held, several incoming, both resolved', async () => {
-    // An EXACT STEP-NAME MATCH says WHICH held process is being reworded.
 
     const severalHeld = await loadClient({
         replies: [
@@ -282,8 +262,7 @@ test('the rule runs on a MULTI-ENTRY reply - several held, several incoming, bot
 });
 
 test('A TWO-ENTRY REPLY IS RESOLVED - the shape a real reply has, which no test covered', async () => {
-    // Two entries share a step WITH EACH OTHER and neither is held: a rule requiring exactly one on
-    // each side returns untouched every turn.
+    // Two entries share a step WITH EACH OTHER and neither is held.
     const client = await loadClient({
         replies: [{
             status: 'complete', content: 'x',
@@ -303,7 +282,6 @@ test('A TWO-ENTRY REPLY IS RESOLVED - the shape a real reply has, which no test 
 });
 
 test('the order is IRRELEVANT: the same pair either way keeps the same winner', async () => {
-    // The winner must not depend on which entry comes first.
     const rich = { id: 'rich', title: 'Rich', steps: [STEP('Check the lines'), STEP('Total the charges')], frequencyPerWeek: 5, minutesPerInstance: 12 };
     const sparse = { id: 'sparse', title: 'Sparse', steps: [STEP('Check the lines')] };
 
@@ -321,7 +299,6 @@ test('the order is IRRELEVANT: the same pair either way keeps the same winner', 
 });
 
 test('the step-name comparison TRIMS and CASE-FOLDS, so case and padding do not defeat it', async () => {
-    // `stepNamesOf` maps each name through `.trim().toLowerCase()`.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-one', title: 'One', steps: [STEP('Open the invoice')] }] } },
@@ -336,8 +313,8 @@ test('the step-name comparison TRIMS and CASE-FOLDS, so case and padding do not 
 });
 
 test('KNOWN LIMIT: INTERNAL whitespace is not collapsed, so a doubled space defeats the match', async () => {
-    // `trim().toLowerCase()` does NOT collapse internal runs of whitespace, so `"Open  the invoice"`
-    // does not match `"Open the invoice"`: a doubled space produces a second process.
+    // `trim().toLowerCase()` does NOT collapse internal whitespace: a doubled space produces a
+    // second process.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-one', title: 'One', steps: [STEP('Open the invoice')] }] } },
@@ -354,8 +331,6 @@ test('KNOWN LIMIT: INTERNAL whitespace is not collapsed, so a doubled space defe
 });
 
 test('KNOWN LIMIT: a rewording that renames EVERY step still duplicates', async () => {
-    // An exact co-test, so a variant whose steps are all renamed shares nothing and appears as a
-    // second process: the accepted direction.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-one', title: 'One', steps: [STEP('Open the complaint')] }] } },
@@ -372,11 +347,7 @@ test('KNOWN LIMIT: a rewording that renames EVERY step still duplicates', async 
     assert.equal(/reworded the process/.test(client.warnings.join(' ')), false, 'nothing was merged');
 });
 
-// ===========================================================================
-// ===========================================================================
-
 test('two DIFFERENT processes sharing no step name stay TWO', async () => {
-    // Neither shares a step with the other and neither carries nothing: the rule must keep both.
     const client = await loadClient({
         replies: [{
             status: 'complete', content: 'x',
@@ -397,7 +368,6 @@ test('two DIFFERENT processes sharing no step name stay TWO', async () => {
 });
 
 test('two processes each matching a DIFFERENT held process stay TWO', async () => {
-    // Each entry resolves against its own held process, not whichever one matched first.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'a', audit: { workflows: [
@@ -421,8 +391,8 @@ test('two processes each matching a DIFFERENT held process stay TWO', async () =
 });
 
 test('a NEWLY NAMED process ALONE is kept - the case that killed the reverted filter', async () => {
-    // The prompt starts a new process "from its `task` and `trigger` onward", so it arrives EXACTLY
-    // like an empty entry: used as a DROP predicate, that discards it.
+    // The prompt starts a new process "from its `task` and `trigger` onward": used as a DROP
+    // predicate, the step-less entry is discarded.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'a', audit: { workflows: [{ id: 'first', title: 'First', steps: [STEP('Open the invoice')] }] } },
@@ -439,22 +409,14 @@ test('a NEWLY NAMED process ALONE is kept - the case that killed the reverted fi
         'and it was not folded into the richer sibling');
 });
 
-// ===========================================================================
-// 3c. THE REAL PAYLOADS, AGAINST THE CURRENT CONTRACT
-// ===========================================================================
 //
 // `reconcileWorkflowIdentity` has ONE arm: an exactly equal step name. An entry carrying nothing is
 // NOT folded into a richer sibling, because no discriminator separates a stale carry-forward from a
-// newly named process - they are the SAME SHAPE - so folding it would SILENTLY DISCARD A PROCESS
-// THE PARTICIPANT HAD JUST NAMED.
+// newly named process - they are the SAME SHAPE.
 //
-// ASSERT THE OUTCOME, NOT THE LOG WORDING.
-//
-// Provenance of each fixture is in `test/fixtures/README.md`: `onerow.json` is verbatim from the
-// owner's VPS, the other two are reconstructed from these assertions. `bills` shares three step
-// names so it folds; `fuelcard` and `onerow` share none, so they do not.
+// Provenance is in `test/fixtures/README.md`: `onerow.json` is verbatim, the other two are
+// reconstructed from these assertions.
 
-/** Reads one committed artefact from `test/fixtures/`: a bare array of workflows. */
 function readArtefact(file) {
     return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
@@ -467,7 +429,6 @@ const ARTEFACTS = {
     onerow: { file: path.join(FIXTURES, 'onerow.json'), keptKeys: 8, keptSteps: 5 }
 };
 
-// The fixtures are committed, so a missing or unparsable one is a defect rather than a host quirk.
 test('every committed artefact parses to a non-empty array of workflows', () => {
     for (const [name, spec] of Object.entries(ARTEFACTS)) {
         const workflows = readArtefact(spec.file);
@@ -488,7 +449,6 @@ const idsOf = (workflows) => workflows.map((w) => w.id).sort();
 test('the REAL phone-bills reply folds to ONE entry on its three shared step names', async () => {
     const workflows = readArtefact(ARTEFACTS.bills.file);
 
-    // 2 entries, both 5 steps, 3 SHARED step names, one without `minutesPerInstance`.
     assert.equal(workflows.length, 2, 'the artefact holds two entries');
     assert.equal(workflows.filter((w) => w.minutesPerInstance === undefined).length, 1,
         'and one of them lacks minutesPerInstance - the richer/sparser pair');
@@ -506,8 +466,7 @@ test('the REAL phone-bills reply folds to ONE entry on its three shared step nam
 test('the REAL fuel-card reply is LEFT ALONE - its stub carries no steps to co-test on', async () => {
     const workflows = readArtefact(ARTEFACTS.fuelcard.file);
 
-    // The count is the assertion. The reasoning lives in the by-absence note in `ai/audit.js`, with
-    // its four-versus-two word-overlap measurement.
+    // The count is the assertion; the reasoning is the by-absence note in `ai/audit.js`.
     assert.equal(workflows.length, 2, 'the artefact holds two entries');
     assert.equal(workflows.filter((w) => !Array.isArray(w.steps) || w.steps.length === 0).length, 1,
         'and exactly one carries no steps');
@@ -564,8 +523,7 @@ test('EVERY PERMUTATION of each artefact gives the same result', async () => {
 });
 
 test('the CHAIN case: a~b and b~c, in EVERY order - pass 2 is a SINGLE pass, not a fixed point', async () => {
-    // `a~b` on step S, `b~c` on step T, `a` and `c` sharing nothing. Pass 2 is a single `for` loop,
-    // so it is NOT repeated to a fixed point: orders placing the bridge entry LAST leave two.
+    // Pass 2 is a single `for` loop, NOT repeated to a fixed point: the bridge entry LAST leaves two.
     const a = { id: 'a', title: 'a', steps: [STEP('S')] };
     const b = { id: 'b', title: 'b', steps: [STEP('S'), STEP('T')] };
     const c = { id: 'c', title: 'c', steps: [STEP('T')] };
@@ -583,7 +541,7 @@ test('the CHAIN case: a~b and b~c, in EVERY order - pass 2 is a SINGLE pass, not
 });
 
 test('FINDING: the chain is NOT collapsed in every order - pass 2 is not repeated to a fixed point', async () => {
-    // MEASURED: order [a, c, b] folds `b` into `a` and never re-compares `c`, so TWO remain.
+    // MEASURED: [a, c, b] folds `b` into `a` and never re-compares `c`.
     const a = { id: 'a', title: 'a', steps: [STEP('S')] };
     const b = { id: 'b', title: 'b', steps: [STEP('S'), STEP('T')] };
     const c = { id: 'c', title: 'c', steps: [STEP('T')] };
@@ -609,8 +567,7 @@ test('TWO EMPTY ENTRIES ALONE are BOTH KEPT', async () => {
 });
 
 test('a NEWLY NAMED process beside a finished one is KEPT', async () => {
-    // A participant names a second process and it arrives step-less, so an absence-based fold would
-    // swallow it into the finished sibling - silently and unrecoverably.
+    // An absence-based fold would swallow the newly named process into its sibling.
     const finished = { id: 'finished', title: 'Finished', steps: [STEP('Open the invoice')], frequencyPerWeek: 5 };
     const newlyNamed = { id: 'newly-named', title: 'Onboarding a new supplier', task: 'Onboarding a new supplier', trigger: 'a supplier is agreed' };
 
@@ -619,8 +576,8 @@ test('a NEWLY NAMED process beside a finished one is KEPT', async () => {
 });
 
 test('an EXHAUSTED turn CARRIES a previously-held process forward, saved AND scored', async () => {
-    // An exhausted reply is `status: 'asking'` with `exhausted: true`, so a payload chosen on
-    // `isComplete` alone discards the carried-forward process.
+    // An exhausted reply is `status: 'asking'`, so a payload chosen on `isComplete` discards the
+    // carry-forward.
     const STEP = (name) => ({ name, whatHappens: 'x', decidedHow: 'r', needsReasoning: false });
 
     const exhaustedTurn = await loadClient({
