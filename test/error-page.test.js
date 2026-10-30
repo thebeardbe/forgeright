@@ -1,9 +1,7 @@
 /**
- * The error pages: the format decision, the 500 handler, and what must not leak.
- *
  * "The response contains no file path" is FALSE for every page: the embedded stylesheet and script
- * partials carry build comments naming `lib/palettes.js`. The leak tests therefore assert the
- * absence of the ERROR'S OWN CONTENT - the message, the stack frames, the file the throw came from.
+ * partials carry build comments naming `lib/palettes.js`. The leak tests assert the absence of the
+ * ERROR'S OWN CONTENT instead.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,7 +26,6 @@ const store = await import('../lib/store/index.js');
 store.createOrganisation('Error page test organisation');
 store.closeAll();
 
-/** Every variable the spawned server reads; the child gets this as its WHOLE environment. */
 function spawnedEnv(port, extra = {}) {
     return {
         PATH: process.env.PATH,
@@ -44,7 +41,6 @@ function spawnedEnv(port, extra = {}) {
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // An empty string is PRESENT, so dotenv leaves it alone: the gate stays closed.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: '',
@@ -65,10 +61,7 @@ function freePort() {
 
 const PORT = await freePort();
 
-/**
- * One HTTP request, with the allowed Host and the trusted HTTPS header by default. `host` is
- * overridden to exercise the 421; `rawBody` carries a body that is not valid JSON.
- */
+/** One HTTP request, with the allowed Host and the trusted HTTPS header by default. */
 function request({ method = 'GET', path: urlPath = '/', headers = {}, body, rawBody, host = ALLOWED_HOST } = {}) {
     const payload = rawBody !== undefined ? rawBody : (body === undefined ? undefined : JSON.stringify(body));
     return new Promise((resolve, reject) => {
@@ -112,7 +105,6 @@ async function waitForServer(deadlineMs = 8000) {
     throw new Error(`server did not become ready on port ${PORT}`);
 }
 
-/** Boots a server on its own port and captures its output, for a different environment. */
 async function bootWith(extra = {}) {
     const port = await freePort();
     const child = spawn(process.execPath, [SERVER], { env: spawnedEnv(port, extra), stdio: ['ignore', 'pipe', 'pipe'] });
@@ -166,10 +158,6 @@ after(async () => {
     });
 });
 
-// ===========================================================================
-// 1. THE `Accept` DECISION - the constraint that could break a participant silently
-// ===========================================================================
-
 test('the Accept header decides the format, and the status is correct in every case', async () => {
     const cases = [
         ['application/json', 'application/json'],
@@ -209,8 +197,7 @@ test('the `includes` reasoning holds: a JSON type ANYWHERE in the list wins', as
 });
 
 test('a header PREFERRING HTML but naming JSON gets JSON - INTENDED, quality values are not read', async () => {
-    // The quality value is deliberately not read: a page would produce a parse error in a client
-    // that named `application/json`.
+    // A page would produce a parse error in a client that named `application/json`.
     const res = await request({
         path: '/definitely-not-a-page',
         headers: { accept: 'text/html;q=0.9, application/json;q=0.1' }
@@ -232,11 +219,6 @@ test('a JSON error carries the shape a client parses', async () => {
     assert.ok(parsed.error.length > 0, 'and it says something');
 });
 
-// ===========================================================================
-// 2. THE ERROR STATUS - a client error keeps its status, a throw becomes 500
-// ===========================================================================
-
-/** A malformed JSON body: `express.json()` rejects it with `err.status = 400`, a CLIENT error. */
 async function malformedBodyRequest(extra = {}) {
     return request({
         method: 'POST',
@@ -247,7 +229,6 @@ async function malformedBodyRequest(extra = {}) {
     });
 }
 
-/** Over the 256kb limit, so the parse never runs and `express.json()` rejects it with 413. */
 async function oversizedBodyRequest(extra = {}) {
     const filler = 'x'.repeat(300 * 1024);
     const body = `{"a":"${filler}"}`;
@@ -260,15 +241,10 @@ async function oversizedBodyRequest(extra = {}) {
     });
 }
 
-/**
- * A GENUINE UNCAUGHT THROW through the real handler body, read out of server.js and mounted on a
- * two-route app: no route throws uncaught, so this cannot be reached by a real request.
- */
+// NOT covered by a real request: no route throws uncaught. The handler body is read out of server.js
+// and mounted on a two-route app.
 
-/**
- * The status resolution, lifted verbatim from server.js's error middleware. Throws if the block
- * cannot be found, so a rename fails loudly rather than testing a stale copy.
- */
+/** Lifted verbatim from server.js's middleware; throws if the block cannot be found. */
 function statusResolverFromServer() {
     const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
 
@@ -289,7 +265,6 @@ async function genuineThrow(status) {
     const resolveStatus = statusResolverFromServer();
 
     const app = express();
-    // Without this, `res.render` throws "No default engine" and the 500 comes from Express.
     app.set('view engine', 'ejs');
     app.set('views', path.join(PROJECT_ROOT(), 'views'));
     app.use((req, res, next) => { res.locals.currentUrl = req.path; next(); });
@@ -356,8 +331,7 @@ test('an error status is served as itself WITHIN 400-599, and folded to 500 outs
 });
 
 test('a FRACTIONAL status folds to 500 - the case that catches a missing integer test', async () => {
-    // `writeHead` does `statusCode |= 0`, so 418.5 truncates to 418 without throwing: a wrong
-    // status, served silently.
+    // `writeHead` does `statusCode |= 0`, so 418.5 truncates to 418 without throwing.
     for (const fractional of [400.5, 418.5, 499.99]) {
         const res = await genuineThrow(fractional);
         assert.equal(res.status, 500,
@@ -366,7 +340,7 @@ test('a FRACTIONAL status folds to 500 - the case that catches a missing integer
 });
 
 test('err.status 200 does NOT serve an error page with a SUCCESS status - the worst invisible failure', async () => {
-    // A 2xx is a monitor counting a server fault AS A SUCCESS: no crash, no log, no alert.
+    // A 2xx is a monitor counting a server fault AS A SUCCESS.
     for (const successLike of [200, 201, 204, 301, 302, 304]) {
         const res = await genuineThrow(successLike);
         assert.equal(res.status, 500, `err.status ${successLike} must NOT produce a success status`);
@@ -375,7 +349,7 @@ test('err.status 200 does NOT serve an error page with a SUCCESS status - the wo
 });
 
 test('the FLOOR is 400 rather than 100, so an error page cannot carry a 1xx or 2xx or 3xx', async () => {
-    // The throw already happened; a 3xx would REDIRECT the client somewhere unrelated.
+    // A 3xx would REDIRECT the client somewhere unrelated.
     assert.equal((await genuineThrow(399)).status, 500, '399 is below the floor and folds');
     assert.equal((await genuineThrow(400)).status, 400, '400 is the floor and is served');
     assert.equal((await genuineThrow(599)).status, 599, '599 is the ceiling and is served');
@@ -402,8 +376,7 @@ test('an error with an UNRECOGNISED status falls back to 500 - the safe directio
 });
 
 test('a MALFORMED BODY leaks NOTHING - no message, no stack, no body fragment', async () => {
-    // Asserted by its actual text: this Node's parser says "Expected property name or '}' in JSON
-    // at position 1", so a check for "Unexpected token" alone would pass while it was rendered.
+    // Asserted by its actual text: this Node's parser says "Expected property name or '}'".
     const res = await malformedBodyRequest({ accept: 'text/html' });
 
     assert.doesNotMatch(res.text, /Expected property name|Unexpected token|in JSON at position/i,
@@ -415,7 +388,6 @@ test('a MALFORMED BODY leaks NOTHING - no message, no stack, no body fragment', 
 });
 
 test('a DISTINCTIVE secret in the error does not reach the response, while the log has it', async () => {
-    // The malformed body echoes a body fragment, which is where a secret travels.
     const secret = 'zQX-SECRET-4417';
     const booted = await bootWith();
     try {
@@ -475,13 +447,9 @@ test('a JSON client gets a JSON 400 for a malformed body, so it can parse its ow
     assert.equal(typeof parsed.error, 'string', 'with the `error` key a client reads');
 });
 
-// ===========================================================================
-// 3. THE `headersSent` PATH - constructed, and stated as constructed
-// ===========================================================================
-
 test('the headersSent path hands off to Express rather than throwing a second time', async () => {
-    // No route sends headers and then throws, so this is constructed. `res.status(...)` throws once
-    // headers are sent: a handler that rendered anyway would raise a SECOND error and hide the first.
+    // `res.status(...)` throws once headers are sent: a handler that rendered would raise a SECOND
+    // error and hide the first.
     const express = (await import('express')).default;
     const { sendError } = await import('../lib/error-page.js');
 
@@ -528,13 +496,8 @@ test('the headersSent path hands off to Express rather than throwing a second ti
     }
 });
 
-// ===========================================================================
-// 4. NOTHING LEAKS, AT ANY REACHABLE STATUS
-// ===========================================================================
-
 test('the 421 HIDES its theme picker, and no other status does - the scoping asserted both ways', async () => {
-    // The flag is SCOPED to one status: the picker would render on a 421 host and submitting it
-    // would do nothing, while a 404 host is accepted and the control works.
+    // The flag is SCOPED to one status: a 404 host is accepted and the control works.
     const rejected = await request({ path: '/', host: 'wrong-host.example', headers: { accept: 'text/html' } });
     const notFound = await request({ path: '/definitely-not-a-page', headers: { accept: 'text/html' } });
 
@@ -579,7 +542,6 @@ test('the 421 log names the host and the allowed list, so an operator can act', 
 });
 
 test('the 404 does not echo the failing path or a query parameter', async () => {
-    // The picker's hidden `next` field carries the URL legitimately, so it is removed first.
     const res = await request({ path: '/a/path/that/does/not/exist?token=SECRET', headers: { accept: 'text/html' } });
 
     assert.equal(res.status, 404);
@@ -590,9 +552,6 @@ test('the 404 does not echo the failing path or a query parameter', async () => 
     assert.equal(res.text.includes(ALLOWED_HOST), false, 'nor the host');
 });
 
-// ===========================================================================
-// 5. THE STATUS CODES STAY CORRECT - a pretty page at 200 is worse than bare text
-// ===========================================================================
 test('every reachable status is served as itself', async () => {
     const wrongHost = await request({ path: '/', host: 'wrong-host.example', headers: { accept: 'text/html' } });
     const notFound = await request({ path: '/definitely-not-a-page', headers: { accept: 'text/html' } });
@@ -611,12 +570,8 @@ test('every reachable status is served as itself', async () => {
     }
 });
 
-// ===========================================================================
-// 6. THE API CONTRACT IS UNCHANGED
-// ===========================================================================
-
 test('/api/chat with no token still returns 403 JSON - the questionnaire must not break', async () => {
-    // `{ status, content }` for THIS route, not `{ error }`: its client already reads that body.
+    // `{ status, content }` for THIS route, not `{ error }`.
     const res = await request({
         method: 'POST', path: '/api/chat',
         body: { messages: [] },
@@ -642,10 +597,6 @@ test('/api/score with no token still returns 403 JSON', async () => {
     const parsed = JSON.parse(res.text);
     assert.equal(typeof parsed.error, 'string');
 });
-
-// ===========================================================================
-// 7. REACHABILITY - what is not reachable, said rather than claimed
-// ===========================================================================
 
 test('the statuses REACHABLE THROUGH THE ERROR PAGE are the ones the source has, not the ones claimed', async () => {
     const source = fs.readFileSync(path.join(PROJECT_ROOT(), 'server.js'), 'utf8');
