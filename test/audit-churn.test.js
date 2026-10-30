@@ -24,8 +24,8 @@ const matrix = await import('../ai/matrix.js');
 const ALL = matrix.ALL_PROCESS_FIELD_NAMES;
 
 /**
- * The fields the model CLAIMS to hold move with `turn`, while `have + missing` stays at fifteen.
- * `K` moves 3..10 and wraps, so a guard reading it sees "progress" constantly.
+ * The fields the model CLAIMS to hold move with `turn`, while `have + missing` stays at fifteen:
+ * a guard reading it sees "progress" constantly.
  */
 export function claims(turn) {
     const K = 3 + (turn % 8);
@@ -153,8 +153,7 @@ test('a guard that reads the claim alone STALLS on this fixture - so the fixture
     const claimOnly = simulate(true);
 
     assert.notEqual(fixed.endedAt, null, 'the fixed guard terminates');
-    // Dramatically longer, which is the stall - not infinite here, since the claim cycles through
-    // eight values.
+    // Dramatically longer, which is the stall.
     assert.ok(claimOnly.endedAt > fixed.endedAt * 3,
         `the claim-reading guard runs many times longer (fixed ${fixed.endedAt}, claim ${claimOnly.endedAt})`);
     assert.ok(maxRun(claimOnly.replies) >= 5,
@@ -164,8 +163,7 @@ test('a guard that reads the claim alone STALLS on this fixture - so the fixture
 });
 
 test('EVIDENCE IS AUTHORITATIVE: a churning claim gains nothing from a fallen `missing`', () => {
-    // When evidence data is present it decides: twelve "open" fields against a constant payload
-    // gets no progress credit.
+    // When evidence data is present it decides.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const raw = (c) => JSON.stringify({ status: 'asking', content: c, processes: [partial], have: [], missing: [] });
     const q = 'What systems do you use?';
@@ -178,8 +176,7 @@ test('EVIDENCE IS AUTHORITATIVE: a churning claim gains nothing from a fallen `m
 });
 
 test('the FALLBACK prevents a wall: an old-shape caller with a fallen `missing` passes', () => {
-    // A conversation recorded before `evidenced` existed carries only `openCount`; with no evidence
-    // to judge from, the claim-based check applies.
+    // An old-shape conversation carries only `openCount`, so the claim-based check applies.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const raw = (c) => JSON.stringify({ status: 'asking', content: c, processes: [partial], have: [], missing: [] });
     const q = 'What systems do you use?';
@@ -213,8 +210,7 @@ test('the reply carries `evidenced` forward, so the next turn can compare agains
 });
 
 test('the residual stall of requiring all fifteen: twelve asked, then stuck', () => {
-    // A field the model CLAIMS is never offered, so requiring ALL fifteen questions means
-    // exhaustion never fires.
+    // A field the model CLAIMS is never offered, so requiring ALL fifteen never fires.
     const { endedAt, replies } = runChurn({ rate: 0 });
 
     assert.notEqual(endedAt, null, 'the round ends rather than looping on the move-on line');
@@ -223,7 +219,6 @@ test('the residual stall of requiring all fifteen: twelve asked, then stuck', ()
 });
 
 test('a REPEATED question with one field open always exhausts - the relaxation is not a loophole', () => {
-    // The relaxation must not let a single stuck field keep the interview alive.
     const conversation = [];
     let endedAt = null;
     for (let i = 1; i <= 60; i += 1) {
@@ -260,7 +255,6 @@ test('FINDING: a model that REWORDS its question each turn is never caught - the
 });
 
 test('FINDING: the reworded attack also defeats the evidence check, because no repeat is seen', () => {
-    // The guard only gets the chance on a REPEAT, and unique text is never a repeat.
     const conversation = [];
     for (let turn = 1; turn <= 30; turn += 1) {
         const entry = turnWithChurn(`What about the mail on day ${turn}?`, conversation, turn);
