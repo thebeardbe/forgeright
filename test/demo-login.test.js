@@ -1,13 +1,9 @@
 /**
- * The read-only demo link: the guard and the refusal.
+ * The read-only demo link: `GET /admin/demo?token=...` signs someone into a FIXED demo organisation,
+ * and the link goes to a client outside the owner's control.
  *
- * `GET /admin/demo?token=...` signs someone into a FIXED demo organisation read-only. The link
- * goes to a prospective client outside the owner's control.
- *
- * FIXTURE: A SEEDED STORE BUILT IN THIS PROCESS, not `scripts/seed-demo-org.js`, which needs a live
- * provider and DELETES an organisation.
- *
- * Each test spawns its own server: the demo route is registered at startup from the environment.
+ * FIXTURE: built in this process, not `scripts/seed-demo-org.js`, which needs a live provider and
+ * DELETES an organisation. Each test spawns its own server: the route is registered at startup.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -70,7 +66,6 @@ function freePort() {
     });
 }
 
-/** Spawns the server with a chosen demo environment (DEMO_LOGIN / DEMO_LOGIN_ORG / DEMO_LOGIN_TOKEN). */
 async function startServer(demoEnv = {}) {
     const port = await freePort();
     const child = spawn(process.execPath, [SERVER], {
@@ -88,9 +83,8 @@ async function startServer(demoEnv = {}) {
             STORE_DIR,
             AI_PROVIDER: 'mock',
             MAIL_SENDER: 'console',
-            // EMPTY STRINGS, NOT OMITTED: `dotenv` fills only ABSENT keys, so a developer's
-            // untracked `.env` with `DEMO_LOGIN=1` would be inherited. A key that IS present (even
-            // as '') is left alone. `...demoEnv` below overrides these where the flag is ENABLED.
+            // EMPTY STRINGS, NOT OMITTED: `dotenv` fills only ABSENT keys, so an untracked `.env`
+            // would be inherited. `...demoEnv` below overrides these where the flag is ENABLED.
             DEMO_LOGIN: '',
             DEMO_LOGIN_ORG: '',
             DEMO_LOGIN_TOKEN: '',
@@ -217,8 +211,7 @@ test('with the flag unset, /admin/demo behaves as an UNKNOWN console path', asyn
 });
 
 test('with the flag unset, a CORRECT token still does not sign anyone in', async () => {
-    // Stronger than "same as an unknown path": with the flag off but a correct token, NO cookie
-    // may be set. Both paths 302 when signed out, so a status comparison would miss it.
+    // Both paths 302 when signed out, so only the absence of a cookie distinguishes them.
     const server = await startServer({ DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const res = await request(server.port, { path: `/admin/demo?token=${DEMO_TOKEN}` });
@@ -250,11 +243,6 @@ test('the demo route logs nothing at startup when the flag is off', async () => 
         await server.stop();
     }
 });
-
-// ===========================================================================
-// 2. EVERY MUTATING CONSOLE ROUTE IS REFUSED FOR A DEMO SESSION
-// ===========================================================================
-// Six POSTs in `lib/auth/console.js`, two in `lib/auth/console-views.js`.
 
 const MUTATING_ROUTES = [
     ['/admin/organisation/name', { name: 'HACKED' }],
@@ -293,11 +281,7 @@ test('a GET on the console still WORKS for a demo session, so the refusal is by 
     }
 });
 
-// ===========================================================================
-// 3. NOTHING CHANGED AFTER A REFUSED WRITE
-// ===========================================================================
-// A guard that refused the RESPONSE but left a write half-done would pass a status check, so the
-// state is read directly.
+// A guard that refused the RESPONSE but left a write half-done would pass a status check.
 
 test('a refused write leaves the stored state EXACTLY as it was', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
@@ -407,8 +391,7 @@ test('the correct token matches', () => {
 });
 
 test('a wrong-length value does not throw, so the length is never compared first', () => {
-    // Both sides are hashed first, so a length mismatch cannot leak through `timingSafeEqual`
-    // throwing.
+    // Both sides are hashed first, so a length mismatch cannot leak through `timingSafeEqual`.
     for (const length of [0, 1, 23, 24, 31, 32, 33, 64, 1000]) {
         assert.doesNotThrow(() => demoTokenMatches('x'.repeat(length), DEMO_TOKEN), `length ${length} must not throw`);
     }
@@ -449,11 +432,7 @@ test('a refused token reveals nothing about whether the demo is configured', asy
     }
 });
 
-// ===========================================================================
-// 6. EXPIRY CANNOT TURN A DEMO SESSION WRITABLE
-// ===========================================================================
-// `expires_at` is expired while the SESSION stays valid: if the guard read expiry, it might decide
-// "not a demo any more" and allow a write.
+// `expires_at` expired while the SESSION stays valid: a guard reading expiry might allow a write.
 
 test('an EXPIRED demo row is still read-only, and the write is refused', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
@@ -477,8 +456,7 @@ test('an EXPIRED demo row is still read-only, and the write is refused', async (
 });
 
 test('a revoked demo session reaches no console page, only the sign-in form', async () => {
-    // `GET /admin` serves the SIGN-IN FORM (200) without a valid session, so the signal is the
-    // console content.
+    // `GET /admin` serves the SIGN-IN FORM (200) without a valid session: the signal is content.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -501,7 +479,6 @@ test('a revoked demo session reaches no console page, only the sign-in form', as
 });
 
 test('a demo session whose scope carries the ADMIN role is STILL refused writes', async () => {
-    // The demo scope's synthetic user has role ADMIN, and the guard never reads role.
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
         const demo = await openDemo(server);
@@ -529,14 +506,10 @@ test('there is no third role: the demo flag rides on the session scope', () => {
     assert.equal(/demo/i.test(roles[1]), false, 'no demo role was added');
 });
 
-// ===========================================================================
-// 6. THE COPY, COUNTED - the product sentence and the pages that carry it
-// ===========================================================================
 //
-// The product sentence appears on the console lead, the roadmap lead, and the banner, and the banner
-// is DELIBERATELY not centralised: TWICE on a demo session is the design.
+// The banner is DELIBERATELY not centralised: TWICE on a demo session is the design. A test counts
+// the sentence in each place, so a de-duplication "fix" fails there.
 
-/** WHITESPACE-TOLERANT: the SOURCE line-breaks differ between the three places. */
 const PRODUCT_SENTENCE = /forgeright interviews your team about the\s+work they do by hand, then ranks\s+what it finds by what is worth automating first/g;
 
 const countOf = (text, pattern) => (text.match(pattern) ?? []).length;
@@ -628,7 +601,6 @@ test('`weight` is STILL the label beside the number - the metric was not renamed
 });
 
 test('the console creation date still renders formatted, and is escaped', async () => {
-    // `shortInstant` renders `YYYY-MM-DD HH:MM UTC`.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
@@ -636,14 +608,12 @@ test('the console creation date still renders formatted, and is escaped', async 
 
         assert.match(page.text, /Created \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/,
             'the creation date renders through shortInstant');
-        // Escaping is covered by the injection tests in console-views.test.js.
     } finally {
         await server.stop();
     }
 });
 
 test('no em dash (U+2014) appears on any rendered console page', async () => {
-    // House style: no em dash (U+2014) in user-facing copy; en-dash ranges are allowed.
     const server = await startServer();
     try {
         const admin = await signInAdmin(server, 'real@admin.test');
