@@ -33,7 +33,7 @@ export function claims(turn) {
 }
 
 /**
- * A constant set of proven fields: only the first three are typed, whatever the claim says.
+ * A constant set of proven fields: only the first three are typed.
  */
 function constantPayload() {
     const values = {};
@@ -51,8 +51,7 @@ function churnReply(content, turn) {
 }
 
 /**
- * Runs a churning conversation; returns the turn it ended on (or null) and the replies. `rate`
- * compresses the turn index: at rate 0 the churn changes every turn.
+ * Runs a churning conversation; returns the turn it ended on (or null). `rate` 0 changes every turn.
  */
 function runChurn({ rate = 0, maxTurns = 200, sentence = 'How do you keep track of it?' } = {}) {
     const conversation = [];
@@ -153,7 +152,6 @@ test('a guard that reads the claim alone STALLS on this fixture - so the fixture
     const claimOnly = simulate(true);
 
     assert.notEqual(fixed.endedAt, null, 'the fixed guard terminates');
-    // Dramatically longer, which is the stall.
     assert.ok(claimOnly.endedAt > fixed.endedAt * 3,
         `the claim-reading guard runs many times longer (fixed ${fixed.endedAt}, claim ${claimOnly.endedAt})`);
     assert.ok(maxRun(claimOnly.replies) >= 5,
@@ -163,7 +161,6 @@ test('a guard that reads the claim alone STALLS on this fixture - so the fixture
 });
 
 test('EVIDENCE IS AUTHORITATIVE: a churning claim gains nothing from a fallen `missing`', () => {
-    // When evidence data is present it decides.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const raw = (c) => JSON.stringify({ status: 'asking', content: c, processes: [partial], have: [], missing: [] });
     const q = 'What systems do you use?';
@@ -176,7 +173,7 @@ test('EVIDENCE IS AUTHORITATIVE: a churning claim gains nothing from a fallen `m
 });
 
 test('the FALLBACK prevents a wall: an old-shape caller with a fallen `missing` passes', () => {
-    // An old-shape conversation carries only `openCount`, so the claim-based check applies.
+    // An old-shape conversation carries only `openCount`.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const raw = (c) => JSON.stringify({ status: 'asking', content: c, processes: [partial], have: [], missing: [] });
     const q = 'What systems do you use?';
@@ -198,7 +195,6 @@ test('REAL evidence progress passes, so the guard is not a wall for a healthy in
 });
 
 test('the reply carries `evidenced` forward, so the next turn can compare against it', () => {
-    // Without it every repeat falls to the claim-based path.
     const partial = { task: 't', trigger: 'tr', steps: [{ name: 's', whatHappens: 'w', decidedHow: 'd', needsReasoning: false }], frequencyPerWeek: 2 };
     const r = parseModelResponse(JSON.stringify({
         status: 'asking', content: 'Who else is involved in this?', processes: [partial], have: [], missing: []
@@ -210,7 +206,6 @@ test('the reply carries `evidenced` forward, so the next turn can compare agains
 });
 
 test('the residual stall of requiring all fifteen: twelve asked, then stuck', () => {
-    // A field the model CLAIMS is never offered, so requiring ALL fifteen never fires.
     const { endedAt, replies } = runChurn({ rate: 0 });
 
     assert.notEqual(endedAt, null, 'the round ends rather than looping on the move-on line');
