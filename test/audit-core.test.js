@@ -1,13 +1,6 @@
 /**
- * Tests for parseModelResponse in ai/audit-core.js.
- *
- * The documented model contract (ARCHITECTURE.md):
- *
- *   { "status": "asking",   "content": "<one question>" }
- *   { "status": "complete", "content": "<closing line>", "audit": { "workflows": [...] } }
- *
- * A malformed reply is an expected failure that must become a structured
- * `{ status: 'error' }`, not an exception and not a silently-wrong answer.
+ * parseModelResponse in ai/audit-core.js. A malformed reply is an expected failure that must
+ * become a structured `{ status: 'error' }`, not an exception and not a silently-wrong answer.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,8 +53,6 @@ test('a complete response with a null audit is treated as missing', () => {
     assert.equal(result.status, 'error');
 });
 
-// --- audit shape validation (the boundary the client depends on) -----------
-
 test('a complete response whose audit has no workflows array is an error', () => {
     for (const audit of ['{}', '{"foo":1}', '{"workflows":null}']) {
         const result = parseModelResponse(`{"status":"complete","content":"Done","audit":${audit}}`);
@@ -78,7 +69,6 @@ test('a complete response whose workflows field is not an array is an error', ()
 });
 
 test('a complete response with an EMPTY workflows array is an error', () => {
-    // An empty audit is not a completed audit; the client would score nothing.
     const result = parseModelResponse('{"status":"complete","content":"Done","audit":{"workflows":[]}}');
     assert.equal(result.status, 'error');
 });
@@ -110,8 +100,7 @@ test('a complete response whose workflow id is empty or whitespace is an error',
 });
 
 test('a rejected audit does not leak the malformed payload back to the client', () => {
-    // The error must be a structured status, not the raw audit: it otherwise reaches the browser
-    // as a /api/score 400 shown as a network error.
+    // The error must be a structured status: otherwise the browser shows a network error.
     const result = parseModelResponse('{"status":"complete","content":"Done","audit":{"workflows":"nope"}}');
     assert.equal(result.status, 'error');
     assert.equal(result.audit, undefined);
@@ -123,7 +112,6 @@ test('an asking response with no audit data is still valid', () => {
 });
 
 test('an unknown status value is passed through rather than validated', () => {
-    // Documents current behaviour: only "complete" has its payload checked.
     const result = parseModelResponse('{"status":"thinking","content":"..."}');
     assert.equal(result.status, 'thinking');
 });
@@ -133,10 +121,8 @@ test('parseModelResponse is deterministic for the same input', () => {
     assert.deepEqual(parseModelResponse(raw), parseModelResponse(raw));
 });
 
-// --- the boundary requires a title -------------------------------
-// `title` is the heading the client reads. A payload with a valid id but no
-// title must be rejected here as a structured error, not thrown: passing it on
-// crashes scoring with a TypeError.
+// A payload with a valid id but no `title` must be rejected here, not thrown: passing it on crashes
+// scoring with a TypeError.
 
 test('a complete response whose workflow has no title is an error', () => {
     const result = parseModelResponse('{"status":"complete","content":"Done","audit":{"workflows":[{"id":"w1"}]}}');
@@ -181,10 +167,9 @@ test('a complete response with valid workflow entries is still accepted', () => 
     assert.equal(result.audit.workflows.length, 2);
 });
 
-// --- validateWorkflows: the shared rule used by BOTH entry points -----------
-// The model path and POST /api/score both call this, and the route takes its payload straight from
-// the client, so a weak rule here is directly reachable over HTTP. Every rejection carries a reason
-// string shown to the caller, so the reason is asserted, not just the boolean.
+// Both the model path and POST /api/score call this, and the route takes its payload straight from
+// the client, so a weak rule here is reachable over HTTP. The reason string is asserted, not just
+// the boolean.
 
 test('validateWorkflows accepts a well-formed payload', () => {
     const result = validateWorkflows([{ id: 'w1', title: 'Invoice entry' }]);
@@ -193,7 +178,6 @@ test('validateWorkflows accepts a well-formed payload', () => {
 });
 
 test('validateWorkflows accepts a payload with extra, unvalidated fields', () => {
-    // Only id and title are required; everything else is left to scoring.
     const result = validateWorkflows([
         { id: 'w1', title: 'Invoice entry', frequencyPerWeek: 4, minutesPerInstance: 8, peopleAffected: 3 }
     ]);
@@ -267,8 +251,7 @@ test('validateWorkflows pluralises the missing-title reason', () => {
 });
 
 test('validateWorkflows checks malformed entries before ids before titles', () => {
-    // The order is observable through the reason: a null entry beside a titleless one reports the
-    // malformed entry.
+    // The order is observable: a null entry beside a titleless one reports the malformed entry.
     const result = validateWorkflows([null, { id: 'a' }]);
     assert.equal(result.reason, '1 entry is not an object', 'the earliest failing check wins');
 });
@@ -278,11 +261,7 @@ test('validateWorkflows gives no reason when the payload is valid', () => {
     assert.deepEqual(result, { ok: true });
 });
 
-// --- the two entry points agree ---------------------------------------------
-
 test('parseModelResponse rejects the same title shapes validateWorkflows rejects', () => {
-    // A whitespace title is rejected at the boundary; scoring keeps its own fallback for a direct
-    // caller.
     for (const title of ['   ', '', null, 7]) {
         const payload = JSON.stringify({
             status: 'complete',
