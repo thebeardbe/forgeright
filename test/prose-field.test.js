@@ -1,13 +1,9 @@
 /**
- * A FIELD ANSWERED IN WORDS - on the participant's own card, and in the score they are shown.
- *
  * THE DAMAGING SYMPTOM: the effort formula multiplies three factors, prose makes one unreadable as a
  * number, so the product is 0 - and `0 h/wk effort` says the work takes NO TIME.
  *
- * THE SCORING IS UNCHANGED, only the LABEL: the score stays a real zero, and the number the server
- * sent is what is displayed.
- *
- * `renderAnalysis` is not exported, so the real client runs in a `node:vm` sandbox.
+ * THE SCORING IS UNCHANGED, only the LABEL. `renderAnalysis` is not exported, so the real client
+ * runs in a `node:vm` sandbox.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -81,13 +77,11 @@ async function loadScoringClient() {
 }
 
 function scoredWorkflow({ title = 'Checking servers', effort = 0, recoverable = 0, peopleAffected, judgementScore = 3 } = {}) {
-    // `judgementScore` IS ALWAYS SENT BY THE SERVER; omitting it renders "judgement undefined/5".
     return { title, effortHoursPerWeek: effort, recoverableHoursPerWeek: recoverable, peopleAffected, judgementScore };
 }
 
 /**
- * THE WORKFLOWS GO IN `buckets`, because `bucketHtml` renders each card from `result.buckets`. Only
- * in `scored`, the render is a total and NO cards.
+ * THE WORKFLOWS GO IN `buckets`: only in `scored`, the render is a total and NO cards.
  */
 function analysis(scored, { total = 0, workflowCount = scored.length, bucket = 'do_later' } = {}) {
     const buckets = { do_first: [], do_later: [], judgement_bound: [] };
@@ -111,7 +105,6 @@ test('the prose words are shown WITHOUT a unit, because a sentence is not "56 se
 });
 
 test('a PROSE effort factor shows "effort not measured" INSTEAD OF a zero', async () => {
-    // The product is 0 because one factor is a sentence. The label changes; the score does not.
     const client = await loadScoringClient();
     const html = await client.render(analysis([
         scoredWorkflow({ title: 'Checking servers', effort: 0, recoverable: 0, peopleAffected: { said: 'nobody else is involved' } })
@@ -122,7 +115,6 @@ test('a PROSE effort factor shows "effort not measured" INSTEAD OF a zero', asyn
 });
 
 test('the TOTAL is marked "at least" when any workflow was incomputable', async () => {
-    // Correct, but presented bare it reads as the whole answer.
     const client = await loadScoringClient();
     const html = await client.render(analysis([
         scoredWorkflow({ title: 'Measured', effort: 5, recoverable: 5, peopleAffected: 3 }),
@@ -134,7 +126,6 @@ test('the TOTAL is marked "at least" when any workflow was incomputable', async 
 });
 
 test('an ABSENT field renders as ABSENT - not as prose, and not as the word "undefined"', async () => {
-    // A reader must be able to tell "they said something in words" from "nobody asked".
     const client = await loadScoringClient();
     const html = await client.render(analysis([scoredWorkflow({ peopleAffected: undefined })]));
 
@@ -151,7 +142,6 @@ test('a NUMBER still renders as a NUMBER, with its unit', async () => {
 });
 
 test('a MEASURABLE workload still shows its effort figure, so the label is not applied too widely', async () => {
-    // Without this, a fix that printed "not measured" for everything would pass.
     const client = await loadScoringClient();
     const html = await client.render(analysis([
         scoredWorkflow({ title: 'Checking servers', effort: 56, recoverable: 10, peopleAffected: 3 })
@@ -162,7 +152,6 @@ test('a MEASURABLE workload still shows its effort figure, so the label is not a
 });
 
 test('the client does NOT turn prose into a figure - the number displayed is the server\'s', async () => {
-    // The labelled 0, not `{ said: "56 a week" }` read as 56.
     const client = await loadScoringClient();
     const peopleAffected = { said: '56 servers a week, roughly' };
     const html = await client.render(analysis([
