@@ -1,14 +1,4 @@
-/**
- * Four interview rules, and the partial tag.
- *
- *  1. `validateWorkflows` validates the RIGHT SHAPE, so a finished interview is not rejected as
- *     "1 entry has no id".
- *  2. the closing question is gated.
- *  3. the fresh-start rule does not lose data unless the participant confirmed.
- *  4. a completion claim cannot NARROW the payload and lose a process's answers.
- *
- * Plus the `stepsStillNeed` guard, which is recursive now, and the partial tag.
- */
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -24,7 +14,6 @@ const matrix = await import('../ai/matrix.js');
 
 const PROMPTS_DIR = path.join(PROJECT_ROOT, 'data', 'prompts', 'cartiere_audit');
 
-/** A fully populated process, built from the field lists rather than hardcoded. */
 function completeInterviewProcess(overrides = {}) {
     const process = {};
     for (const field of matrix.PROCESS_FIELDS) {
@@ -42,9 +31,8 @@ function completeInterviewProcess(overrides = {}) {
 // 1. THE SHAPE THAT ARRIVED IS THE SHAPE VALIDATED
 // ===========================================================================
 //
-// The interview shape (`processes`) carries NEITHER `id` NOR `title` - neither is in the
-// interview's field matrix - so judging it by the final payload's rules rejects a finished
-// interview.
+// The interview shape (`processes`) carries NEITHER `id` NOR `title`, so judging it by the final
+// payload's rules rejects a finished interview.
 
 test('an interview completion with the interview shape COMPLETES, even without id and title', () => {
     const process = completeInterviewProcess();
@@ -63,8 +51,6 @@ test('an interview completion with the interview shape COMPLETES, even without i
 });
 
 test('a FINAL payload is still held to the strict id/title rules', () => {
-    // `audit.workflows` is what the scorer consumes, so a workflow without a title is still
-    // refused there.
     const check = validateWorkflows([{ id: 'w1' }]);
     assert.equal(check.ok, false);
     assert.match(check.reason, /no title/);
@@ -75,9 +61,8 @@ test('a FINAL payload is still held to the strict id/title rules', () => {
 });
 
 test('an interview reply with a malformed process entry CONTINUES rather than erroring', () => {
-    // The matrix gate runs BEFORE the unreadable-entry check, and a non-object entry makes the
-    // matrix incomplete, so the reply is downgraded to `asking` and the unreadable check is never
-    // reached. The outcome is safe - the interview continues - and pinned as observed.
+    // The matrix gate runs BEFORE the unreadable-entry check, so a non-object entry is downgraded
+    // to `asking` and the unreadable check is never reached.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -89,7 +74,6 @@ test('an interview reply with a malformed process entry CONTINUES rather than er
 });
 
 test('an empty audit.workflows ALONE is refused', () => {
-    // No processes, so the audit is the only shape and an empty one is unusable.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -100,7 +84,6 @@ test('an empty audit.workflows ALONE is refused', () => {
 });
 
 test('an empty audit.workflows BESIDE good processes is merely stale, and processes win', () => {
-    // Emptiness is judged only when there is nothing better to fall back to.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -115,8 +98,6 @@ test('an empty audit.workflows BESIDE good processes is merely stale, and proces
 });
 
 test('the two empty-audit cases are DIFFERENT, asserted together', () => {
-    // Same input shape, opposite outcomes: good `processes` beside it makes the emptiness stale
-    // rather than fatal.
     const alone = parseModelResponse(JSON.stringify({ status: 'complete', content: 'd', audit: { workflows: [] } }));
     const beside = parseModelResponse(JSON.stringify({
         status: 'complete', content: 'd', processes: [completeInterviewProcess()], audit: { workflows: [] },
@@ -128,7 +109,6 @@ test('the two empty-audit cases are DIFFERENT, asserted together', () => {
 });
 
 test('a bad audit.workflows beside good processes is ALSO superseded, not fatal', () => {
-    // A stale array of the wrong type is still superseded by usable processes.
     const result = parseModelResponse(JSON.stringify({
         status: 'complete',
         content: 'done',
@@ -146,14 +126,11 @@ test('a bad audit.workflows beside good processes is ALSO superseded, not fatal'
 // 2. THE CLOSING QUESTION IS GATED ON `missing`
 // ===========================================================================
 //
-// The closing sentence must be gated on `missing`: if it stands alone it is asked whenever a
-// process feels finished, closing with fields missing and not closing when the matrix is
-// satisfied.
+// Ungated, the closing sentence is asked whenever a process feels finished.
 
 test('the English prompt gates the closing question on missing being empty', () => {
     const prompt = fs.readFileSync(path.join(PROMPTS_DIR, 'prompt_en.md'), 'utf8');
 
-    // The question is present, and the rule ties it to `missing` explicitly.
     assert.match(prompt, /is there another process you would like to improve\?/i, 'the closing question is stated');
     assert.match(prompt, /ONLY WHEN `missing` IS EMPTY/i, 'the rule names the condition');
     assert.match(prompt, /Its only permitted use is in a reply whose `missing`\s+is empty/i, 'and restates it as the sole condition');
@@ -167,8 +144,6 @@ test('the Dutch prompt gates the closing question too', () => {
 });
 
 test('the OLD unconditional wording is gone from both prompts', () => {
-    // The sentence must not stand alone with no condition, because the model would then ask it
-    // whenever a process felt finished. Pinned as an absence so it cannot drift back.
     for (const file of ['prompt_en.md', 'prompt_nl.md']) {
         const prompt = fs.readFileSync(path.join(PROMPTS_DIR, file), 'utf8');
         assert.equal(
@@ -183,8 +158,8 @@ test('the OLD unconditional wording is gone from both prompts', () => {
 // 3. THE FRESH-START RULE IS CONDITIONAL ON THE PARTICIPANT
 // ===========================================================================
 //
-// The fresh-start rule must trigger on the PARTICIPANT confirming, never on the model's own
-// belief, or a wrong belief discards the finished process's fields.
+// The rule must trigger on the PARTICIPANT confirming: a wrong belief discards the finished
+// process's fields.
 
 test('the English fresh-start rule is conditional on the participant confirming', () => {
     const prompt = fs.readFileSync(path.join(PROMPTS_DIR, 'prompt_en.md'), 'utf8');
@@ -195,7 +170,6 @@ test('the English fresh-start rule is conditional on the participant confirming'
         /DROP THE FINISHED PROCESS ONLY WHEN THE PARTICIPANT HAS CONFIRMED/i,
         'and it is conditioned on the participant confirming, not on the model believing'
     );
-    // And the reason is stated, because a rule without it is the one that gets relaxed.
     assert.match(prompt, /A wrong belief about completion must cost\s+nothing/i, 'the cost of dropping early is stated');
 });
 
@@ -206,8 +180,6 @@ test('the Dutch fresh-start rule is conditional too', () => {
 });
 
 test('neither prompt drops a finished process on the model\'s own belief alone', () => {
-    // The rule must not trigger on the model believing a process was finished: the wording
-    // requires the PARTICIPANT, so a model-only trigger must not be present.
     for (const file of ['prompt_en.md', 'prompt_nl.md']) {
         const prompt = fs.readFileSync(path.join(PROMPTS_DIR, file), 'utf8');
         assert.equal(
@@ -222,11 +194,9 @@ test('neither prompt drops a finished process on the model\'s own belief alone',
 // 4. A COMPLETION CLAIM CANNOT NARROW THE PAYLOAD — THE BROWSER HALF
 // ===========================================================================
 //
-// Driven through the REAL client script in a sandbox, because the client is a browser IIFE
-// with no exports. This tests the behaviour: a completion reply that DROPS a process the
-// round already had must still POST that process.
+// Driven through the REAL client script in a sandbox: a completion reply that DROPS a process the
+// round already had must still POST it.
 
-/** Loads `public/js/audit.js` in a sandbox and returns a driver plus the recorded POSTs. */
 async function loadClient({ replies }) {
     const { createContext, runInContext } = await import('node:vm');
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'public', 'js', 'audit.js'), 'utf8');
@@ -286,8 +256,7 @@ async function loadClient({ replies }) {
 }
 
 test('a completion reply that DROPS a process still POSTS it, carried forward', async () => {
-    // The replies: ask, complete with proc-1, ask, complete with ONLY proc-2. The last POST must
-    // still carry proc-1, or its answers are gone.
+    // The last POST must still carry proc-1, or its answers are gone.
     const client = await loadClient({
         replies: [
             { status: 'asking', content: 'What is the task?' },
@@ -311,7 +280,6 @@ test('a completion reply that DROPS a process still POSTS it, carried forward', 
 });
 
 test('the narrowing is NOT triggered when no process was dropped', async () => {
-    // The control: a reply that keeps everything carries nothing forward.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-1', title: 'One' }, { id: 'proc-2', title: 'Two' }] } }
@@ -326,8 +294,7 @@ test('the narrowing is NOT triggered when no process was dropped', async () => {
 });
 
 test('a NON-completion reply is saved as it arrived, without carrying anything forward', async () => {
-    // Carrying forward is a completion-claim guard: an ordinary turn's payload is stored as it
-    // came, so nothing is MERGED IN from the round.
+    // Carrying forward is a completion-claim guard: nothing is MERGED IN on an ordinary turn.
     const client = await loadClient({
         replies: [
             { status: 'complete', content: 'done', audit: { workflows: [{ id: 'proc-1', title: 'One' }] } },
@@ -350,8 +317,8 @@ test('a NON-completion reply is saved as it arrived, without carrying anything f
 // 5. THE stepsStillNeed GUARD IS RECURSIVE
 // ===========================================================================
 //
-// A model-supplied value must not survive at ANY depth: deleting it only at the top level still
-// leaves it inside `processes`, and from there in the saved answers.
+// A model-supplied value must not survive at ANY depth: deleting it at the top level leaves it
+// inside `processes`.
 
 test('a model-supplied stepsStillNeed is removed at the TOP level', () => {
     const result = parseModelResponse(JSON.stringify({
@@ -372,7 +339,6 @@ test('a model-supplied stepsStillNeed is removed INSIDE a process', () => {
 });
 
 test('a model-supplied stepsStillNeed is removed INSIDE a step, and DEEPER', () => {
-    // The depth the change was for: the leak that was found arrived inside an array.
     const process = completeInterviewProcess();
     process.steps[0].stepsStillNeed = ['in-step'];
     process.steps[0].nested = { deeper: { stepsStillNeed: ['deeper'] }, list: [{ stepsStillNeed: ['in-array'] }] };
@@ -383,7 +349,6 @@ test('a model-supplied stepsStillNeed is removed INSIDE a step, and DEEPER', () 
 });
 
 test('the guard leaves the SERVER-COMPUTED value on the result', () => {
-    // The removal is of what the MODEL sent, not of the derived field, which is computed.
     const process = completeInterviewProcess();
     delete process.steps[0].needsReasoning;
 
@@ -394,10 +359,7 @@ test('the guard leaves the SERVER-COMPUTED value on the result', () => {
     assert.deepEqual(result.stepsStillNeed, ['needsReasoning'], 'the computed list is present');
 });
 
-/**
- * Walks the whole result and asserts no object carries `stepsStillNeed` EXCEPT the result
- * root, where the server places the computed value.
- */
+/** No object carries `stepsStillNeed` except the result root, where the server places it. */
 function assertOkNoFieldAtAnyDepth(result, message) {
     const carrying = [];
     const walk = (value, path) => {
@@ -409,20 +371,14 @@ function assertOkNoFieldAtAnyDepth(result, message) {
     assert.deepEqual(carrying, ['root'], `${message} (found at: ${carrying.join(', ') || 'nowhere'})`);
 }
 
-// ===========================================================================
-// 6. THE PARTIAL TAG IN THE ANSWERS VIEW
-// ===========================================================================
-
 test('the answers view has a partial marker, distinct from the identified one', () => {
     const view = fs.readFileSync(path.join(PROJECT_ROOT, 'views', 'admin-answers.ejs'), 'utf8');
 
-    // A partial round is `submitted_at === null` and must not present like a finished answer.
     assert.match(view, /submitted_at\s*===\s*null|!response\.submitted_at/, 'the view tests submitted_at');
     assert.match(view, /partial/i, 'and names it as partial');
 });
 
 test('each of the three language blocks carries the partial label consistently', async () => {
-    // The string must exist in all three blocks, or one language renders a blank label.
     const { stringsFor } = await import('../lib/strings.js');
 
     const langs = ['nl', 'en', 'fr'];
