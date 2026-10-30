@@ -1,3 +1,5 @@
+// The score numbering: computed inside `insertScore`'s transaction, with `idx_process_score_number`
+// making a duplicate (revision_id, revision_no) a UNIQUE failure rather than a silent duplicate.
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -173,6 +175,5 @@ test('the same number on a DIFFERENT revision is allowed, so the index is per re
 });
 
 //
-// NOT covered: the race itself. Through the PUBLIC API the interleave cannot be produced, because
-// `insertScore` opens the transaction around the read and `BEGIN IMMEDIATE` serialises the two
-// threads - the trap NOTES.md documents as "The write-contention test trap".
+// NOT covered: the race itself. Through the PUBLIC API the interleave cannot be produced:
+// `BEGIN IMMEDIATE` serialises the two threads.
