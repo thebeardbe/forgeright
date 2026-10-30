@@ -10,28 +10,43 @@ data, and that should never live beside a personal CV corpus.
 
 ## Status
 
-V1, under construction. Running end to end with a mock AI provider.
+**Proof of concept v0.1, deployed and in use with clients** on a real provider
+(DeepSeek). The mock provider exists for development and for the test suite; it is not
+what a deployment runs.
 
 | Piece | State |
 | :--- | :--- |
-| Server, routes, trilingual UI | working (NL/EN prompts; FR falls back to EN) |
+| Server, routes, trilingual UI | working (NL/EN/FR prompts) |
 | Questionnaire flow | working |
 | Admin sign-in (magic link, session cookie) | working, tested |
-| AI providers: mock, Gemini, DeepSeek | working |
-| Scoring and aggregation | working, tested |
+| AI providers: DeepSeek (deployed), Gemini, mock (development) | working |
+| Identification of a finished round | automatic on completion |
+| Weighing and the roadmap | working, tested |
+| Admin corrections and rejudge | working |
 | Input guardrails | working, tested |
+| Mail (console, Proton) | working |
 | Roadmap PDF export | not built |
 | Guardrail demonstration | not built |
 | Accounts, per-business links (multi-tenancy) | V2, not started |
 
-**Reviewed 2026-10-09 and found not to ship.** A serious review by an independent
-reviewer found correctness defects in the conflict-collapsing path (a workflow
-could be counted twice, or at the inflated estimate the design exists to avoid),
-a guardrail that blocked ordinary business answers, and false claims in these
-docs. The scoring defects and the guardrail false positives are fixed. The
-outstanding items are listed in `NOTES.md` under "Found by review, not yet
-fixed"; none of them are hidden. Do not use this as an application artefact
-until that list is empty.
+**It is a proof of concept, not a finished product.** An independent review on
+2026-10-09 found correctness defects in the conflict-collapsing path, a guardrail that
+blocked ordinary business answers, and false claims in these docs. The scoring defects,
+the guardrail false positives and the doc claims are fixed. **Three items remain open**,
+listed in full in `NOTES.md` under "Found by review, not yet fixed":
+
+- **H4: `/api/score` is trusted from the client.** The payload is validated, but nothing
+  binds it to a conversation, so an invented set of workflows scores. **Therefore: do not
+  claim the participant preview is a measurement of the work.**
+- **M1: `bucketFor` is a second implementation of the bucketing rule.** Both call sites
+  agree today; a future caller passing a raw workflow would get a different bucket.
+- **M4: the input length cap is applied after control characters are stripped**, so a
+  truncated input can exceed the stated 3000 characters by the marker's length.
+
+**None of the three affects the roadmap or the interview in normal use.** Use the tool
+with those limits in mind rather than as an unqualified application artefact: the
+preview is a demonstration, and the roadmap's number is a model judgement rather than a
+measurement (see "How scoring works").
 
 ## Running it
 
@@ -250,7 +265,8 @@ re-runs identification for that process with their argument. The model is free t
 push back, and measurably does when the argument turns on the desk or the system
 rather than on the work itself.
 
-**Nothing here scores or ranks.** That is workflow 3, not built.
+**Nothing here scores or ranks.** Weighing is workflow 3, which runs afterwards on the
+grouping this step produced.
 
 **The participant never sees any of it, and never could.** No participant route returns
 grouping information, deliberately: a participant who could see where their answer was grouped
@@ -352,33 +368,31 @@ paragraph stay readable.
 weighed yet is still work somebody described, and hiding it would quietly shrink the
 roadmap.
 
-## How scoring works
+## The participant preview, which is a different number
+
+**The roadmap's number is the weighing described above.** The questionnaire shows the
+participant a **different, older calculation** as a preview, returned by `POST /api/score`.
+It scores a whole set of workflows rather than one process, and it uses a person-hours
+model:
 
 ```
 effortHoursPerWeek = frequencyPerWeek * minutesPerInstance * peopleAffected / 60
 score              = effortHoursPerWeek * automabilityFactor
 ```
 
-`automabilityFactor` is **derived from the per-step `needsReasoning` flags**, not
-from anything the participant is asked. A band runs 1 (needs a person) to 5
-(follows rules), and the factor runs 0.15 to 1.00 from it. **This factor is the
-point of the tool.** Effort alone ranks the longest task first, which produces a
-wish list: contract review takes 75 minutes a time and is the worst automation
-candidate in the sample data, not the best.
+`automabilityFactor` there comes from the per-step `needsReasoning` flags: a band from 1
+(needs a person) to 5 (follows rules), giving a factor from 0.15 to 1.00. **That factor is
+where the judgement enters this older model.** Effort alone ranks the longest task first,
+which produces a wish list: contract review takes 75 minutes a time and would look like the
+worst automation candidate rather than the best.
 
-**The interview never asks whether work needs judgement**, because that asks a
-participant to assess automability and they are not placed to know. It asks **on
-what basis they decide** (`decidedHow`, their words) and the model derives the
-flag from that. See `SPEC-three-workflows.md` for the interview.
+Results there are bucketed into do first, do later and do not automate, and only the
+do-first bucket counts toward the headline total. A disagreement between respondents is
+reported rather than averaged, and the workflow is counted **once, at the lower estimate**.
 
-Results are bucketed into do first, do later, and do not automate. Only the
-do-first bucket counts toward the headline total.
-
-**Two caveats while workflow 3 is unbuilt.** The `stepsConsistent` variation
-discount is currently inapplicable, because nothing supplies that field any more —
-so the sample headline sits at 74.78 rather than the 55.5 it was. And
-`timePerPeriod`, which the interview accepts for continuous work, does not yet
-contribute hours to the score; see `NOTES.md`.
+**These two numbers are not comparable and nothing joins them.** `lib/scoring.js` still
+exists only because `/api/score` returns it; the roadmap never calls it. **The preview is
+a demonstration rather than a measurement** — see the H4 note in Status.
 
 ### Conflicting answers
 
@@ -671,8 +685,9 @@ committed. A change to a colour is a change to the data and a regeneration.
 - `public/css/app.css` maps those variables onto **semantic** roles (`--bg`,
 `--card`, `--accent`), and components use only the roles. No component names a
 palette colour, so adding a theme cannot break one.
-- **The default follows the system**: Catppuccin and Catppuccin Latte when no
-choice is stored.
+- **The default follows the system**: Matte Black for a dark preference and
+Catppuccin Latte for a light one when no choice is stored (`SYSTEM_DARK` and
+`SYSTEM_LIGHT` in `lib/palettes.js`).
 - **The choice is a cookie**, `fr_theme`, not `localStorage`. A cookie reaches the
 server, so the palette is in the HTML and the first paint is correct rather than
 patched after it. It is `SameSite=Lax`, not `HttpOnly` (the page reads it to keep
@@ -696,7 +711,7 @@ property of the upstream theme data; the substitution is one line in
 | `LOGIN_LINK_TTL_MINUTES` | `15` | How long a sign-in link stays valid. A link is single-use regardless. |
 | `SESSION_TTL_HOURS` | `12` | How long an admin session lasts. |
 | `MAIL_SENDER` | `console` | `console` prints the message to stdout (no credentials); `proton` sends through `proton-cli`. An unknown value refuses to start rather than silently falling back. |
-| `MAIL_PROTON_PROFILE` | `jobsearch` | The `proton-cli` profile to send from when `MAIL_SENDER=proton`. |
+| `MAIL_PROTON_PROFILE` | `default` | The `proton-cli` profile to send from when `MAIL_SENDER=proton`. The default is the binary's own, so an unconfigured instance signs in once and works. **If you set it, sign in with the same `--profile`**, or sends fail silently. |
 | `STORE_DIR` | `data/store` | Where the databases live. Point at a volume in production. |
 | `STORE_BUSY_TIMEOUT_MS` | `2000` | How long a write waits for another writer's lock. Empty is treated as unset. Clamped to 60s. An explicit `0` is honoured. |
 
@@ -706,13 +721,14 @@ Magic links and invitations are sent through one `send({ to, subject, body })`
 interface, so the mechanism is testable without a mailbox and the transport can be
 swapped without touching the login flow.
 
-**Development and testing send from `beard_jobagent@proton.me`** (the `jobsearch`
-profile). That mailbox is disposable on purpose: a bug here costs nothing, which
-is not true of the address a client would see.
+**A deployment must set `MAIL_SENDER=proton`.** Unset, the default is `console`, which
+prints each message to stdout and sends nothing: the sign-in link appears in the container
+log instead of a mailbox. The in-container sign-in below is only half of it.
 
-**Production will send from a `bunkens.be` address.** The transport, the profile
-and the address are all configuration, so switching is an environment change
-rather than a code change.
+**The development mailbox is disposable on purpose**: a bug there costs nothing, which is
+not true of the address a client would see. Production sends from a `bunkens.be` address.
+The transport, the profile and the address are all configuration, so switching is an
+environment change rather than a code change.
 
 Two things to get right when this runs unattended, because both fail quietly:
 
@@ -723,19 +739,25 @@ Two things to get right when this runs unattended, because both fail quietly:
 
 ## Deployment
 
-Not yet configured. The intended shape, following the existing tools: its own
-container on the VPS, joining the external `proxy-network`, with `ALLOWED_HOST`
-set per environment and a volume-mounted store. The subdomain belongs in the
-proxy config and in `.env`, never hardcoded in the application.
+**Configured and running**: its own container on the VPS, joining the external
+`proxy-network`, with `ALLOWED_HOST` set per environment and a volume-mounted store. The
+subdomain lives in the proxy config and in `.env`, never hardcoded in the application.
+
+**`DEPLOY.md` is the deployment guide** and `docker-compose.deploy.yml` is the deployment
+compose file. The build is a Docker image (`Dockerfile`), and mail is sent through
+`proton-cli` installed inside it.
 
 ## Known gaps
 
 - Roadmap PDF export is not built.
 - The guardrail demonstration is not built.
-- **The questionnaire is persisted only when it is reached from an invitation
-  link.** A participant with a token can answer, and answers are stored against
-  their invitation, but the bot conversation itself still runs from the browser
-  session and does not yet write through the store on every turn.
+- **`/api/score` is trusted from the client**: the payload is validated but not bound to a
+  conversation, so the participant preview is a demonstration rather than a measurement
+  (`NOTES.md` H4).
+- **The questionnaire is persisted every turn, but only for a participant who arrived
+  from an invitation link.** A participant with a token has every turn saved, with its
+  transcript, so a closed tab does not lose the conversation. There is no other way in:
+  a visit without a valid token cannot start the interview.
 - **The console is built for all three workflows, and it is read-only for a demo
   session.** A signed-in admin sees one organisation: its name, its invitations with
   opened state, and its users, plus the two views that are the point of the tool.
