@@ -357,10 +357,63 @@ with that - and no page was asking for it any more either.
 **What this means for you:** there is nothing to configure here, and you cannot invite
 yourself to an interview. To try the questionnaire on a fresh install, use the console
 to invite an address you control and read the link out of the container log, which is
-where it goes until a mail transport is configured. See **Mail** below.
+where it goes until a mail transport is configured. See **Sending mail** below.
 
 **Being interviewed is not how you look at the product.** That is what the read-only
 demo link is for, and it needs no invitation at all.
+
+## Sending mail
+
+**A DEPLOYMENT THAT DOES NOT SET `MAIL_SENDER=proton` SENDS NOTHING.** The default is
+`console`, which prints each message to the container log and never leaves the machine.
+The sign-in link works - someone has to read it out of `docker compose logs` - but a
+participant never receives anything. **This is the single most likely reason a deploy
+appears to work and delivers no mail.**
+
+```bash
+# .env
+MAIL_SENDER=proton
+MAIL_PROTON_PROFILE=default          # optional; the binary's own default
+PUBLIC_BASE_URL=https://forgeright.example.com
+```
+
+Three things have to be true together, and each fails on its own:
+
+1. **`MAIL_SENDER=proton`** in `.env`. Unset or `console` means mail stays in the log.
+2. **`proton-cli` present in the image**, with a working CA bundle. A missing binary
+   reports `proton-cli is not on PATH`; a missing trust store gives
+   `x509: certificate signed by unknown authority`. Both are checked after a build; see
+   "What to check in the image after any Dockerfile change".
+3. **A signed-in Proton session inside the container**, written to the mounted volume so
+   it survives a restart:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec -it forgeright proton-cli account login
+```
+
+**`MAIL_PROTON_PROFILE` MUST MATCH THE PROFILE YOU SIGNED IN WITH.** Leave it unset and
+both sides use the binary's own `default`. Set it - say to `work` - and you must pass the
+same profile at sign-in:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec -it forgeright \
+  proton-cli account login --profile work
+```
+
+**Signing in as one profile and sending as another fails the send**, with the reason in
+the log rather than on the page. The app names the profile it tried, so the log tells you
+which side is wrong.
+
+**Check readiness at any time**, without sending anything:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright \
+  node -e "import('./lib/mail/proton.js').then(m => console.log(m.readinessProblems().join('\n') || '(none)'))"
+```
+
+**`(none)` means the binary is present and a session is unlocked** - a line is printed
+either way, so silence never has to be interpreted. The two failures it can report are the
+missing binary and the missing session, and each message says which.
 
 ## The two links
 
@@ -477,6 +530,19 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://forgeright.example.com/healthz
 
 `200`. `/healthz` answers on a plain HTTP connection as well, which makes it the one
 endpoint you can use to tell an application problem from a proxy problem.
+
+**If you intend to send mail, check the transport before you invite anybody.** The app
+prints its provider and its mail sender at startup, and the mail readiness check says
+whether a send could work at all:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright \
+  node -e "import('./lib/mail/proton.js').then(m => console.log(m.readinessProblems().join('\n') || '(none)'))"
+```
+
+**`(none)` is the healthy answer.** Anything else names the problem: no binary, or no
+signed-in session. The two most common are covered below - a missing `proton-cli` (or its
+CA bundle) in the image, and the missing session a fresh volume has.
 
 ### `docker compose config` prints your secrets. Do not paste its output anywhere.
 
