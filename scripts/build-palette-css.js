@@ -1,7 +1,6 @@
 /**
- * Generates public/css/palette.css from lib/palettes.js, so the palettes have one home in the data module.
- * Run with `node scripts/build-palette-css.js`; the generated file is committed and the server never runs
- * this.
+ * Generates public/css/palette.css from lib/palettes.js. Run with `node scripts/build-palette-css.js`; the
+ * generated file is committed and the server never runs this.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,7 +31,6 @@ const HEADER = `/*
  */
 `;
 
-/** One CSS block for a palette, as an array of lines. */
 function block(selector, indent, palette, vars) {
     const pad = ' '.repeat(indent);
     const lines = [`${selector} {`, `${pad}--o-mode: ${palette.colors.mode};`];
@@ -53,9 +51,6 @@ for (const id of PALETTE_IDS) {
     lines.push('');
 }
 
-// "Follow system", which is what an unreadable preference falls back to. The
-// dark pair is the base, so a browser that does not support the media query gets
-// a usable theme; the query then overrides it for a light preference.
 lines.push(`/*
  * FOLLOW SYSTEM. The dark pair is the base value, so an unsupported browser still
  * gets a usable theme; the media query then overrides it for a light preference.
