@@ -10,13 +10,14 @@ workflow data, which should never live beside another project's.
 
 ## Alpha
 
-**The roadmap's score is a model judgement, not a measurement, and the participant
-preview is a demonstration. Both are useful and neither is a substitute for your own
-judgement.**
+**The roadmap's score is a model judgement, not a measurement, and the analysis a
+participant sees at the end of their interview is a demonstration. Both are useful and
+neither is a substitute for your own judgement.**
 
 The tool is deployed and in use, and it is an alpha: the scoring model is provisional and
 will change as real answers come in, and there are known limits recorded in `NOTES.md`
-under "Found by review, not yet fixed". Read those before relying on an output.
+under "Found by review, not yet fixed" - including that the questionnaire's AI endpoint is
+not rate-limited. Read those before relying on an output.
 
 ## See it
 
