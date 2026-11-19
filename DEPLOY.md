@@ -566,6 +566,128 @@ docker compose -f docker-compose.deploy.yml config \
 not `KEY=value` as it appears in `.env`. Verifying that is worth doing: the first version of
 this line used `=`, redacted nothing at all, and looked like it had worked.
 
+## The two prefixes, and why there are two
+
+A reverse proxy can separate the path a request arrives with from the path the
+browser uses, so there are two prefixes:
+
+| | in an incoming request | in an emitted URL |
+| :--- | :--- | :--- |
+| **`BASE_PATH`** | the mount: what Express strips | not used |
+| **`PUBLIC_PATH`** | not used | the prefix on every link, form action, asset and the cookie `Path` |
+
+`PUBLIC_PATH` is derived from the path in `PUBLIC_BASE_URL`, so it is not normally
+set. The three deployments:
+
+| proxy behaviour | `BASE_PATH` | `PUBLIC_BASE_URL` |
+| :--- | :--- | :--- |
+| passes the prefix through | `/forgeright` | `https://host/forgeright` |
+| **strips the prefix** | *(empty)* | `https://host/forgeright` |
+| no prefix | *(empty)* | `https://host` |
+
+The middle row is `tailscale serve --set-path /forgeright`, which strips the
+prefix before forwarding. The app must then expect requests at the root while
+still emitting `/forgeright` in its URLs. Setting `BASE_PATH=/forgeright` there
+produces a 404, because the app waits for a prefix it is never sent; setting no
+public path produces links that leave the mount. Both halves are needed, and they
+are what the two variables separate.
+
+The session cookie's `Path` is the **public** prefix (`/forgeright/admin`), because
+that is what the browser sees. It has to be: a cookie scoped to `/admin` is not
+sent for a request to `/forgeright/admin`, so sign-in would appear to do nothing.
+
+## HTTPS only, and what is exempt
+
+**Everything is served over HTTPS, except localhost.** The questionnaire, the API,
+the static assets and the admin console all refuse a plain-HTTP request. A refused
+request is redirected (308, so a POST stays a POST) to the same path at the HTTPS
+address in `PUBLIC_BASE_URL`, or answered with an explanation when no HTTPS
+address is configured.
+
+Why the questionnaire is included, not just the admin console:
+
+- The **participant link is a bearer credential**. A token sent in cleartext can be
+  used by anyone who observes it *before* the participant does, submitting answers in
+  someone else's name and corrupting the roadmap the client then acts on.
+- The **answers are employees describing how the business runs**, which is the
+  sensitive material this product exists to collect.
+
+`req.secure` decides, so a proxy that terminates TLS must be trusted for this to
+work: set `TRUST_PROXY` to the proxy's address, and only when that
+proxy is the only thing able to reach the port. A client that can reach the port
+directly could otherwise send `X-Forwarded-Proto` itself.
+
+**Localhost is exempt**, and the exemption requires both a loopback peer and a
+loopback `Host`, so neither half alone grants it: a local process cannot claim a
+public hostname, and a remote client cannot claim loopback.
+
+**`/healthz` is exempt too**, deliberately: it reports a boolean and nothing else,
+so refusing it would make a plain-HTTP liveness probe fail and have an orchestrator
+restart a healthy container. If the endpoint ever reports anything else, it loses
+the exemption.
+
+## Long-lived participant links, and the trade accepted
+
+A participant link is a credential in a URL, and it stays usable for 90 days. That
+is deliberate, and this is the reasoning, recorded rather than left to look like
+an oversight:
+
+- **Friction loses respondents.** The premise of this tool is that people fill in
+  a questionnaire between other work. A link that expires in an hour, or that is
+  used up on first open, adds a step and loses replies, which is a worse outcome
+  than the exposure below.
+- **So the token appears in places that keep copies**: browser history, any proxy
+  access log, and the mailbox as plain text (the mail carries it as copyable text so
+  a mangled link is recoverable).
+- **What the exposure is worth, stated exactly.** The token grants one person's
+  answers to one organisation's questionnaire. It does **not** grant console
+  access, any role, or any other participant's answers.
+- **Two actions exist to end it.** "Reset all access" in the console and "Lost my
+  link" on the participant page both revoke every live token for that invitation and
+  issue one new one.
+
+Admin sign-in is deliberately different: single use, and 15 minutes. It grants an
+organisation rather than one person's answers, so the blast radius is not
+comparable and neither is the rule.
+
+## Themes
+
+The appearance is one of 22 palettes, chosen per browser.
+
+- The palette is **data** in `lib/palettes.js`, emitted as CSS custom properties by
+  `scripts/build-palette-css.js`; the generated `public/css/palette.css` is
+  committed. A change to a colour is a change to the data and a regeneration.
+- `public/css/app.css` maps those variables onto **semantic** roles (`--bg`,
+  `--card`, `--accent`), and components use only the roles, so adding a theme cannot
+  break one.
+- **The default follows the system**: Matte Black for a dark preference and
+  Catppuccin Latte for a light one (`SYSTEM_DARK` and `SYSTEM_LIGHT` in
+  `lib/palettes.js`).
+- **The choice is a cookie**, `fr_theme`, not `localStorage`: a cookie reaches the
+  server, so the palette is in the HTML and the first paint is correct. It is
+  `SameSite=Lax`, not `HttpOnly`, and long-lived.
+
+Three palettes have no `orange` (last-horizon, solitude, white); the substitution is
+one line in `paletteVars`.
+
+## Environment
+
+| Variable | Default | Meaning |
+| :--- | :--- | :--- |
+| `ALLOWED_HOST` | empty | Hosts this instance answers on, comma-separated (`localhost,127.0.0.1,forgeright.bunkens.be`). Empty accepts any host, for development. Compared on hostname only; empty entries are ignored. |
+| `TRUST_PROXY` | `0` | Number of reverse proxies in front. Decides whether `X-Forwarded-Proto` is believed. **Set to 1 when one proxy terminates TLS**, or every request looks insecure and the whole site refuses. |
+| `BASE_PATH` | empty | Path the app is **mounted** at: the prefix an incoming request carries, which Express strips. Must be a single safe path, or the server refuses to start. |
+| `PUBLIC_PATH` | derived | Path the app is **visible** at: the prefix every emitted URL and the session cookie carry. Normally derived from `PUBLIC_BASE_URL`, so it needs no value. Set it only to override, and it must then agree with that URL. |
+| `SESSION_SECRET` | none | Signs the admin session cookie. **Required**: the server refuses to start without it. |
+| `fr_theme` (cookie) | follows the system | The chosen palette, or `system`. |
+| `PUBLIC_BASE_URL` | none | Absolute address of this installation. Used for mailed sign-in links, as the HTTPS redirect target, and as the source of the public path. Include the prefix. |
+| `LOGIN_LINK_TTL_MINUTES` | `15` | How long a sign-in link stays valid. A link is single-use regardless. |
+| `SESSION_TTL_HOURS` | `12` | How long an admin session lasts. |
+| `MAIL_SENDER` | `console` | `console` prints to stdout; `proton` sends through `proton-cli`. An unknown value refuses to start. **Set `proton` to actually send mail.** |
+| `MAIL_PROTON_PROFILE` | `default` | The `proton-cli` profile to send from. **If you set it, sign in with the same `--profile`.** |
+| `STORE_DIR` | `data/store` | Where the databases live. Point at a volume in production. |
+| `STORE_BUSY_TIMEOUT_MS` | `2000` | How long a write waits for another writer's lock. Empty is unset. Clamped to 60s. An explicit `0` is honoured. |
+
 ## If something is wrong
 
 | symptom | cause |
