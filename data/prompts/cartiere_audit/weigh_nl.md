@@ -191,9 +191,14 @@ de lijst.
 
 ## De alinea
 
-**`reasoning` is verplicht.** Eén alinea die uitlegt waarom dit proces dit getal
-kreeg, **met weging van elke term die je kreeg**. Daarmee controleert een lezer of het
-getal klopt, dus het moet zeggen wat het getal bewoog.
+**`reasoning` is verplicht.** Leg uit waarom dit proces dit getal kreeg, **met weging
+van elke term die je kreeg**. Daarmee controleert een lezer of het getal klopt, dus het
+moet zeggen wat het getal bewoog.
+
+**Breek het in alinea's, twee tot vier zinnen elk, met een lege regel ertussen.** Een
+muur van tekst leest een mens als één bewering; dezelfde woorden in alinea's lezen als
+een betoog. Splits op onderwerp - wat het werk is, wat het getal omhoog bracht, wat het
+tegenhield - niet op lengte.
 
 Schrijf het als uitleg aan iemand die de beslissing neemt, in de taal van de antwoorden:
 

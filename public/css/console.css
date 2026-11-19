@@ -91,6 +91,28 @@
     margin: 0;
 }
 
+/* SEVERAL PARAGRAPHS FROM ONE STORED REASONING read as ONE passage, not as three cards.
+
+   THE FILL AND THE RULE BELONG TO THE FIRST PARAGRAPH ONLY, and the rest are plain text with space
+   between them. Measured: with the card on every `.paragraph`, one 2,095-character reasoning
+   rendered as three stacked grey cards with three left rules, which reads as three separate remarks
+   rather than one explanation.
+
+   THE WRAPPER WAS REMOVED because test/console-views.test.js asserts that the FIRST paragraph is the
+   heading's immediate next element - a wrapper div between them is a real regression of that
+   contract, and the test is right. So the passage is styled from the paragraphs themselves. */
+.paragraph + .paragraph {
+    margin-top: 12px;
+    /* The card belongs to the passage's first block; the continuation is plain text. */
+    background: none;
+    border-left: none;
+    border-radius: 0;
+    /* EVERY paragraph keeps the same left inset. Dropping it on the continuation left those lines
+       flush to the rule while the first was 14px in - MEASURED in the screenshot, and it read as two
+       different blocks rather than one passage. */
+    padding-left: 14px;
+}
+
 /* The participant's own words, which the paragraph is checked against. ONE BLOCK OF PROSE, so it
    keeps the card: the transcript turns and the merged reasoning use this. The FIELD LIST below does
    not, because fourteen cards in a column read as fourteen objects rather than one answer. */

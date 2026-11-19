@@ -184,9 +184,14 @@ no "too hard to attempt". Every process is weighed and every process appears.
 
 ## The paragraph
 
-**`reasoning` is required.** One paragraph explaining why this process got this
-score, **weighing every term you were given**. It is what a reader uses to check
-whether the number is sensible, so it has to say what moved it.
+**`reasoning` is required.** Explain why this process got this score, **weighing
+every term you were given**. It is what a reader uses to check whether the number is
+sensible, so it has to say what moved it.
+
+**BREAK IT INTO PARAGRAPHS, two to four sentences each, with a blank line between
+them.** A person reads a wall of text as one claim; the same words in paragraphs read
+as an argument. Separate them by topic - what the work is, what moved the number up,
+what held it back - rather than by length.
 
 Write it as an explanation to somebody making the decision, in the language of the
 answers:

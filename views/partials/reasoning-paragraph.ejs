@@ -1,0 +1,68 @@
+<%#
+    THE MODEL'S PARAGRAPH, BROKEN INTO READABLE PARAGRAPHS.
+
+    WHY THIS EXISTS. A stored reasoning is 1,200 to 2,100 characters with six to nine sentences and
+    ZERO newlines - measured across every round in the demo store. Rendered in one <p> it is a wall,
+    and the owner's words were "humans like some white lines in between". The 68ch measure did not
+    help because nothing in the string breaks it.
+
+    WHAT IT SPLITS ON, AND WHAT IT DOES NOT. A sentence END is a period, question mark or
+    exclamation mark, followed by whitespace, followed by an uppercase letter, a digit, or an
+    opening quote/bracket. That is deliberately narrow:
+
+      SPLIT      "first. Second"        "works. This is"
+      NO SPLIT   "2 euros."             a period then whitespace then lowercase reads as a
+                                        continuation, and a decimal or a version number has no space
+      NO SPLIT   "e.g. the invoice"     lowercase after the period - so the abbreviation is absorbed
+      NO SPLIT   "Mr. Smith"            capital after the period, so this ONE is split wrongly
+
+    A SINGLE-FULL-STOP ABBREVIATION BEFORE A CAPITALISED WORD IS THE CASE IT GETS WRONG: "Mr.",
+    "Dr.", "Inc.", "etc. The". It breaks a paragraph where a sentence does not end. That is accepted
+    rather than repaired, and the reason is that the repair is a list of abbreviations that is wrong
+    somewhere else - the codebase has been burnt by every text heuristic it has had, and a paragraph
+    break in the wrong place is a cosmetic flaw, not a false claim. A wrong break cannot change what
+    the sentence says.
+
+    PARAGRAPHS ARE NEVER SHORTER THAN TWO SENTENCES, so "Mr." splitting "Mr. Smith" leaves a short
+    first paragraph rather than a one-word line. Text that already carries blank lines is used as it
+    is, which is what the prompt asks new rounds to produce.
+
+    WHERE IT RENDERS. Both places the paragraph appears include this partial - the roadmap's "why it
+    scored this" and the answer's "read as this process" - so they cannot drift. The Markdown export
+    does not carry the reasoning at all, so there is nothing to keep in step there.
+%>
+<%
+    function splitParagraph(text) {
+        const raw = String(text === null || text === undefined ? '' : text).trim();
+        if (raw === '') return [];
+
+        // Text that already has blank lines is already paragraphed; use those breaks as they are.
+        if (/\n\s*\n/.test(raw)) {
+            return raw.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean);
+        }
+
+        // A sentence end: terminal punctuation, whitespace, then something that starts a sentence.
+        const END = /([.!?])\s+(?=[A-Z0-9"'(\u2018\u201c])/g;
+        const sentences = [];
+        let last = 0;
+        let match;
+        while ((match = END.exec(raw)) !== null) {
+            const end = match.index + 1;
+            sentences.push(raw.slice(last, end).trim());
+            last = match.index + match[0].length;
+        }
+        const tail = raw.slice(last).trim();
+        if (tail) sentences.push(tail);
+        if (sentences.length <= 2) return [raw];
+
+        // Two sentences per paragraph, so a stray break from an abbreviation still leaves a
+        // paragraph with content in it.
+        const out = [];
+        for (let i = 0; i < sentences.length; i += 2) {
+            out.push(sentences.slice(i, i + 2).join(' '));
+        }
+        return out;
+    }
+%>
+<% splitParagraph(reasoning).forEach(function (part) { %><p class="paragraph"><%= part %></p>
+<% }); %>

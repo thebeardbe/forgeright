@@ -166,7 +166,7 @@
                     <h3>Why it was matched there</h3>
                     <% /* The model's reasoning, shown because the spec makes it the only way
                         a grouping can be reviewed. Escaped like every other value. */ %>
-                    <p class="paragraph"><%= response.grouping.reasoning %></p>
+                    <%- include('partials/reasoning-paragraph', { reasoning: response.grouping.reasoning }) %>
                 <% } else { %>
                     <p class="empty">This answer has not been identified into a process yet.</p>
                 <% } %>

@@ -208,7 +208,7 @@
                 <section class="tab-panel" data-panel="score" hidden>
                 <% if (process.score) { %>
                     <h3>Why it scored this</h3>
-                    <p class="paragraph"><%= process.score.reasoning %></p>
+                    <%- include('partials/reasoning-paragraph', { reasoning: process.score.reasoning }) %>
 
                     <h3>The terms behind it</h3>
                     <% /* Cost terms are marked, because a reader must not have to remember
