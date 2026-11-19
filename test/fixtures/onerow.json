@@ -1,0 +1,61 @@
+[
+  {
+    "id": "checking-that-the-signed-client-contracts-match-what-was-quo",
+    "title": "Testing whether a server is up",
+    "task": "Testing whether a server is up",
+    "peopleAffected": {
+      "said": "nobody else is involved"
+    }
+  },
+  {
+    "id": "checking-that-signed-client-contracts-match-what-was-quoted",
+    "title": "Checking whether servers are up",
+    "task": "Checking whether servers are up",
+    "peopleAffected": {
+      "said": "nobody else is involved"
+    }
+  },
+  {
+    "id": "checking-signed-client-contracts-against-the-quotes-they-wer",
+    "title": "Triaging overnight customer complaints and deciding which ones the support team should call back",
+    "task": "Triaging overnight customer complaints and deciding which ones the support team should call back",
+    "trigger": "the overnight complaints queue is full at the start of the day",
+    "frequencyPerWeek": 40,
+    "steps": [
+      {
+        "name": "open the bill and download the lines",
+        "whatHappens": "Open the queue and pull the overnight complaints.",
+        "decidedHow": "the queue is what arrived while nobody was watching",
+        "needsReasoning": false
+      },
+      {
+        "name": "check each line against the handset list",
+        "whatHappens": "Read each complaint and tag what kind it is.",
+        "decidedHow": "the type decides who answers it",
+        "needsReasoning": true
+      },
+      {
+        "name": "check the line against the contract",
+        "whatHappens": "Look up the order and when it was meant to arrive.",
+        "decidedHow": "the dates decide whether it is urgent",
+        "needsReasoning": false
+      },
+      {
+        "name": "note the line and mark the issue type",
+        "whatHappens": "Note the complaint and what was decided.",
+        "decidedHow": "the note is what the agent sees",
+        "needsReasoning": false
+      },
+      {
+        "name": "total the charges and write the summary",
+        "whatHappens": "Close the complaint once it is assigned.",
+        "decidedHow": "an open complaint stays on the queue",
+        "needsReasoning": false
+      }
+    ],
+    "peopleAffected": {
+      "said": "nobody else is involved"
+    },
+    "reportedBy": "Support"
+  }
+]

@@ -1,18 +1,12 @@
 /**
- * Periods, and the two questions asked about a `timePerPeriod` value. The distinction these protect is
- * between a period that says the work is zero and one that could not be measured.
+ * Periods, and the two questions asked about a `timePerPeriod` value: a period that says the work is zero
+ * is not the same as one that could not be measured.
  */
 
 /**
- * Whether a value is the continuous-work shape the prompt asks for. Both the structured object and a
- * description in the participant's own words are accepted:
+ * Both the structured object (`{ hours, period }`) and a description in the participant's own words are
+ * accepted; a description's hours read as zero by the effort calculation.
  *
- *   { hours: 6, period: "week" }   convertible to weekly hours
- *   "2 hours a day"                answers the field but cannot be converted
- *
- * A description's hours are read as zero by the effort calculation; see `timePerPeriodIsScorable`.
- *
- * @param {*} value
  * @returns {boolean}
  */
 export function isPeriod(value) {
@@ -23,11 +17,9 @@ export function isPeriod(value) {
 }
 
 /**
- * Whether a `timePerPeriod` can be turned into weekly hours: true for the structured shape, false for a
- * description. The distinction exists so a zero effort figure is readable: scorable zero means the work
- * consumes nothing, while an unscorable description means the figure is unknown.
+ * True for the structured shape, false for a description: scorable zero means the work consumes nothing,
+ * while an unscorable description means the figure is unknown.
  *
- * @param {*} value
  * @returns {boolean}
  */
 export function timePerPeriodIsScorable(value) {

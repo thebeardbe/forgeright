@@ -1,26 +1,13 @@
 /**
  * ONE PROCESS THE MODEL RE-EMITTED WAS SCORED AS TWO.
  *
- * THE PAYLOAD THIS GUARDS AGAINST, from a real transcript - this is the artefact, not a
- * reconstruction:
+ * The payload below is from a real transcript - the artefact, not a reconstruction. One process
+ * described twice in reworded steps, `frequencyPerWeek` 56 in one entry and 7 in the other because
+ * the model had forgotten it already recorded 56 servers.
  *
- *   [ { task: "Testing whether a server is up",    frequencyPerWeek: 56,
- *       steps: [Open the URL, Check if it is up, Log it in Excel, Notify IT] },
- *     { task: "Checking whether servers are up",   frequencyPerWeek: 7,
- *       steps: [Open the server URL, Check if the site loads, Log the result in Excel,
- *               Notify IT if down] } ]
- *
- * ONE process, described twice in reworded steps, with `frequencyPerWeek` 56 in one entry and 7 in
- * the other because the model had forgotten it had already recorded 56 servers. The prompt states
- * the contract - "`processes` holds the process you are working on NOW, not every process of the
- * interview" - and nothing enforced it.
- *
- * `reconcileWithHeld` enforces it where the round is known: the client sends `roundProcesses` with
- * `/api/chat`, the one fact the reply cannot carry, and a reply that re-describes the round's
- * process is folded KEEPING THE ROUND'S RECORDED VALUES.
- *
- * BOTH DIRECTIONS ARE TESTED, and the second is the harm direction: folding must never discard a
- * process the participant has just named.
+ * `reconcileWithHeld` folds a reply that re-describes the round's process, KEEPING THE ROUND'S
+ * RECORDED VALUES. BOTH DIRECTIONS ARE TESTED: folding must never discard a process the
+ * participant has just named.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +20,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 import { reconcileWithHeld } from '../ai/workflow-identity.js';
 
-/** The owner's payload, exactly as his transcript carried it. */
 const OWNER_PAYLOAD = [
     {
         task: 'Testing whether a server is up',
@@ -49,7 +35,6 @@ const OWNER_PAYLOAD = [
     }
 ];
 
-/** The round's recorded process: the FIRST entry, which is what the client would have sent. */
 const HELD_FIRST_ENTRY = [
     {
         id: 'testing-whether-a-server-is-up',
@@ -61,7 +46,6 @@ const HELD_FIRST_ENTRY = [
 ];
 
 test('the REAL payload folds to ONE process, keeping the round\'s `frequencyPerWeek` 56', () => {
-    // The value that survives is the ROUND'S recorded 56, not the model's re-derived 7.
     const { workflows, folded } = reconcileWithHeld(OWNER_PAYLOAD, HELD_FIRST_ENTRY);
 
     assert.equal(workflows.length, 1, 'the two reworded entries are ONE process');
@@ -71,8 +55,6 @@ test('the REAL payload folds to ONE process, keeping the round\'s `frequencyPerW
 });
 
 test('the surviving entry carries the STEPS and the prose the participant gave', () => {
-    // The fold keeps a whole account, not a bare id: the steps and the answer in words must be
-    // present, or the score would be computed from a stub while the real process sat beside it.
     const { workflows } = reconcileWithHeld(OWNER_PAYLOAD, HELD_FIRST_ENTRY);
     const kept = workflows[0];
 
@@ -82,8 +64,8 @@ test('the surviving entry carries the STEPS and the prose the participant gave',
 });
 
 test('THE HARM DIRECTION: a NEWLY NAMED process beside a finished one still yields TWO', () => {
-    // A participant naming a second process produces `[the finished process, the new one with NO
-    // steps]`, so the step-less entry is the NEW one and must not be folded away and discarded.
+    // A participant naming a second process produces `[finished, the new one with NO steps]`, so the
+    // step-less entry is the NEW one.
     const finished = {
         id: 'checking-servers',
         task: 'Checking whether servers are up',
@@ -105,8 +87,7 @@ test('THE HARM DIRECTION: a NEWLY NAMED process beside a finished one still yiel
 });
 
 test('the newly named process is kept even though it carries NO steps', () => {
-    // The new process arrives step-less BY DESIGN ("a fresh matrix from its `task` and `trigger`
-    // onward"), so emptiness must not be read as evidence of being the round's process.
+    // It arrives step-less BY DESIGN ("a fresh matrix from its `task` and `trigger` onward").
     const finished = { id: 'p1', task: 'Checking servers', frequencyPerWeek: 56, steps: [{ name: 'Open the URL' }] };
     const newlyNamed = { id: 'p2', task: 'Onboarding a new supplier', trigger: 'a supplier is agreed' };
 
@@ -115,20 +96,14 @@ test('the newly named process is kept even though it carries NO steps', () => {
     assert.ok(workflows.some((w) => w.id === 'p2'), 'the step-less new process survives');
 });
 
-// ===========================================================================
-// THE DECLINE CASES - no basis to decide means the reply is left alone
-// ===========================================================================
-
 test('an EMPTY held set DECLINES, leaving the reply exactly as it stands', () => {
-    // The safe direction: no round history means no basis for deciding, so nothing is folded.
     const { workflows, folded } = reconcileWithHeld(OWNER_PAYLOAD, []);
     assert.equal(workflows.length, 2, 'both entries are passed through');
     assert.equal(folded, 0, 'nothing folded');
 });
 
 test('a held set with MORE THAN ONE process DECLINES', () => {
-    // A round holds one process at a time, so with several held, position and step sharing are not
-    // evidence enough to say WHICH one is being reworded.
+    // With several held, position and step sharing cannot say WHICH one is being reworded.
     const held = [
         { id: 'a', task: 'A', steps: [{ name: 'Open the URL' }] },
         { id: 'b', task: 'B', steps: [{ name: 'Something else' }] }
@@ -140,7 +115,6 @@ test('a held set with MORE THAN ONE process DECLINES', () => {
 });
 
 test('a reply sharing NO step name with the round is left alone', () => {
-    // Nothing in the reply names the round's process and no step matches, so it is something else.
     const held = [{ id: 'p1', task: 'Checking servers', steps: [{ name: 'Open the URL' }] }];
     const unrelated = [
         { id: 'x', task: 'Answering the phone', steps: [{ name: 'Pick up the handset' }] }
@@ -158,7 +132,6 @@ test('an EMPTY reply is passed through unchanged', () => {
 });
 
 test('a malformed reply is not crashed on', () => {
-    // The route may hand this anything; a throw here would reach the participant's reply.
     for (const bad of [null, undefined, 'nope', 42]) {
         const { workflows, folded } = reconcileWithHeld(bad, HELD_FIRST_ENTRY);
         assert.equal(folded, 0, `${JSON.stringify(bad)} folds nothing`);
@@ -166,13 +139,7 @@ test('a malformed reply is not crashed on', () => {
     }
 });
 
-// ===========================================================================
-// THE BOUNDARY THE CLIENT DEPENDS ON
-// ===========================================================================
-
 test('the fold is IDENTITY-WISE on a step name, so a reworded step does not match', () => {
-    // The rule is an EXACT co-test, so with NO exactly equal step name nothing folds. The fixture
-    // folds because three of its step names are exactly equal.
     const held = [{ id: 'p1', task: 'A', steps: [{ name: 'Open the URL' }] }];
     const rewordedOnly = [{ task: 'B', steps: [{ name: 'Open the server URL' }] }];
 
@@ -181,9 +148,6 @@ test('the fold is IDENTITY-WISE on a step name, so a reworded step does not matc
 });
 
 test('the route only reconciles when the client sent a held set, and declines otherwise', () => {
-    // `roundProcesses` is the one fact the reply cannot carry, and without it the route passes the
-    // reply through rather than guessing. Asserted from the source: the client omitting the field is
-    // the case that must not error or crash.
     const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'routes-api.js'), 'utf8');
 
     assert.match(source, /import \{ reconcileWithHeld \} from '\.\.\/ai\/workflow-identity\.js'/,

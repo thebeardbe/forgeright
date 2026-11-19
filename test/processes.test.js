@@ -1,12 +1,7 @@
 /**
- * Workflow 2: identification.
- *
- * The model reports whether a response describes work somebody has already
- * described; the code validates the shape, stores a revision, and an admin can
- * ask for a rejudge. Nothing here is reachable by a participant.
- *
- * STORE_DIR is a temp directory per run, set before anything is imported, so
- * data/store/ is never touched.
+ * Workflow 2: identification. The model reports whether a response describes work somebody has
+ * already described; the code validates the shape, stores a revision, and an admin can rejudge.
+ * Nothing here is reachable by a participant.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,17 +25,12 @@ after(() => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
 
-/** An organisation with one invitation and one response, ready to identify. */
 function orgWithResponse(data = { task: 'invoices' }) {
     const org = store.createOrganisation('Org');
     const invitation = store.addInvitation(org.id, { email: 'p@example.test', department: 'Finance' });
     const response = store.addResponse(org.id, invitation.token, { department: 'Finance', data });
     return { org, invitation, response, token: invitation.token };
 }
-
-// ===========================================================================
-// 1. validateIdentification — THE SHAPE GATE
-// ===========================================================================
 
 const KNOWN = Object.freeze(['proc-1']);
 
@@ -70,8 +60,7 @@ test('a matches id that does NOT exist is refused, and the reason names it', () 
 });
 
 test('a matches id from ANOTHER organisation\'s list is refused', () => {
-    // The gate is given this organisation's ids, so a valid-looking stranger is
-    // refused rather than linked.
+    // A valid-looking stranger is refused rather than linked.
     const result = processes.validateIdentification({ matches: 'other-org-process' }, KNOWN);
     assert.equal(result.ok, false);
 });
@@ -85,8 +74,7 @@ test('a matches of the wrong TYPE is refused', () => {
 });
 
 test('missing, empty, whitespace and non-string reasoning are ALL refused', () => {
-    // The reasoning is the only way a grouping can be reviewed, so a grouping
-    // without it is not a usable result.
+    // The reasoning is the only way a grouping can be reviewed.
     for (const reasoning of [undefined, '', '   ', '\t\n', 42, null, {}]) {
         const result = processes.validateIdentification({ matches: null, reasoning }, KNOWN);
         assert.equal(result.ok, false, `reasoning ${JSON.stringify(reasoning)} must be refused`);
@@ -134,8 +122,6 @@ test('contributed that is not an array becomes an empty list, not a failure', ()
     assert.deepEqual(result.contributed, []);
 });
 
-// --- confidence is RECORDED, never filtered ---------------------------------
-
 test('every valid confidence is accepted', () => {
     for (const confidence of processes.CONFIDENCE) {
         const result = processes.validateIdentification({ matches: null, reasoning: 'r', confidence }, KNOWN);
@@ -145,8 +131,7 @@ test('every valid confidence is accepted', () => {
 });
 
 test('a LOW confidence is ACCEPTED, not filtered out', () => {
-    // There must be no threshold: a confidence is a label for a reader, and
-    // dropping a grouping for being uncertain would silently lose a process.
+    // No threshold: dropping a grouping for being uncertain silently loses a process.
     const result = processes.validateIdentification({ matches: null, reasoning: 'r', confidence: 'low' }, KNOWN);
     assert.equal(result.ok, true);
     assert.equal(result.confidence, 'low');
@@ -167,8 +152,7 @@ test('a low-confidence grouping is STORED and readable, so nothing dropped it', 
 });
 
 test('an UNKNOWN confidence is accepted but recorded as low, never refused', () => {
-    // Losing a whole grouping over a label would be the wrong trade, and storing
-    // it as anything above 'low' would misrepresent it.
+    // Storing it above 'low' would misrepresent it.
     const result = processes.validateIdentification({ matches: null, reasoning: 'r', confidence: 'very sure' }, KNOWN);
     assert.equal(result.ok, true);
     assert.equal(result.confidence, 'low');
@@ -224,15 +208,13 @@ test('a second response that MATCHES keeps ONE process and TWO responses behind 
     assert.equal(rows[0].current.revision, 2, 'the current revision is the second judgement');
     assert.equal(rows[0].current.responses.length, 2, 'TWO responses behind the current revision');
 
-    // And the earlier response is still findable by its id, not just counted.
     const ids = rows[0].current.responses.map((r) => r.responseId);
     assert.ok(ids.includes(first.id), 'the first response is still behind the process');
     assert.ok(ids.includes(second.id), 'the second response is behind the process');
 });
 
 test('a merged revision gives each response ITS OWN contributed list', () => {
-    // Copying the new response's list onto the earlier one would say the second
-    // participant supplied the trigger when the first one did.
+    // Copying the new response's list would name the wrong participant as the source.
     const { org, invitation, response: first } = orgWithResponse({ task: 'first' });
     const created = processes.recordIdentification({
         orgId: org.id,
@@ -274,7 +256,6 @@ test('a NON-matching response creates a second process', () => {
 });
 
 test('three responses merging into one process are all behind one revision', () => {
-    // The general shape of the same defect, past two.
     const { org, invitation, response: first } = orgWithResponse({ task: 'one' });
     const created = processes.recordIdentification({
         orgId: org.id,
@@ -295,10 +276,6 @@ test('three responses merging into one process are all behind one revision', () 
     assert.equal(rows[0].current.responses.length, 3, 'three responses behind the current revision');
     assert.equal(new Set(rows[0].current.responses.map((r) => r.responseId)).size, 3, 'three DISTINCT responses');
 });
-
-// ===========================================================================
-// 3. THE REVISION HISTORY
-// ===========================================================================
 
 test('a rejudge ADDS a revision rather than overwriting the earlier one', () => {
     const { org, response } = orgWithResponse({ task: 'invoices' });
@@ -348,8 +325,6 @@ test('exactly ONE revision is current, and the current one is the latest', () =>
 });
 
 test('the DATABASE refuses a second current revision, not the code', async () => {
-    // is_current is a PARTIAL UNIQUE INDEX, so the guarantee does not depend on every writer
-    // remembering to clear the previous one.
     const { org, response } = orgWithResponse({ task: 'invoices' });
     const first = processes.recordIdentification({
         orgId: org.id,
@@ -445,7 +420,6 @@ test('a rejudge can refine the process NAME without blanking it', () => {
         responseId: response.id
     });
 
-    // A rejudge with no name keeps the existing one.
     processes.recordIdentification({
         orgId: org.id,
         reply: { matches: first.process.id, reasoning: 'reconsider', confidence: 'high' },
@@ -456,7 +430,6 @@ test('a rejudge can refine the process NAME without blanking it', () => {
     let row = processes.listProcessesForConsole(org.id).find((p) => p.id === first.process.id);
     assert.equal(row.name, 'Invoices', 'a nameless rejudge does not blank the name');
 
-    // A rejudge WITH a name refines it.
     processes.recordIdentification({
         orgId: org.id,
         reply: { matches: first.process.id, reasoning: 'refine', confidence: 'high', name: 'Invoices and credit notes' },
@@ -473,7 +446,7 @@ test('a rejudge can refine the process NAME without blanking it', () => {
 // ===========================================================================
 //
 // Asserted as a BOUNDARY: the lookup is not exported, and no participant route imports the process
-// module. A grep is the honest form, because the property is "a route cannot reach it".
+// module.
 
 test('groupedProcessForResponse is NOT exported from the process module', async () => {
     const module = await import('../lib/store/processes.js');
@@ -487,8 +460,6 @@ test('the process module exports only the operations the console path needs', as
 });
 
 test('no participant route imports the process module', () => {
-    // The routes a participant reaches do not import it at all. The console in lib/auth/console.js
-    // is the one path that MAY read it, and it is not a participant route.
     const projectRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
     const participantFiles = ['lib/auth/participant-routes.js', 'lib/routes-api.js'];
 
@@ -504,11 +475,6 @@ test('no participant route imports the process module', () => {
     }
 });
 
-// ===========================================================================
-// 5. buildComparisonMessage
-// ===========================================================================
-
-/** A response row as the caller assembles it, with a transcript present. */
 function responseForComparison(overrides = {}) {
     return {
         id: 'response-1',
@@ -532,8 +498,7 @@ test('the comparison message carries the fields a decision needs', () => {
 });
 
 test('the comparison message does NOT carry the transcript', () => {
-    // The comment: shipping several conversations into every comparison is a large
-    // cost for text the decision does not use.
+    // Shipping several conversations into every comparison is a large cost.
     const message = identify.buildComparisonMessage(responseForComparison(), [
         { id: 'proc-1', name: 'Invoices', reasoning: 'r', transcript: [{ role: 'user', content: 'ANOTHER SECRET' }] }
     ]);
@@ -552,7 +517,6 @@ test('the admin\'s argument appears ONLY when given', () => {
 });
 
 test('an empty known-process list says so explicitly', () => {
-    // So the model is not left guessing whether the section was omitted.
     const message = identify.buildComparisonMessage(responseForComparison(), []);
     assert.ok(message.includes('none yet'), 'the message states there are no existing processes');
 });
@@ -561,10 +525,6 @@ test('a known process with no reasoning does not produce a blank "why it exists"
     const message = identify.buildComparisonMessage(responseForComparison(), [{ id: 'proc-1', name: 'N', reasoning: null }]);
     assert.equal(message.includes('why it exists:'), false);
 });
-
-// ===========================================================================
-// 6. THE GUARDRAILS
-// ===========================================================================
 
 test('an injection in a RESPONSE is rejected', async () => {
     const result = await identify.runIdentification({
@@ -576,8 +536,7 @@ test('an injection in a RESPONSE is rejected', async () => {
 });
 
 test('an injection in the ADMIN\'S REASONING is rejected', async () => {
-    // The admin's reasoning is an authorised instruction, but a compromised admin
-    // account must not also become an instruction to the model.
+    // A compromised admin account must not become an instruction to the model.
     const result = await identify.runIdentification({
         response: { id: 'r', data: { task: 'enter invoices' } },
         knownProcesses: [],
@@ -588,7 +547,6 @@ test('an injection in the ADMIN\'S REASONING is rejected', async () => {
 });
 
 test('an ordinary response is NOT rejected', async () => {
-    // The control: the guardrail must not block legitimate descriptions.
     const result = await identify.runIdentification({
         response: { id: 'r', data: { task: 'entering supplier invoices', trigger: 'email arrives' } },
         knownProcesses: []
@@ -606,10 +564,6 @@ test('an ordinary admin argument is NOT rejected', async () => {
 
     assert.notEqual(result.status, 'rejected', 'a normal argument passes the guardrail');
 });
-
-// ===========================================================================
-// 7. parseIdentificationResponse — A REPLY WITH NO JSON IS AN ERROR
-// ===========================================================================
 
 test('a reply with no JSON object is reported as an error with what came back', () => {
     const result = identify.parseIdentificationResponse('I cannot tell whether these are the same.');

@@ -38,9 +38,28 @@ GET  /lost-link               participant recovery: reset every token, issue one
 POST /api/response            save an answer; the organisation comes from the token
 
 POST /api/chat                ai/audit-core.js -> ai/provider.js -> adapters/*
-POST /api/score               lib/scoring.js (pure)
+POST /api/score               lib/scoring.js (pure); the participant preview
 GET  /settings/theme          store the theme choice in a cookie
 GET  /healthz                 liveness; the only route exempt from the HTTPS rule
+GET  /admin/demo              establish a read-only demo session (only when DEMO_LOGIN=1)
+
+Admin console, behind the session guard. These read the organisation from the session via
+`scopeForSession`, never from the request:
+
+GET  /admin                   the console page (the same path as the sign-in form, chosen by
+                              the session) with the organisation and user list
+POST /admin/organisation/name rename the organisation
+POST /admin/invitations       invite an address, minting its first token
+POST /admin/invitations/:id/send   add another link, leaving the existing ones live
+POST /admin/invitations/:id/reset  revoke every token, issue one replacement
+POST /admin/users             add a user to this organisation
+POST /admin/users/:id/role    change a user's role, within this organisation
+
+GET  /admin/answers           view 1: every answer with the process it was matched to
+POST /admin/answers/:id/rejudge    re-identify an answer, then reweigh
+POST /admin/answers/:id/correct    correct ONE stored value, then reweigh
+GET  /admin/roadmap           view 2: processes sorted by score
+POST /admin/roadmap/:id/rejudge    re-identify a process from its first response, then reweigh
 ```
 
 ### Tenancy and identity
@@ -52,6 +71,14 @@ Three identifiers, and they are deliberately separate:
 | **organisation id** | the tenant, and the filename | the session, **never the request** |
 | **invitation id** | who a participant is, stable for the life of the invitation | the org file |
 | **token** | a credential that can be replaced | hashed, in `participant_tokens` |
+
+**`token_index` is the installation-level table that makes a participant work at all.**
+A participant arrives holding a token and no organisation id, so something must resolve
+the token to a tenant **before any organisation file can be opened**. `token_index` holds
+a token hash, an organisation id and an invitation id and nothing else - no answers, no
+email, no name - so it is routing rather than tenant data. It lives in `admin.db` beside
+`users`, `login_token` and `demo_session`, and it is written in the same operation as the
+invitation so the two cannot drift.
 
 **The identity is the invitation id and the credential is the token.** They are
 separate so a reset can retire a leaked link without orphaning the answers already
@@ -103,6 +130,85 @@ downgraded to `asking` rather than closing. A step's `needsReasoning` is derived
 by the model, and `reasoningBasis` optionally carries the phrase from
 `decidedHow` that decided it, so a misread step is visible to a reader.
 
+**Two shapes are stored, and this is one of the invariants a reader must know.**
+A live interview round saves the payload wrapped:
+
+```json
+{ "workflows": [ { "task": "...", "steps": [ ... ] } ] }
+```
+
+An imported round - the seed, `POST /api/score`, an export - saves the workflow
+directly at the top level:
+
+```json
+{ "task": "...", "steps": [ ... ] }
+```
+
+**`ai/response-shape.js` is the one resolver** (`responseWorkflow`), and every
+reader goes through it: the step merge, the weighing, the console views and the
+answer headings. **Reading the wrong shape does not fail loudly - it finds no
+fields**, which renders a live interview as an untitled answer with nothing in it.
+Adding a third reader that reaches into `response.data.task` directly reintroduces
+that defect. `lib/view-format.js` re-exports the resolver so view code has one
+import; `ai/merge-steps.js` uses it so two readers cannot disagree.
+
+### From a finished round to a process, automatically
+
+**A participant never triggers identification, and an admin never has to.** When a round
+is finalised, `POST /api/response` calls `identifyFinishedResponse`
+(`lib/auth/identify-response.js`), which runs workflow 2 and records the result:
+
+```
+round finalised (submitted_at set)
+  -> alreadyIdentified?  yes -> do nothing
+  -> runIdentification: the round's payload against every existing process
+  -> recordIdentification (decidedBy: 'model')
+```
+
+**It is deliberately not awaited.** The model call takes seconds and the participant is
+waiting for this turn's reply, so the reply goes first. **Every failure is swallowed and
+logged**, because the answers are already saved: the worst outcome is an answer that still
+reads "not yet read", which the console renders and an admin can fix with Rejudge.
+
+**The guard exists for a specific reason.** The identify prompt tells the model to answer
+`matches: null` when it is unsure, and a second `recordIdentification` with `matches: null`
+creates a second process of the same name. Checking `alreadyIdentified` before the call
+means a response that already has a grouping never costs a call or risks a duplicate.
+
+**It is not a rejudge.** No admin argument is passed and `decidedBy` stays `model`, so the
+console does not read every live interview as a console full of corrections.
+
+### An admin's correction: a value, not a grouping
+
+**Distinct from rejudge, and the distinction is the point.** A rejudge is a reasoned
+argument about **which process a response belongs to**; it can never reach a stored value.
+A correction changes **one stored value** that the score is computed from, because the
+effort formula reads every factor from `response.data` and the model can read an answer
+wrongly.
+
+```
+POST /admin/answers/:id/correct   field, value, reason
+  -> readCorrectedValue: the field is one of CORRECTABLE_FIELDS, the value is valid
+  -> response is in a process?      no -> refuse, there is no score to change
+  -> recordFieldCorrection: INSERT OR REPLACE, one current row per (response, field)
+  -> reweighProcess: the new score is produced immediately
+```
+
+**The participant's answer is never rewritten.** The correction is held in its own table
+(`response_field_correction`), so the answers view keeps showing what they said while the
+score uses the corrected figure. A correction always carries the admin's reasoning, for
+the same reason a reweighing does: a changed number has to be reviewable.
+
+**`CORRECTABLE_FIELDS` is a closed set** - `frequencyPerWeek`, `minutesPerInstance`,
+`peopleAffected`, `timePerPeriod` - because those are the four the effort formula reads. A
+field the score depends on and cannot be corrected would be the bug. A second correction
+of the same field supersedes the first rather than accumulating, enforced by a unique
+index.
+
+**The reweigh is immediate and tolerated.** A correction beside an uncorrected score is
+the state this exists to avoid, so the weighing runs in the same request; if the model is
+unreachable the correction still stands, and the roadmap shows the process as not weighed.
+
 ### Providers
 
 `config/ai-config.json` defines providers; `AI_PROVIDER` selects one. Each
@@ -119,6 +225,40 @@ a different provider, because answering a client's questionnaire with the wrong
 model is worse than failing.
 
 ## Scoring
+
+**Two scorers exist and they are not comparable. This section describes both, because a
+reader who meets only one will misread the other.**
+
+### The roadmap score: workflow 3, the weighing
+
+**This is the number on the roadmap.** A process is sent to the model with its steps, and
+the model scores ten terms on 0-100 and composes them into one score on the same scale:
+
+```
+frequency  time  people  results  consequences  departments  complexity
+automatableShare  reasoningSteps  buildEffort
+```
+
+**Four terms are costs** (`departments`, `complexity`, `reasoningSteps`, `buildEffort`,
+named in `COST_TERMS`), so a high value makes the process a worse candidate. The
+composition itself is the model's and lives in the prompt; what `lib/store/weighing.js`
+enforces is the shape: all ten present, every term and the score within 0-100, and a
+reasoning paragraph, or the reply is refused.
+
+**A weighing is keyed on the revision, not the process**, because a score is a judgement
+about a particular grouping; a rejudge adds a weighing rather than editing one. The score
+always carries its ten terms and its paragraph, so a reader can see why the number came
+out where it did. A process with no weighing sorts last rather than disappearing.
+
+**The composition is provisional**, and tuned by editing the prompt as real answers come
+in. The cost of keeping it in the prompt rather than in code is real: two models can weight
+the same terms differently, so a score is comparable **within one set of processes** and not
+necessarily between runs.
+
+`lib/scoring.js`, described below, is a separate calculation and is live only for the
+participant preview at `POST /api/score`. **Nothing joins the two numbers.**
+
+### The participant preview: `lib/scoring.js`
 
 Pure functions in `lib/scoring.js`. No I/O, no rendering, so the ranking can be
 inspected and tested directly.
@@ -213,6 +353,54 @@ disagreeing is how the same data gets scored two ways.
 Each of these rules was a defect found by an independent reviewer, and each has a
 regression test.
 
+## Workflow 2: identification
+
+**Input:** one completed response. **Output:** the process it belongs to, and the
+responses behind it.
+
+A second model session, separate from the interview, whose only job is **sameness**:
+deciding whether this describes work somebody has already described. Three people
+describing the order-to-supplier loop in different words are one process.
+
+**It reports, it does not decide.** The model returns `matches` (an existing
+process id, or null), a `confidence`, its `reasoning`, and which fields the
+response `contributed`. The code validates that shape and refuses anything
+unusable. **The confidence is recorded and never filtered on**: a threshold would
+silently drop a process, and the spec says the tool proposes rather than decides.
+
+**The reasoning is required, not decoration.** It is the only way the step can be
+reviewed, so a reply without it is refused rather than stored. An admin who
+disagrees does not set a category: they ask for a **rejudge with a reason**, which
+re-runs identification for that process with their argument. The model is free to
+push back, and measurably does when the argument turns on the desk or the system
+rather than on the work itself.
+
+**The participant never sees any of it.** Identification runs on the way out of
+`POST /api/response`, its outcome is never in the response body, and the
+participant's next turn cannot reflect it back. What must never happen is the
+result being *shown*, not the module being reached: a participant who could see
+where their answer was grouped would write to influence where it landed.
+
+### How a grouping is stored
+
+| table | what it holds |
+| :--- | :--- |
+| `process` | the work, named. The stable identity: it survives a rejudge. |
+| `process_revision` | one grouping judgement: reasoning, confidence, who decided, and the admin's argument when there was one. |
+| `process_response` | which responses a revision covers, and what each contributed. |
+
+**Every judgement is a revision and none is overwritten**, so an earlier grouping
+stays readable for anyone reviewing why a result changed. `is_current` marks the one
+the console shows, enforced by a partial unique index so the database refuses a second.
+
+**A revision is a snapshot of the process, not a record of one response.** When a
+response joins, the new revision carries forward every response the process
+already had, or "the responses behind this process" would lose the work it just
+merged. Each response keeps the field list **it** contributed.
+
+**One response is one process.** A description containing a chain is one process
+with several steps, not several processes, and the prompt says so explicitly.
+
 ## Deliberate omissions
 
 - **No roadmap generation.** The first roadmaps are written by hand, so the
@@ -224,8 +412,15 @@ regression test.
   deliberately no view of all organisations; adding one is the first thing that
   would need its own isolation argument.
 - **No cross-organisation reporting.** Consequence of the file-per-organisation
-  store: there is no query that spans tenants, so any aggregate across
-  organisations needs a deliberate export rather than a join.
+  store: no single query spans two tenants, so any aggregate across organisations needs
+  a deliberate export rather than a join.
+
+  **One exception, and it is a loop rather than a query:**
+  `resetAccessForAddress` (`lib/auth/participant-routes.js`) asks each organisation in
+  turn for the lost-link form, because an address is not a key that can be looked up
+  globally. It reads only invitations, opens one file at a time, and stops at the first
+  match - so the isolation property holds, but "no query spans tenants" is not the same
+  claim as "no code touches more than one tenant".
 
 ## Guardrails
 
@@ -288,3 +483,90 @@ file, so behaviour is unchanged when the variable is unset.
 A missing or empty rules file falls back to a built-in minimum and logs the fact,
 rather than silently passing everything through. An invalid regex is skipped with
 a log naming the rule, and the remaining rules stay active.
+
+## Layout
+
+```
+server.js                  express app, routes, host check
+config/ai-config.json      provider definitions
+config/tools.js            tool registry (one entry in V1)
+ai/audit-core.js           the interview turn, the matrix gate, the completion guard
+ai/field-shapes.js         what a value must look like to count as supplied
+ai/matrix.js               what is missing, and the judgement band
+ai/identify-core.js        workflow 2: which process a response belongs to
+ai/weigh-core.js           workflow 3: the weighing, and its reply parsing
+ai/response-shape.js       the one resolver for the two stored payload shapes
+ai/workflow-identity.js    the id and title a workflow is given
+data/prompts/<tool>/       the prompts, one per language
+lib/store/                 SQLite, one file per organisation
+lib/auth/                  sessions, sign-in, the console, the participant routes
+lib/mail/                  console and Proton transports
+views/                     EJS templates
+public/                    client script, styles, committed theme data
+```
+
+## Storage
+
+**One SQLite database file per organisation**, at `<STORE_DIR>/orgs/<orgId>.db`.
+
+This is the isolation mechanism, not an implementation detail. The schema carries
+no `orgId` column, because the file *is* the tenant boundary: a query that forgot a
+`WHERE` clause would lose a row, and could not reach another organisation's rows.
+Only `lib/store/registry.js` opens a connection, so a code path cannot widen its
+scope by accident. A symlink in place of an organisation's file is refused rather
+than followed.
+
+V2 replaces this with one database and row-level security, which moves the same
+boundary into the database engine. The registry is the seam.
+
+### Anonymity, and its limit
+
+A participant's answers are stored against their invitation, so they can return
+and edit them until the questionnaire closes. **The admin path must never receive
+that link**, and it does not: `getResponsesForAnalysis(orgId)` omits the join in
+the query, so the attribution is not in the row and cannot be leaked by a view.
+
+The accepted limit: **a person with direct access to the database file can join
+the two tables and see who said what.** That is a deliberate decision, not an
+oversight. The honest phrasing is *"the admin console does not show who said
+what"*, never *"answers are anonymous"*.
+
+**The stored transcript makes that limit wider, and this is accepted too.** Each
+response keeps the whole conversation, not just the extracted fields, because an
+answer is only meaningful against its question and the questions are where the
+interview's quality lives. The transcript holds **whatever the participant
+typed**, and free text can contain a name, an employer or a customer even though
+the prompt tells the model not to ask for personal data and the guardrails screen
+injection.
+
+That does not change the property above: the console still cannot join an answer
+to a person. What it means is that the raw text exists in the database file, so
+"do not read the file if you should not know who said what" is load-bearing.
+Exporting or sharing an organisation's file shares the conversations too.
+
+### The round model
+
+**A round is the work of one process.** It is the unit the interview is saved and
+scored in, and every turn belongs to exactly one.
+
+A turn **continues the open round**: the participant's answers, and the whole
+conversation, are written on every turn, so nothing is lost if they close the tab.
+When the model reports that the matrix is satisfied - `status: "complete"`, which the
+server computes rather than trusting - **the round is finalised** in the same reply
+that carries the closing question *"is there another process?"*, so a finished process
+is on disk before that question can be answered. Saying yes **starts a new round**.
+
+`submitted_at` is the boundary: **null is a partial round, a timestamp is a finished
+one.** A partial round is readable in the answers view, marked "still in progress"
+there, and **excluded from the roadmap's sorting and scoring** - no figure is computed
+from work the participant did not finish. A participant who reopens their link resumes
+the open round, with their conversation replayed.
+
+`processes` in a reply holds **the process being worked on now**, not every process of
+the interview. That is a prompt instruction rather than something the server enforces;
+`alreadyIdentified` is what stops a finished process being identified twice.
+
+### Editable until closed
+
+Participants can add and edit until the admin calls `finishOrganisation`. After
+that, writes throw and reads still work.

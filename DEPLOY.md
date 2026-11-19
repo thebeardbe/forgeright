@@ -357,10 +357,63 @@ with that - and no page was asking for it any more either.
 **What this means for you:** there is nothing to configure here, and you cannot invite
 yourself to an interview. To try the questionnaire on a fresh install, use the console
 to invite an address you control and read the link out of the container log, which is
-where it goes until a mail transport is configured. See **Mail** below.
+where it goes until a mail transport is configured. See **Sending mail** below.
 
 **Being interviewed is not how you look at the product.** That is what the read-only
 demo link is for, and it needs no invitation at all.
+
+## Sending mail
+
+**A DEPLOYMENT THAT DOES NOT SET `MAIL_SENDER=proton` SENDS NOTHING.** The default is
+`console`, which prints each message to the container log and never leaves the machine.
+The sign-in link works - someone has to read it out of `docker compose logs` - but a
+participant never receives anything. **This is the single most likely reason a deploy
+appears to work and delivers no mail.**
+
+```bash
+# .env
+MAIL_SENDER=proton
+MAIL_PROTON_PROFILE=default          # optional; the binary's own default
+PUBLIC_BASE_URL=https://forgeright.example.com
+```
+
+Three things have to be true together, and each fails on its own:
+
+1. **`MAIL_SENDER=proton`** in `.env`. Unset or `console` means mail stays in the log.
+2. **`proton-cli` present in the image**, with a working CA bundle. A missing binary
+   reports `proton-cli is not on PATH`; a missing trust store gives
+   `x509: certificate signed by unknown authority`. Both are checked after a build; see
+   "What to check in the image after any Dockerfile change".
+3. **A signed-in Proton session inside the container**, written to the mounted volume so
+   it survives a restart:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec -it forgeright proton-cli account login
+```
+
+**`MAIL_PROTON_PROFILE` MUST MATCH THE PROFILE YOU SIGNED IN WITH.** Leave it unset and
+both sides use the binary's own `default`. Set it - say to `work` - and you must pass the
+same profile at sign-in:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec -it forgeright \
+  proton-cli account login --profile work
+```
+
+**Signing in as one profile and sending as another fails the send**, with the reason in
+the log rather than on the page. The app names the profile it tried, so the log tells you
+which side is wrong.
+
+**Check readiness at any time**, without sending anything:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright \
+  node -e "import('./lib/mail/proton.js').then(m => console.log(m.readinessProblems().join('\n') || '(none)'))"
+```
+
+**`(none)` means the binary is present and a session is unlocked** - a line is printed
+either way, so silence never has to be interpreted. The two failures it can report are the
+missing binary and the missing session, and each message says which.
 
 ## The two links
 
@@ -478,6 +531,19 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://forgeright.example.com/healthz
 `200`. `/healthz` answers on a plain HTTP connection as well, which makes it the one
 endpoint you can use to tell an application problem from a proxy problem.
 
+**If you intend to send mail, check the transport before you invite anybody.** The app
+prints its provider and its mail sender at startup, and the mail readiness check says
+whether a send could work at all:
+
+```bash
+docker compose -f docker-compose.deploy.yml exec forgeright \
+  node -e "import('./lib/mail/proton.js').then(m => console.log(m.readinessProblems().join('\n') || '(none)'))"
+```
+
+**`(none)` is the healthy answer.** Anything else names the problem: no binary, or no
+signed-in session. The two most common are covered below - a missing `proton-cli` (or its
+CA bundle) in the image, and the missing session a fresh volume has.
+
 ### `docker compose config` prints your secrets. Do not paste its output anywhere.
 
 ```bash
@@ -499,6 +565,128 @@ docker compose -f docker-compose.deploy.yml config \
 **The regex matches the format compose actually prints, which is `KEY: value` with a colon** -
 not `KEY=value` as it appears in `.env`. Verifying that is worth doing: the first version of
 this line used `=`, redacted nothing at all, and looked like it had worked.
+
+## The two prefixes, and why there are two
+
+A reverse proxy can separate the path a request arrives with from the path the
+browser uses, so there are two prefixes:
+
+| | in an incoming request | in an emitted URL |
+| :--- | :--- | :--- |
+| **`BASE_PATH`** | the mount: what Express strips | not used |
+| **`PUBLIC_PATH`** | not used | the prefix on every link, form action, asset and the cookie `Path` |
+
+`PUBLIC_PATH` is derived from the path in `PUBLIC_BASE_URL`, so it is not normally
+set. The three deployments:
+
+| proxy behaviour | `BASE_PATH` | `PUBLIC_BASE_URL` |
+| :--- | :--- | :--- |
+| passes the prefix through | `/forgeright` | `https://host/forgeright` |
+| **strips the prefix** | *(empty)* | `https://host/forgeright` |
+| no prefix | *(empty)* | `https://host` |
+
+The middle row is `tailscale serve --set-path /forgeright`, which strips the
+prefix before forwarding. The app must then expect requests at the root while
+still emitting `/forgeright` in its URLs. Setting `BASE_PATH=/forgeright` there
+produces a 404, because the app waits for a prefix it is never sent; setting no
+public path produces links that leave the mount. Both halves are needed, and they
+are what the two variables separate.
+
+The session cookie's `Path` is the **public** prefix (`/forgeright/admin`), because
+that is what the browser sees. It has to be: a cookie scoped to `/admin` is not
+sent for a request to `/forgeright/admin`, so sign-in would appear to do nothing.
+
+## HTTPS only, and what is exempt
+
+**Everything is served over HTTPS, except localhost.** The questionnaire, the API,
+the static assets and the admin console all refuse a plain-HTTP request. A refused
+request is redirected (308, so a POST stays a POST) to the same path at the HTTPS
+address in `PUBLIC_BASE_URL`, or answered with an explanation when no HTTPS
+address is configured.
+
+Why the questionnaire is included, not just the admin console:
+
+- The **participant link is a bearer credential**. A token sent in cleartext can be
+  used by anyone who observes it *before* the participant does, submitting answers in
+  someone else's name and corrupting the roadmap the client then acts on.
+- The **answers are employees describing how the business runs**, which is the
+  sensitive material this product exists to collect.
+
+`req.secure` decides, so a proxy that terminates TLS must be trusted for this to
+work: set `TRUST_PROXY` to the proxy's address, and only when that
+proxy is the only thing able to reach the port. A client that can reach the port
+directly could otherwise send `X-Forwarded-Proto` itself.
+
+**Localhost is exempt**, and the exemption requires both a loopback peer and a
+loopback `Host`, so neither half alone grants it: a local process cannot claim a
+public hostname, and a remote client cannot claim loopback.
+
+**`/healthz` is exempt too**, deliberately: it reports a boolean and nothing else,
+so refusing it would make a plain-HTTP liveness probe fail and have an orchestrator
+restart a healthy container. If the endpoint ever reports anything else, it loses
+the exemption.
+
+## Long-lived participant links, and the trade accepted
+
+A participant link is a credential in a URL, and it stays usable for 90 days. That
+is deliberate, and this is the reasoning, recorded rather than left to look like
+an oversight:
+
+- **Friction loses respondents.** The premise of this tool is that people fill in
+  a questionnaire between other work. A link that expires in an hour, or that is
+  used up on first open, adds a step and loses replies, which is a worse outcome
+  than the exposure below.
+- **So the token appears in places that keep copies**: browser history, any proxy
+  access log, and the mailbox as plain text (the mail carries it as copyable text so
+  a mangled link is recoverable).
+- **What the exposure is worth, stated exactly.** The token grants one person's
+  answers to one organisation's questionnaire. It does **not** grant console
+  access, any role, or any other participant's answers.
+- **Two actions exist to end it.** "Reset all access" in the console and "Lost my
+  link" on the participant page both revoke every live token for that invitation and
+  issue one new one.
+
+Admin sign-in is deliberately different: single use, and 15 minutes. It grants an
+organisation rather than one person's answers, so the blast radius is not
+comparable and neither is the rule.
+
+## Themes
+
+The appearance is one of 22 palettes, chosen per browser.
+
+- The palette is **data** in `lib/palettes.js`, emitted as CSS custom properties by
+  `scripts/build-palette-css.js`; the generated `public/css/palette.css` is
+  committed. A change to a colour is a change to the data and a regeneration.
+- `public/css/app.css` maps those variables onto **semantic** roles (`--bg`,
+  `--card`, `--accent`), and components use only the roles, so adding a theme cannot
+  break one.
+- **The default follows the system**: Matte Black for a dark preference and
+  Catppuccin Latte for a light one (`SYSTEM_DARK` and `SYSTEM_LIGHT` in
+  `lib/palettes.js`).
+- **The choice is a cookie**, `fr_theme`, not `localStorage`: a cookie reaches the
+  server, so the palette is in the HTML and the first paint is correct. It is
+  `SameSite=Lax`, not `HttpOnly`, and long-lived.
+
+Three palettes have no `orange` (last-horizon, solitude, white); the substitution is
+one line in `paletteVars`.
+
+## Environment
+
+| Variable | Default | Meaning |
+| :--- | :--- | :--- |
+| `ALLOWED_HOST` | empty | Hosts this instance answers on, comma-separated (`localhost,127.0.0.1,forgeright.bunkens.be`). Empty accepts any host, for development. Compared on hostname only; empty entries are ignored. |
+| `TRUST_PROXY` | `0` | Number of reverse proxies in front. Decides whether `X-Forwarded-Proto` is believed. **Set to 1 when one proxy terminates TLS**, or every request looks insecure and the whole site refuses. |
+| `BASE_PATH` | empty | Path the app is **mounted** at: the prefix an incoming request carries, which Express strips. Must be a single safe path, or the server refuses to start. |
+| `PUBLIC_PATH` | derived | Path the app is **visible** at: the prefix every emitted URL and the session cookie carry. Normally derived from `PUBLIC_BASE_URL`, so it needs no value. Set it only to override, and it must then agree with that URL. |
+| `SESSION_SECRET` | none | Signs the admin session cookie. **Required**: the server refuses to start without it. |
+| `fr_theme` (cookie) | follows the system | The chosen palette, or `system`. |
+| `PUBLIC_BASE_URL` | none | Absolute address of this installation. Used for mailed sign-in links, as the HTTPS redirect target, and as the source of the public path. Include the prefix. |
+| `LOGIN_LINK_TTL_MINUTES` | `15` | How long a sign-in link stays valid. A link is single-use regardless. |
+| `SESSION_TTL_HOURS` | `12` | How long an admin session lasts. |
+| `MAIL_SENDER` | `console` | `console` prints to stdout; `proton` sends through `proton-cli`. An unknown value refuses to start. **Set `proton` to actually send mail.** |
+| `MAIL_PROTON_PROFILE` | `default` | The `proton-cli` profile to send from. **If you set it, sign in with the same `--profile`.** |
+| `STORE_DIR` | `data/store` | Where the databases live. Point at a volume in production. |
+| `STORE_BUSY_TIMEOUT_MS` | `2000` | How long a write waits for another writer's lock. Empty is unset. Clamped to 60s. An explicit `0` is honoured. |
 
 ## If something is wrong
 

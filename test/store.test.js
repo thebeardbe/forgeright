@@ -1,12 +1,3 @@
-/**
- * Tests for the storage layer (lib/store/*).
- *
- * Expected values are literals or plainly-derived values; none is computed by
- * calling the code under test.
- *
- * STORE_DIR must be set BEFORE the store module is imported, because registry.js
- * reads it into the path helpers on first use.
- */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -19,8 +10,6 @@ const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'rb-store-test-'));
 process.env.STORE_DIR = STORE_DIR;
 
 const store = await import('../lib/store/index.js');
-// registry.js owns the connection lifecycle, so it is the only way to reach the
-// connection the store actually uses.
 const registry = await import('../lib/store/registry.js');
 
 after(() => {
@@ -28,19 +17,13 @@ after(() => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
 
-/** A fresh organisation for a test that needs one and does not care about its id. */
 function newOrg(name = 'Acme Ltd') {
     return store.createOrganisation(name);
 }
 
-/** An invitation with the given email and department. */
 function invite(orgId, email = 'person@example.com', department = 'Finance') {
     return store.addInvitation(orgId, { email, department });
 }
-
-// ===========================================================================
-// 1. ISOLATION
-// ===========================================================================
 
 test('two organisations get two different database files', () => {
     const a = newOrg('Org A');
@@ -75,7 +58,6 @@ test('a response written to one organisation is invisible to another', () => {
     assert.deepEqual(store.getResponsesForAnalysis(b.id), []);
     assert.deepEqual(store.getResponsesByToken(b.id, invB.token), []);
 
-    // A sees exactly its own.
     const analysisA = store.getResponsesForAnalysis(a.id);
     assert.equal(analysisA.length, 1);
     assert.equal(analysisA[0].data.secret, 'belongs to A');
@@ -87,7 +69,6 @@ test('a token from one organisation returns nothing against another', () => {
     const invA = invite(a.id, 'a@orga.example');
     const invB = invite(b.id, 'b@orgb.example');
 
-    // A real token, but for the wrong organisation: no rows, no throw.
     assert.deepEqual(store.getResponsesByToken(a.id, invB.token), []);
     assert.deepEqual(store.getResponsesByToken(b.id, invA.token), []);
 });
@@ -149,15 +130,12 @@ test('an update naming one organisation cannot touch a response id from another'
     const rowA = store.addResponse(a.id, invA.token, { department: 'Finance', data: { owner: 'A' } });
     const rowB = store.addResponse(b.id, invB.token, { department: 'Finance', data: { owner: 'B' } });
 
-    // B's token, editing A's response id. The update is refused and A is untouched.
     assert.throws(
         () => store.updateResponse(b.id, invB.token, rowA.id, { owner: 'hijacked' }),
         /does not belong to the invitation/
     );
     assert.deepEqual(store.getResponsesByToken(a.id, invA.token)[0].data, { owner: 'A' });
 
-    // A's token, editing B's response id. A's token is unknown in B, so this is
-    // refused as an unresolvable token. The message is copy and not pinned.
     assert.throws(
         () => store.updateResponse(b.id, invA.token, rowB.id, { owner: 'hijacked' }),
         /resolves to no invitation/
@@ -179,21 +157,12 @@ test('getResponsesForAnalysis would return only that organisation\'s rows, never
 });
 
 test('listOrganisationIds does not reveal one organisation through another\'s interface', () => {
-    // listOrganisationIds takes no org id: it is the one enumeration the registry
-    // offers. Assert it names only files that validate as ids, so a stray file
-    // cannot masquerade as an organisation.
     const org = newOrg('Enumerated');
     const ids = store.listOrganisationIds();
     for (const id of ids) assert.match(id, /^[a-z0-9][a-z0-9-]{0,63}$/);
     assert.ok(ids.includes(org.id));
 });
 
-// ===========================================================================
-// 2. PATH SAFETY
-// ===========================================================================
-
-// Ids that must be refused, because each is a way to build a path outside the
-// orgs directory or to name a file that is not an organisation.
 const UNSAFE_ORG_IDS = [
     '../evil',
     '..',
@@ -244,9 +213,7 @@ test('an accepted id never resolves outside the orgs directory', () => {
     }
 });
 
-// The lexical check above proves only that the NAME is contained, which a symlink
-// satisfies. These tests assert the requirement instead: no org id can read another
-// organisation's rows, whatever the filesystem contains.
+// The lexical check proves only that the NAME is contained, which a symlink satisfies.
 
 test('a symlinked org file cannot serve another organisation\'s data', () => {
     const orgsDir = path.join(STORE_DIR, 'orgs');
@@ -263,7 +230,6 @@ test('a symlinked org file cannot serve another organisation\'s data', () => {
     assert.throws(() => store.listInvitations(attackerId), /symlink|Refusing/i);
     assert.throws(() => store.getOrganisation(attackerId), /symlink|Refusing/i);
 
-    // And a write through the attacker id must not land in the victim's file.
     assert.throws(
         () => store.addInvitation(attackerId, { email: 'attacker@example.com', department: 'Finance' }),
         /symlink|Refusing/i
@@ -294,8 +260,6 @@ test('a symlink in the orgs directory is not listed as a usable organisation', (
 });
 
 test('a symlinked orgs directory cannot silently redirect a write elsewhere', () => {
-    // If the orgs directory is swapped for a symlink AFTER it is resolved, a write
-    // must not follow the redirect outside the store.
     const storeDir = store.storeDir();
     const orgsDir = path.join(storeDir, 'orgs');
 
@@ -312,11 +276,9 @@ test('a symlinked orgs directory cannot silently redirect a write elsewhere', ()
         try {
             created = newOrg('Redirected write attempt');
         } catch (err) {
-            // Refusing outright is the safe outcome.
             return;
         }
 
-        // If a write was allowed, it must NOT have landed in the redirect target.
         const landed = fs.readdirSync(elsewhere).filter((n) => n.startsWith(created.id));
         assert.deepEqual(landed, [], 'a write must not follow a swapped orgs symlink outside the store');
     } finally {
@@ -344,10 +306,6 @@ test('an unsafe id is refused before any file is touched', () => {
     );
 });
 
-// ===========================================================================
-// 3. THE ATTRIBUTION GUARANTEE
-// ===========================================================================
-
 test('getResponsesForAnalysis returns no invitation id, no email, and no token', () => {
     const org = newOrg('Attribution org');
     const inv = invite(org.id, 'someone@example.com');
@@ -364,8 +322,6 @@ test('getResponsesForAnalysis returns no invitation id, no email, and no token',
 });
 
 test('no analysing row carries the invitation id as a value under any key', () => {
-    // Inverted check: the invitation id exists, and must appear nowhere in the
-    // serialised analysis output, not merely under its own key name.
     const org = newOrg('Attribution shapes');
     const inv = invite(org.id, 'shapes@example.com');
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { note: 'x' } });
@@ -430,10 +386,6 @@ test('getResponsesForAnalysis returns an empty array, not null, for a fresh orga
     const org = newOrg('Empty');
     assert.deepEqual(store.getResponsesForAnalysis(org.id), []);
 });
-
-// ===========================================================================
-// 4. THE FINISH RULE
-// ===========================================================================
 
 test('a fresh organisation is not finished', () => {
     const org = newOrg('Open for business');
@@ -515,10 +467,6 @@ test('a response added before finishing survives the close unchanged', () => {
     assert.deepEqual(after.data, { original: true });
 });
 
-// ===========================================================================
-// 5. RESUME AND EDITING
-// ===========================================================================
-
 test('a token returns only its own responses', () => {
     const org = newOrg('Two participants');
     const first = invite(org.id, 'first@example.com');
@@ -570,7 +518,6 @@ test('an update cannot touch a row that belongs to someone else, and says so wit
 
     const theirRow = store.addResponse(org.id, theirs.token, { department: 'Finance', data: { owner: 'theirs' } });
 
-    // Refused by throwing, not by a null the caller might forget to check.
     assert.throws(
         () => store.updateResponse(org.id, mine.token, theirRow.id, { owner: 'hijacked' }),
         /does not belong to the invitation/
@@ -581,8 +528,6 @@ test('an update cannot touch a row that belongs to someone else, and says so wit
 });
 
 test('an unknown response id is refused without confirming another participant\'s id exists', () => {
-    // The refusal must not distinguish "no such id" from "not yours", so a
-    // caller cannot probe for the existence of another participant's response.
     const org = newOrg('Probe resistance');
     const mine = invite(org.id, 'mine@example.com');
     const theirs = invite(org.id, 'theirs@example.com');
@@ -596,7 +541,6 @@ test('an unknown response id is refused without confirming another participant\'
     assert.ok(unknownError && foreignError, 'both refusals must throw');
     assert.equal(unknownError.message, foreignError.message, 'the two refusals must be indistinguishable');
 
-    // Neither message may reveal whether the id exists.
     assert.ok(!unknownError.message.includes('no-such-id'), 'the message must not echo the id');
     assert.ok(!foreignError.message.includes(theirRow.id), 'the message must not echo the id');
     assert.ok(
@@ -612,11 +556,6 @@ test('a wrong (non-empty) token returns nothing from the READ methods', () => {
     assert.deepEqual(store.getResponsesByToken(org.id, 'no-such-token'), []);
     assert.equal(store.invitationForToken(org.id, 'no-such-token'), null);
 });
-
-// Reads return nothing for a token that yields no invitation; writes throw. A
-// missing ?token= is a routine bad URL, not a 500 on a read path; a write with no
-// valid credential is a caller error that must not be a null the caller forgets to
-// check.
 
 test('reads return nothing for an empty or non-string token, and never throw', () => {
     const org = newOrg('Unusable read token');
@@ -649,7 +588,6 @@ test('writes throw for an empty or non-string token', () => {
 });
 
 test('writes throw for a well-formed but UNKNOWN token', () => {
-    // Both writes must behave the same way for an unknown token.
     const org = newOrg('Unknown write token');
     const inv = invite(org.id);
     const row = store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
@@ -676,15 +614,11 @@ test('invitationForToken records the first open and does not move it', () => {
     const org = newOrg('Opened');
     const inv = invite(org.id, 'opened@example.com');
 
-    // The old markInvitationOpened became invitationForToken: it resolves the
-    // token AND records the visit, so the property it pinned lives here now.
     const first = store.invitationForToken(org.id, inv.token);
     assert.equal(typeof first.opened_at, 'string');
     assert.equal(typeof first.last_seen_at, 'string');
     assert.equal('token' in first, false, 'the returned invitation must not carry the token');
 
-    // A second open keeps the original opened_at (COALESCE), so the admin view
-    // does not report the most recent visit as the opening.
     const second = store.invitationForToken(org.id, inv.token);
     assert.equal(second.opened_at, first.opened_at);
     assert.ok(second.last_seen_at >= first.last_seen_at, 'last_seen_at advances on the later visit');
@@ -699,10 +633,6 @@ test('getResponsesByToken parses the stored JSON back to an object', () => {
     assert.deepEqual(row.data, { nested: { a: [1, 2, 3] }, s: 'text' });
     assert.equal(row.unreadable, false);
 });
-
-// ===========================================================================
-// 6. TOKENS
-// ===========================================================================
 
 test('a generated token is 43 base64url characters', () => {
     const token = store.generateToken();
@@ -752,8 +682,6 @@ test('the stored token is the hash, never the raw value', () => {
 });
 
 test('the raw token appears nowhere in the database file', () => {
-    // A token written into any table, index or free page would show up in a byte
-    // scan, and the login link is a credential, so nothing usable may be in the file.
     const org = newOrg('File scan');
     const inv = invite(org.id, 'scan@example.com');
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
@@ -764,7 +692,6 @@ test('the raw token appears nowhere in the database file', () => {
 });
 
 test('several tokens may be live for one invitation, and each resolves', () => {
-    // "Send a link" adds a working link without retiring the one already held.
     const org = newOrg('Several live tokens');
     const inv = invite(org.id, 'several@example.com');
 
@@ -776,7 +703,6 @@ test('several tokens may be live for one invitation, and each resolves', () => {
 });
 
 test('an additional link leaves earlier tokens live', () => {
-    // "Send a link" must not invalidate a link the participant already holds.
     const org = newOrg('Send a link');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { keep: true } });
@@ -800,8 +726,6 @@ test('a reset revokes every token and issues one replacement', () => {
 });
 
 test('a reset leaves existing responses attached to the invitation', () => {
-    // End to end: answer on the old token, reset, and reach the same answers on
-    // the new one. A bug here silently loses a participant's work.
     const org = newOrg('Reset keeps answers');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { answer: 'my work' } });
@@ -834,7 +758,6 @@ test('a revoked token is refused by both read paths', () => {
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
 
-    // A reset revokes the old token.
     assert.notEqual(store.invitationForToken(org.id, inv.token), null, 'live before the reset');
     store.resetAccess(org.id, inv.id);
 
@@ -868,10 +791,6 @@ test('the raw token does not appear anywhere in the database file', () => {
     const bytes = fs.readFileSync(store.orgDbPath(org.id));
     assert.equal(bytes.includes(Buffer.from(inv.token)), false, 'the bearer value must not be in the file');
 });
-
-// ===========================================================================
-// 7. FAILURE BEHAVIOUR
-// ===========================================================================
 
 test('createOrganisation requires a non-empty name', () => {
     for (const name of ['', '   ', '\t\n', null, undefined, 42, {}]) {
@@ -947,7 +866,6 @@ test('a response whose stored JSON is corrupt is reported as unreadable, not as 
     const created = store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
     store.closeAll();
 
-    // Damage the stored blob directly, the way a partial write or a bad migration would.
     const db = new DatabaseSync(store.orgDbPath(org.id));
     db.prepare('UPDATE response SET data = ? WHERE id = ?').run('{ this is not json', created.id);
     db.close();
@@ -964,10 +882,7 @@ test('an unknown organisation is reported as null, not as an error, for reads', 
 });
 
 test('a read for an unknown organisation returns nothing and does NOT create a file', () => {
-    // A read for an id belonging to no organisation must not open a path: opening a path CREATES
-    // the file, conjuring an empty tenant that a stale cookie then reads as a clean-looking empty
-    // organisation, and listOrganisationIds() can no longer tell a real organisation from one
-    // invented by a bad request.
+    // Opening a path CREATES the file, conjuring an empty tenant.
     const orgsDir = path.join(STORE_DIR, 'orgs');
     const filesBefore = fs.readdirSync(orgsDir).filter((n) => n.endsWith('.db'));
 
@@ -1002,9 +917,7 @@ test('listOrganisationIds lists every created organisation and nothing else', ()
 });
 
 test('a file at an older schema version is refused, and is NOT rewritten', () => {
-    // There is no upgrade path: an unknown file is refused and left exactly as it
-    // was, so its data is still recoverable by hand. Asserted on the throw and on
-    // the file's bytes, not on the message, so a copy edit cannot break it.
+    // There is no upgrade path: an unknown file is refused and left byte-identical.
     const org = newOrg('Version check');
     const inv = invite(org.id, 'version@example.com');
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { keep: 'me' } });
@@ -1031,10 +944,6 @@ test('a file at an older schema version is refused, and is NOT rewritten', () =>
     }
 });
 
-// ===========================================================================
-// CROSS-CUTTING: determinism and purity of ordering
-// ===========================================================================
-
 test('getResponsesForAnalysis is stable across repeated calls', () => {
     const org = newOrg('Stable reads');
     const inv = invite(org.id);
@@ -1054,20 +963,8 @@ test('closeConnection reports whether a connection was open', () => {
     assert.equal(store.getOrganisation(org.id).name, 'Close reporting');
 });
 
-// ===========================================================================
-// 8. CONCURRENCY
-// ===========================================================================
-//
-// registry.js caches ONE connection per organisation, and connectionFor is not
-// exported, so a second connection to the same file is opened here through
-// node:sqlite directly - the same file, schema and pragmas; only the connection
-// is independent.
-//
-// NOT covered here: two PROCESSES. They cannot be driven from this suite without
-// a second entry point that opens the store, and the two-connection case already
-// exercises the shared-file behaviour WAL is about.
+// NOT covered: two PROCESSES, which need a second entry point that opens the store.
 
-/** A second, independent connection to an organisation's file. */
 function secondConnection(orgId) {
     const db = new DatabaseSync(store.orgDbPath(orgId));
     db.exec('PRAGMA foreign_keys = ON');
@@ -1101,8 +998,6 @@ test('a write through the store is visible through a second connection', () => {
 });
 
 test('a write through a second connection is visible through the store', () => {
-    // A raw row inserted with `submitted_at NULL` is a PARTIAL round: visible
-    // through `getAllResponses`, excluded from `getResponsesForAnalysis`.
     const org = newOrg('Cross-connection write');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { order: 1 } });
@@ -1142,8 +1037,6 @@ test('interleaved writes from two connections both land, with no loss', () => {
         db.close();
     }
 
-    // Read through `getAllResponses`, which includes the raw partials: the property
-    // under test is that no interleaved write was lost, not which accessor returns it.
     const rows = store.getAllResponses(org.id);
     assert.equal(rows.length, 10, 'every interleaved write must be present');
     assert.equal(new Set(rows.map((r) => r.data.seq)).size, 10, 'no write may be lost or overwritten');
@@ -1171,8 +1064,6 @@ test('two connections do not corrupt the file', () => {
 });
 
 test('a reader is not blocked while another connection holds a write transaction', () => {
-    // This is the property WAL exists for: readers see the last committed
-    // snapshot instead of waiting for the writer, and do not fail.
     const org = newOrg('Read during write');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { before: true } });
@@ -1182,7 +1073,6 @@ test('a reader is not blocked while another connection holds a write transaction
     try {
         db.prepare("UPDATE response SET data = '{\"touched\":true}'").run();
 
-        // A read through the store must succeed and see the pre-transaction state.
         const during = store.getResponsesForAnalysis(org.id);
         assert.equal(during.length, 1);
         assert.deepEqual(during[0].data, { before: true }, 'an uncommitted change must not be visible');
@@ -1194,24 +1084,12 @@ test('a reader is not blocked while another connection holds a write transaction
     assert.deepEqual(store.getResponsesForAnalysis(org.id)[0].data, { touched: true }, 'the commit is visible after it lands');
 });
 
-// Write contention. WAL permits one writer at a time, so a second writer must
-// wait its turn rather than fail. The store sets a busy timeout on its
-// connection; without it a participant submitting while another is mid-write
-// gets an immediate "database is locked" and, in production, a 500.
-//
-// node:sqlite is synchronous on the calling thread, so a blocked call cannot be
-// unblocked by a timer in the same thread. The lock is therefore held and
-// released from a WORKER thread, which is the only way to exercise a real wait.
+// The lock is held from a WORKER thread: node:sqlite is synchronous on the calling thread, so a
+// blocked call cannot be unblocked by a timer in it.
 
 const LOCK_WORKER = new URL('./helpers/hold-write-lock.mjs', import.meta.url);
 
-/**
- * Starts a worker that opens the organisation file, takes a write transaction,
- * and commits after `holdMs`. Never commits when `holdMs` is Infinity.
- *
- * @returns {Promise<import('node:worker_threads').Worker>} Resolves once the
- *   worker reports that it holds the lock.
- */
+/** Takes a write transaction and commits after `holdMs`; never commits when Infinity. */
 async function holdWriteLock(dbPath, holdMs) {
     const { Worker } = await import('node:worker_threads');
     const worker = new Worker(LOCK_WORKER, { workerData: { dbPath, holdMs } });
@@ -1227,10 +1105,8 @@ test('a contending write waits for the lock and then succeeds', async () => {
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { first: true } });
 
-    // The worker holds the write lock for ~400ms, then commits and exits.
     const worker = await holdWriteLock(store.orgDbPath(org.id), 400);
 
-    // node:sqlite is synchronous, so the ~400ms wait shows up as elapsed time.
     const started = Date.now();
     let error;
     try {
@@ -1250,8 +1126,6 @@ test('a contending write waits for the lock and then succeeds', async () => {
 });
 
 test('a genuine, unresolvable contention still surfaces as an error', async () => {
-    // A lock held forever must fail loudly, not hang and not be swallowed: a busy
-    // timeout that turned every contention into a silent success would be worse.
     const org = newOrg('Write contention forever');
     const inv = invite(org.id);
 
@@ -1269,20 +1143,13 @@ test('a genuine, unresolvable contention still surfaces as an error', async () =
     assert.deepEqual(store.getResponsesForAnalysis(org.id), []);
 });
 
-// ===========================================================================
-// 9. STORED-HASH BEHAVIOUR (observable, without importing below the interface)
-// ===========================================================================
-//
-// tokenHashesMatch and normaliseStoredHash are not on the store interface, so
-// rather than importing below it these tests damage the stored hash directly in
-// the file and observe the public methods.
+// Not on the store interface, so these damage the stored hash in the file and observe the methods.
 
 test('a token resolves while the stored hash is exactly what the code writes', () => {
     const org = newOrg('Correct hash');
     const inv = invite(org.id, 'correct@example.com');
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
 
-    // Both read paths resolve the token.
     assert.equal(store.getResponsesByToken(org.id, inv.token).length, 1);
     assert.notEqual(store.invitationForToken(org.id, inv.token), null);
 });
@@ -1300,7 +1167,6 @@ test('a malformed stored hash does not authenticate the token', () => {
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
     assert.equal(store.invitationForToken(org.id, inv.token), null);
 
-    // A corrupt credential must not break the rest of the organisation.
     assert.equal(store.listInvitations(org.id).length, 1);
     assert.equal(store.getResponsesForAnalysis(org.id).length, 1);
 });
@@ -1318,13 +1184,8 @@ test('a truncated stored hash does not authenticate the token', () => {
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), []);
 });
 
-// The stored hash is compared as exact text against the lowercase hash of the
-// presented token (`WHERE token_hash = ?`). An uppercase row is therefore never
-// selected and behaves like a missing invitation: the credential fails closed.
-// There is deliberately no normalisation, because it could only run after the row
-// was found, where it could not change the outcome, and normalising in the query
-// (lower(token_hash) = ?) would lose the index. This test pins the consequence:
-// an uppercase row does not resolve.
+// `WHERE token_hash = ?` compares exact text, so an uppercase row fails closed. `lower(token_hash)`
+// would lose the index.
 test('an uppercase stored hash does not resolve, and fails closed', () => {
     const org = newOrg('Uppercase hash');
     const inv = invite(org.id);
@@ -1341,26 +1202,11 @@ test('an uppercase stored hash does not resolve, and fails closed', () => {
     assert.equal(store.invitationForToken(org.id, inv.token), null);
 });
 
-// ===========================================================================
-// 10. CONFIGURATION: THE BUSY TIMEOUT
-// ===========================================================================
-//
-// busyTimeoutMs is read from STORE_BUSY_TIMEOUT_MS when a connection is opened.
-// Getting it wrong is invisible until contention, which is why it is tested
-// directly rather than only through a contended write.
-//
-// `Number('')` is 0, so an EMPTY variable - the usual
-// way to disable one in a .env or a container environment - would silently set the
-// wait to zero and reinstate the immediate "database is locked" failure the
-// setting exists to prevent.
-//
-// busy-timeout.js is imported directly because the function is not re-exported
-// through lib/store/index.js, which is a list of operations rather than of
-// configuration readers.
+// `Number('')` is 0, so an EMPTY variable - the usual way to disable one in a container - would set
+// the wait to zero and reinstate "database is locked".
 
 const { busyTimeoutMs } = await import('../lib/store/busy-timeout.js');
 
-/** Runs `body` with STORE_BUSY_TIMEOUT_MS set, restoring the previous value. */
 function withBusyTimeoutEnv(value, body) {
     const previous = process.env.STORE_BUSY_TIMEOUT_MS;
     if (value === undefined) delete process.env.STORE_BUSY_TIMEOUT_MS;
@@ -1381,8 +1227,6 @@ test('an unset busy timeout uses the default', () => {
 });
 
 test('an EMPTY busy timeout uses the default, NOT zero', () => {
-    // Number('') is 0, so an empty variable would set no wait at all - the exact
-    // failure the timeout exists to prevent.
     assert.equal(withBusyTimeoutEnv('', busyTimeoutMs), DEFAULT_BUSY_TIMEOUT_MS);
 });
 
@@ -1415,8 +1259,6 @@ test('a negative or non-numeric busy timeout falls back to the default', () => {
 });
 
 test('the busy timeout is applied to a real connection', () => {
-    // The function returning 1234 is not enough: the pragma must be set on the
-    // connection the store opens, so this reads it back through registry.js.
     const previous = process.env.STORE_BUSY_TIMEOUT_MS;
     process.env.STORE_BUSY_TIMEOUT_MS = '1234';
     try {
@@ -1445,16 +1287,7 @@ test('the default busy timeout is applied when the variable is unset', () => {
     }
 });
 
-// ===========================================================================
-// 11. TOKEN HASH COMPARISON: THE EXACT-FORM CONTRACT
-// ===========================================================================
-//
-// tokenHashesMatch is defined in tokens.js and is not re-exported through the
-// index, so it is imported from that module. The contract: the comparison is EXACT and lowercase
-// hex is the only accepted form. That is a deliberate tightening, not an oversight:
-// the end-to-end lookup fails closed on an uppercase row because the SELECT
-// binds a lowercase hash, so this function agrees with it rather than
-// accepting a form hashToken never writes.
+// The comparison is EXACT: lowercase hex only, agreeing with the SELECT that binds a lowercase hash.
 
 const { tokenHashesMatch } = await import('../lib/store/tokens.js');
 
@@ -1464,8 +1297,6 @@ test('tokenHashesMatch accepts two identical lowercase hashes', () => {
 });
 
 test('tokenHashesMatch rejects an uppercase hash', () => {
-    // Contradicting the old comment, which claimed an uppercase copy of the same
-    // hash would match. The chosen contract is exact, so it must not.
     const hash = store.hashToken('a-token');
     assert.equal(tokenHashesMatch(hash, hash.toUpperCase()), false, 'uppercase on the right must not match');
     assert.equal(tokenHashesMatch(hash.toUpperCase(), hash), false, 'uppercase on the left must not match');
@@ -1483,14 +1314,12 @@ test('tokenHashesMatch rejects anything that is not 64 lowercase hex', () => {
 });
 
 test('tokenHashesMatch does not throw on malformed input', () => {
-    // The hex guard exists so a malformed value cannot throw out of the compare.
     for (const bad of [null, undefined, 42, {}, [], 'not-hex', 'f'.repeat(63)]) {
         assert.doesNotThrow(() => tokenHashesMatch('a'.repeat(64), bad));
     }
 });
 
 test('an uppercase stored hash fails closed end to end, and the outcome matches tokenHashesMatch', () => {
-    // An uppercase row does not authenticate, and both layers agree.
     const org = newOrg('Uppercase end to end');
     const inv = invite(org.id);
     store.addResponse(org.id, inv.token, { department: 'Finance', data: { x: 1 } });
@@ -1505,20 +1334,10 @@ test('an uppercase stored hash fails closed end to end, and the outcome matches 
     assert.deepEqual(store.getResponsesByToken(org.id, inv.token), [], 'and the lookup finds nothing');
 });
 
-// ===========================================================================
-// 12. WRITE TIMING: WHICH LOCK ERRORS ARE REPORTED
-// ===========================================================================
-//
-// The diagnostic must match every spelling SQLite emits - "database is locked",
-// "database table is locked", different capitalisation, and the driver's numeric
-// code - because matching only the exact string misses those forms.
-//
-// write-timing.js is imported directly, because timedWrite is not re-exported
-// through lib/store/index.js.
+// The diagnostic must match every spelling SQLite emits, plus the driver's numeric code.
 
 const { timedWrite } = await import('../lib/store/write-timing.js');
 
-/** Runs timedWrite and captures console.warn/console.error output. */
 function runTimedWrite(write) {
     const warned = [];
     const errored = [];
@@ -1590,15 +1409,6 @@ test('timedWrite does not report a fast success as having waited for a lock', ()
     );
 });
 
-// ===========================================================================
-// 13. THE TRANSCRIPT
-// ===========================================================================
-//
-// An answer is only meaningful against its question - "eight minutes" means one
-// thing asked about duration and another asked about the invoice count - so the
-// transcript is the evidence the analysis rests on. Stored as one JSON column,
-// optionally null.
-
 test('a stored transcript reads back with every turn in order, roles and content intact', () => {
     const org = newOrg('Transcript round trip');
     const inv = invite(org.id);
@@ -1629,7 +1439,6 @@ test('the transcript is present on the analysis row too', () => {
 });
 
 test('no transcript is stored as null, and an EMPTY transcript as []', () => {
-    // "No transcript" and "an empty one" are different states.
     const org = newOrg('Transcript absent vs empty');
     const inv = invite(org.id);
 

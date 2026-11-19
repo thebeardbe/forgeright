@@ -2,6 +2,65 @@
 
 Open items for this project. Remove entries as they are resolved.
 
+**This file has four registers. Read the one you need.**
+
+**1. Known defects** - what is wrong now. Safe to show a client; nothing here is secret.
+
+```
+Found by review, not yet fixed      the open defects, ordered by what matters
+The weighing call fails intermittently, and the mechanism is not understood
+The interview could not finish, and the total was an artifact
+A step-less workflow may appear as a second roadmap row: accepted, not a bug
+The extra roadmap row: the information to fold it is not in the payload
+Deferred deliberately: console CSS   styling and other work deferred by decision
+Next up in V1                        not defects: work not yet started
+```
+
+**2. Architecture facts** - things that belong in `ARCHITECTURE.md` and have not moved yet.
+
+```
+Step 1 (storage) — open items
+Decisions still open
+V2, not now
+Constraints to respect
+Deployment: the Tailscale test host
+Testing notes
+Testing through the Tailscale proxy
+`ai/audit-core.js` is 833 lines, and still doing four jobs
+```
+
+**3. Process notes** - how this project is worked on. For agents, not for a reader.
+
+```
+Process notes
+Subagent stalls: how to detect and recover
+The write-contention test trap, which cost two agents real time
+The working loop
+Never end a turn with work queued and unsent
+Do not push while an agent has uncommitted changes
+```
+
+**4. The comment cull** - what was removed and why. A record, not a task.
+
+```
+The comment cull: five batches, then a review
+Comment cull: borderline removals
+```
+
+**Also at the top:** "Deferred: split this file" - the recommendation to divide this file into
+`KNOWN-ISSUES.md` and `NOTES-agents.md`, and why that is not done yet.
+
+## Deferred: split this file
+
+**This file is 1500+ lines and holds two different things**: known issues in the product, and
+notes about how agents work on it. They have different audiences and different lifetimes, and
+splitting into `KNOWN-ISSUES.md` and `NOTES-agents.md` is the right shape.
+
+**Not done, deliberately, and the reason is operational rather than editorial:** agents in
+this session read this file by `sed -n` line ranges, so moving its sections mid-flight breaks
+their reads and their handoffs. **Do the split in a session where no other agent is reading
+it**, as its own commit, with the section headings kept so a `grep` still finds them.
+
 ## Process notes
 
 - **Attack the claim, do not confirm the behaviour.** The storage layer's central
@@ -133,9 +192,12 @@ The reviewer's full report is the source for these. Ordered by what matters.
   is now validated by the same `validateWorkflows` the model path uses, so a
   malformed audit is a 400 with a reason rather than a blank heading or a crash.
   **What remains is the real issue:** nothing binds the payload to a
-  conversation. Anyone with the access code can POST an invented set of workflows
-  and get a headline back. Combined with a mock that ignores the participant's
-  answers, a fabricated score and an honest demo look identical on screen.
+  conversation. **Anyone holding a valid participant token** can POST an invented set of
+  workflows and get a headline back - the token is the only gate, and it proves the holder
+  was invited rather than that the payload came from a conversation. Combined with a mock
+  that ignores the participant's answers, a fabricated score and an honest demo look
+  identical on screen. (The shared `AUDIT_ACCESS_CODE` this entry used to name has been
+  removed, so the audience is narrower than it was, but the trust problem is unchanged.)
 
   The reviewer's assessment: a third party without the code cannot do this, and
   the endpoint is not public in the intended deployment. The problem is specific
@@ -231,9 +293,21 @@ The reviewer's full report is the source for these. Ordered by what matters.
   wrote 40 fresh ones from the source. The claim in the test header is accurate.
   The file is gitignored and should be deleted once the suite is stable.
 
+### Not addressed, and live
+
+- **The questionnaire's AI endpoints are not rate-limited.** `POST /api/chat` and
+  `POST /api/score` both call a paid provider and neither is throttled: `checkLoginRate`
+  protects the sign-in form and the lost-link form only. **Whatever holds a valid
+  participant token can spend the provider key in a loop**, and a token is a URL that
+  appears in browser history and proxy logs by design (see "Long-lived participant links"
+  in `DEPLOY.md`). Rate limiting was deferred until after deploy by the owner's decision,
+  recorded under "Deferred deliberately: console CSS" - **it is listed here because a
+  deferred decision is still a live risk, and this is the section a reader is sent to.**
+  The intended fix is a limit on the participant token and on the client address, in front
+  of the provider call.
+
 ## Next up in V1
 
-- **Guardrail demonstration.**
 - **Guardrail demonstration.** A documented injection attempt against the intake
   LLM, what it would have done, the guardrail that stops it, and how it was
   tested. This is the differentiator for the application, not a nice-to-have.
@@ -550,13 +624,11 @@ must not be treated as a blocker for going live.
 Recorded here so a later reader, or a future session, does not treat these as
 oversights:
 
-**Also deferred, same reason:** rate limiting. *"rate-limiting is for after deploy
-and css as that is something I will setup but we are on a time crunch for deploy
-now. squising bugs to get to a working PoC with demodata."*
-
 So the priority order is: **a working proof of concept with demo data, deployed.**
 Anything that is not a bug blocking that is deferred by decision, not by oversight.
-The open sign-up spending the provider key is a known, accepted cost for now.
+
+Rate limiting was deferred under this decision too. It is a live risk rather than a styling
+item, so it is recorded under "Found by review, not yet fixed" instead of here.
 
 ## The interview could not finish, and the total was an artifact
 
@@ -639,9 +711,13 @@ audit.js:187) - the payload is not in its own history.
 That is why the reconciliation is in the client and cannot be a prompt
 instruction.
 
-## `ai/audit-core.js` is 1412 lines
+## `ai/audit-core.js` is 833 lines, and still doing four jobs
 
-Past the 1000-line hard limit, so per the guidelines it may only shrink from here.
+**833 lines, 331 of them comments.** It came down from 1412 by cutting comments alone,
+which fixed the size symptom without touching the structure - see the note at the end of
+"The comment cull" section. **It is now under the 1000-line limit, and the split is still
+wanted**, because the reason for splitting was never the number.
+
 It was already the largest file before this session's work added to it.
 
 **It is the file every defect above lives in or beside**, which is not a
@@ -914,3 +990,623 @@ responsibilities and still above the 1000-line limit. **The guideline's purpose 
 and the size is the symptom**, so a comment cut that brings it under the limit would satisfy
 the number while leaving the structure untouched — which is the wrong thing to optimise. The
 split remains for its own session, and a comment cut does not replace it.
+
+## Comment cull: borderline removals
+
+**Rule 9 of the cull is "unsure means delete, and list it".** The listing is what makes a
+deletion reversible, so it belongs here rather than in a commit subject or an agent's
+transcript. **Every entry below was removed under the cull and flagged at the time; the
+"survives" field says where the fact can still be found, or that it cannot.**
+
+**Line numbers are in the file as it was at `eae293f`**, the commit the cull started from.
+Recover any removed line exactly with:
+
+```
+git show eae293f:<file> | sed -n '<line>p'
+```
+
+### `ai/response-shape.js` (commit `39d4d47`)
+
+```
+line (before): 2-3
+removed:       "It lives in `ai/` because both layers read a response and only `lib/`
+               importing `ai/` is allowed."
+why uncertain: derivable from the import statements, which enforce it
+survives:      the imports themselves; no prose anywhere
+```
+
+```
+line (before): 7
+removed:       "The interview shape first, because that is what a live round saves."
+why uncertain: the header already states which shape a round saves
+survives:      the surviving block comment in the same file
+```
+
+### `views/partials/demo-banner.ejs` (commit `ca1d1ce`)
+
+```
+line (before): 4-6
+removed:       "A POST can be sent by hand, and this link leaves the owner's hands."
+why uncertain: the server-side guard is visible in routes.js; a reader of this partial
+               does not need it
+survives:      lib/auth/demo-readonly.js (refuseWritesForDemoSessions)
+```
+
+```
+line (before): 10-12
+removed:       "the reader's next thought is that the tool is unfinished rather than that
+               they are looking at a demo"
+why uncertain: motivation, not a constraint; the bare claim was kept
+survives:      the kept line "missing buttons read as broken software"
+```
+
+```
+line (before): 14-18
+removed:       "The sentence describing what forgeright does is WORDED THE SAME HERE as in
+               the console's lead and the roadmap's, and it is deliberately NOT centralised.
+               ... A shared partial would tie two different purposes together."
+why uncertain: it justifies a structural decision, which the keep list allows - but no
+               reader would unify two paragraphs in different files by accident
+survives:      test/demo-login.test.js, section 6, "THE COPY, COUNTED". The test counts the
+               product sentence on the console lead, the roadmap lead AND the banner, and
+               states that the banner is deliberately not centralised. A test is a
+               stronger record than a comment: it fails if the three drift apart.
+```
+
+**Corrected 2026-10-15:** this entry first read `survives: NOWHERE` and called itself the
+weakest removal in the cull. **That was wrong**, and the audit caught it: the decision is
+pinned by a test that counts the sentence in all three places. The removal was safe.
+
+### `lib/mail/console.js` (commit `75d99d3`)
+
+```
+line (before): 9-11
+removed:       "This is a sender, not a stub: it reports success honestly for what it did.
+               What it did is log the message, which is exactly what MAIL_SENDER=console means."
+why uncertain: the return value shows what it did; the distinction was an argument for a
+               decision already made
+survives:      the return statement `{ id: 'console', transport: 'console' }`
+```
+
+```
+line (before): 20-23
+removed:       "@param {object} message / message.to / .subject / .body"
+why uncertain: restate the destructured signature
+survives:      the signature itself
+```
+
+### `config/tools.js` (commit `f039ac3`, misfiled under a test-writer message)
+
+```
+line (before): 6-7
+removed:       "because V1 has one entry and inventing an abstraction for a single case is
+               how the referrers system became hard to reason about"
+why uncertain: a rejected-alternative reason, but it cites a system that does not exist in
+               this repository
+survives:      kept as the clause "kept explicit rather than abstracted for a single case"
+```
+
+```
+line (before): 17-20
+removed:       "`accessCodeEnv` used to live here, naming the environment variable holding a
+               shared code ... Both are gone: access is by participant token only."
+why uncertain: outright history (rule 1) AND names a removed key (rule 4)
+survives:      lib/routes-api.js, which explains why a shared code was removed
+```
+
+```
+line (before): 28
+removed:       "@param {string} id"
+why uncertain: restates the signature
+survives:      the signature
+```
+
+### `lib/auth/demo-readonly.js` (commit `0a1ed1a`)
+
+```
+line (before): 8-14
+removed:       "POST /logout is on it because signing out changes no data and refusing it
+               leaves a visitor unable to leave. Deliberately absent are POST / and
+               POST /login, the sign-in action that issues a link and sends mail, and
+               POST /login/verify, which redeems one and provisions a user and organisation"
+why uncertain: the *what those routes do* is derivable from reading them
+survives:      the consequence was kept: "a demo session reaching them turns the link into a
+               mail relay"
+```
+
+```
+line (before): 26-28
+removed:       "@param {Function} currentSession / @param {Function} isDemoSession"
+why uncertain: restate the parameters
+survives:      the signature
+```
+
+```
+line (before): 74-78
+removed:       "a missing row means the record was tampered with or the database edited by
+               hand, and re-labelling would pick an organisation from a `users` row, the
+               mutable input this stops trusting"
+why uncertain: compressed to "a missing demo row means the record was tampered with"
+survives:      lib/auth/console.js:49-54 carries the full fail-open chain, including the
+               Add-user-form detail
+```
+
+### `lib/landing.js` (commit `b36ea78`)
+
+```
+line (before): 2-4
+removed:       "Sign in or create an organisation are the same action, a participant may
+               paste a token, and a lost link can be recovered"
+why uncertain: the three ways in are visible in views/landing.ejs
+survives:      views/landing.ejs
+```
+
+```
+line (before): 10
+removed:       "/** The three ways in, rendered from one place so the copy and the links agree. */"
+why uncertain: restates that it is a single route
+survives:      the route itself
+```
+
+### `lib/view-format.js` (commit `ba2e561`)
+
+```
+line (before): 5-7
+removed:       "Not a localisation layer. The console is for one operator reading their own
+               data, and this holds only the small set of values whose raw form is
+               unreadable or too wide for a page."
+why uncertain: argues what the module is NOT
+survives:      NOWHERE as prose. The scope is visible from the three exported functions.
+```
+
+```
+line (before): 10-11
+removed:       "Measured why: a raw ISO instant is twenty-four characters and the invitations
+               table carries two per row, so at 390px it overflowed the card."
+why uncertain: a measurement, and the design constraint (unambiguous, UTC-labelled) survived
+survives:      the kept sentence about Intl ambiguity in the same block
+```
+
+```
+line (before): 44-46
+removed:       "One resolver rather than a fallback at each of three read sites, which would
+               drift. The definition lives in ai/response-shape.js, because ai/merge-steps.js
+               reads a response too and can reach ai/ but not lib/."
+why uncertain: layering explanation, derivable from the imports
+survives:      ai/response-shape.js header names the two shapes; the import direction is in
+               the code
+```
+
+```
+line (before): 66
+removed:       "for the session line" (shortDuration)
+why uncertain: call-site detail
+survives:      grep the caller
+```
+
+### `lib/palettes.js` (commit `8326837`)
+
+```
+line (before): 5-6
+removed:       "Three palettes have no `orange`, which is a property of the upstream theme
+               data rather than an omission; the value is `null` so it is visible, and
+               `paletteVars` in lib/theme.js names the fallback."
+why uncertain: duplicated in two places already
+survives:      lib/theme.js:60 and lib/palettes-dark-a.js:5
+```
+
+```
+line (before): 13-14
+removed:       "Every key a palette carries, so a mapping reads one list rather than guessing."
+why uncertain: the list IS the list
+survives:      PALETTE_KEYS
+```
+
+```
+line (before): 38-40
+removed:       "They are not the same palette in two modes: every palette exposes the same
+               semantic roles and no component names a colour, so the pair does not have to
+               be one design."
+why uncertain: design rationale; the operational constraint (keep in step with
+               prefers-color-scheme) was kept
+survives:      the kept clause about palette.css coupling
+```
+
+### `lib/store/connection-guard.js` (commit `fe1c7f9`)
+
+```
+line (before): 23-25
+removed:       "so a read path can treat it as matching nothing. The guard belongs at the
+               call site rather than in hashToken, so a browser with a malformed link and a
+               write with no credential can be told apart."
+why uncertain: the read-path behaviour is in the callers
+survives:      the kept clause names the call-site reason
+```
+
+```
+line (before): 27
+removed:       "@param {unknown} token"
+why uncertain: restates the signature
+survives:      the signature
+```
+
+### `lib/mail/index.js` (commit `998822c`)
+
+```
+line (before): 4-6
+removed:       "The rest of the application calls send({ to, subject, body }) and never knows
+               which transport is in use. Adding a transport means an entry here and a
+               module beside this one, not a change at the call site."
+why uncertain: the shape of the module, visible from the SENDERS map
+survives:      SENDERS
+```
+
+```
+line (before): 59
+removed:       "THE SECOND HALF OF assertMailSenderUsable"
+why uncertain: names a sibling in the same file
+survives:      assertMailSenderUsable above it
+```
+
+```
+line (before): 65-66
+removed:       "assertMailSenderUsable does throw, because an unknown transport name is a typo
+               nothing can fix at runtime."
+why uncertain: rejected-alternative rationale; the throwing behaviour is visible
+survives:      assertMailSenderUsable's @throws
+```
+
+### `ai/period.js` (commit `1d2ffed`)
+
+```
+line (before): 9-11
+removed:       the worked examples `{ hours: 6, period: "week" }` and "2 hours a day"
+why uncertain: both are visible in the two branches of isPeriod
+survives:      isPeriod's two branches
+```
+
+```
+line (before): 15, 30
+removed:       "@param {*} value" (both functions)
+why uncertain: restates the signature
+survives:      the signatures
+```
+
+### `ai/format-commitment.js` (commit `01b6d55`)
+
+```
+line (before): 4-10
+removed:       "Appends the format commitment when the conversation ends on a participant
+               turn, leaving the caller's array untouched." + @param/@returns
+why uncertain: the condition and the copy are visible; kept the intent in one line
+survives:      the kept one-line comment
+```
+
+### `lib/store/tokens.js` (commit `204b29a`)
+
+```
+line (before): 17-21
+removed:       "A fresh unguessable token." + "@returns {string} base64url, URL-safe and
+               case-sensitive."
+why uncertain: `.toString('base64url')` is on the next line
+survives:      the code itself
+```
+
+```
+line (before): 30, 44-45
+removed:       three @param tags
+why uncertain: restate the signatures
+survives:      the signatures
+```
+
+### `lib/mail/proton.js` (commit `cc84a6c`)
+
+```
+line (before): 31-36
+removed:       "It used to be the string 'jobsearch' - the signed-in mailbox on the machine
+               this was written on - which meant a fresh clone and a deployment both looked
+               for a profile named after somebody's personal account"
+why uncertain: rule 1 history, cut outright
+survives:      NOWHERE, and it should not: it is a commit-message fact
+```
+
+```
+line (before): 41-43
+removed:       "PASSING THE CONSTANT RATHER THAN NO FLAG is the owner's decision: the value
+               is visible in one place, --profile is always explicit, and a failure names
+               the profile it actually tried."
+why uncertain: argues a style choice; the operational half was kept in send()
+survives:      send()'s "Always explicit" comment
+```
+
+```
+line (before): 253-262
+removed:       "MEASURED against version 5.0.1 with an empty XDG_CONFIG_HOME: stdout: ""
+               stderr: "No profiles." status: 0" - the measurement log
+why uncertain: the *fact it supports* survived; the log itself is prose
+survives:      the kept comment about stderr carrying the answer at status 0
+```
+
+```
+line (before): 288-291
+removed:       "MEASURED LAYOUT: header ["PROFILE","EMAIL","UNLOCKED"], divider of box
+               characters, data [...]"
+why uncertain: the layout log; the consequence survived
+survives:      the kept comment requiring a state word in column three
+```
+
+```
+line (before): 322-327
+removed:       "WHY THIS EXISTS ... it is worth finding at boot rather than at the first send"
+why uncertain: rationale; the warn-not-throw decision survived
+survives:      the kept "reports rather than throws" sentence
+```
+
+```
+line (before): 348-349
+removed:       "@param {object} message / message.to / .subject / .body"
+why uncertain: restate the signature
+survives:      the signature
+```
+
+### `lib/auth/correct-field.js` (commit `1688cae`)
+
+```
+line (before): 5-7
+removed:       "A correction applied in the prompt had no home, so the next reweigh recomputed
+               from the stored value, and it was not recorded, so the console showed a score
+               from the corrected figure beside a field showing the original."
+why uncertain: the defect narrative; the decision it justifies was kept
+survives:      the kept "stored as a row so the answers view keeps their words"
+```
+
+```
+line (before): 19-20, 38, 42
+removed:       four @param tags
+why uncertain: restate the signatures
+survives:      the signatures
+```
+
+### `lib/theme-route.js` (commit `d188fef`)
+
+```
+line (before): 81-93
+removed:       "THE REFERER WAS THE BUG ... Measured on the live instance: Referer:
+               https://host/forgeright/admin/roadmap against a process whose
+               PUBLIC_BASE_URL was http://127.0.0.1:3000 gave Location: / ... A local test
+               passes and the deployment breaks."
+why uncertain: the defect narrative and measurement; the constraint it proves survived
+survives:      the kept "fails whenever the browser's URL is not byte-identical ... and fails
+               silently"
+```
+
+```
+line (before): 28
+removed:       "it must stay under PUBLIC_PATH"
+why uncertain: the code below checks exactly that
+survives:      the PUBLIC_PATH comparison in themeReturnPath
+```
+
+```
+line (before): 31
+removed:       "The path is returned unchanged rather than rebuilt, so a query string survives"
+why uncertain: the code returns `resolved` unchanged
+survives:      the return statement
+```
+
+### `lib/auth/demo-token-policy.js` (commit `5374fad`)
+
+```
+line (before): 2-3
+removed:       "with no server, store or route involved"
+why uncertain: structure, visible from the absence of imports
+survives:      the (empty) import list
+```
+
+```
+line (before): 11-12
+removed:       "making an operator invent a value would break the 'clone it and run docker
+               compose up' property"
+why uncertain: the rejected-alternative reason; kept "committed on purpose" and "known
+               credential"
+survives:      the kept header of the constant
+```
+
+### `lib/auth/identify-response.js` (commit `e4c295a`)
+
+```
+line (before): 8-9
+removed:       "It is not inline in the route because that file is close to the 400-line soft
+               limit"
+why uncertain: a file-size rationale; the store half (synchronous recordTurn) was kept
+survives:      the kept clause about recordTurn being synchronous
+```
+
+```
+line (before): 17-18
+removed:       "the same fact the console reads for its 'not yet read' badge, so the two cannot
+               disagree"
+why uncertain: the badge is a consequence of this return, not a coupling to preserve
+survives:      lib/auth/console.js's badge rendering
+```
+
+### `scripts/build-palette-css.js` (commit `b893cd9`)
+
+```
+line (before): 1-5
+removed:       "so the palettes have one home in the data module" and "Run with node
+               scripts/build-palette-css.js" (the second was kept)
+why uncertain: derivable from the import
+survives:      the import of lib/palettes.js
+```
+
+```
+line (before): 35
+removed:       "/** One CSS block for a palette, as an array of lines. */"
+why uncertain: the name, parameters and return restate it
+survives:      the function signature
+```
+
+```
+line (before): 56-58
+removed:       "// Follow system, which is what an unreadable preference falls back to. The
+               dark pair is the base, so a browser that does not support the media query
+               gets a usable theme"
+why uncertain: duplicated inside the template literal that follows
+survives:      the FOLLOW SYSTEM template literal
+```
+
+### `lib/base-path.js` (commit `9f9848c`)
+
+```
+line (before): 4-6, 12-14
+removed:       "Two prefixes rather than one, because a reverse proxy separates them" detail
+               and "PUBLIC_PATH is derived ... Both resolve once at module load."
+why uncertain: the derivation is the code; the two-prefix table was kept
+survives:      the kept table and the PUBLIC_PATH IIFE
+```
+
+```
+line (before): 43, 46
+removed:       "A missing leading slash is the common typo, so it is added rather than
+               refused." / "So '/forgeright/' and '/forgeright' are one value"
+why uncertain: the code shows both
+survives:      normalisePrefix's body
+```
+
+```
+line (before): 117, 121, 126
+removed:       "An explicit value wins when PUBLIC_BASE_URL is unset or unparseable." /
+               "Neither is available, so fall back to the mount path." /
+               "Where the app is visible, for logging."
+why uncertain: narrate the next statements or restate the name
+survives:      the code
+```
+
+### `lib/auth/require-secure.js` (commit `56ebe13`)
+
+```
+line (before): 21, 36, 48-51, 29, 40, 62-63, 78-79
+removed:       eight @param tags across six functions
+why uncertain: restate Express signatures
+survives:      the signatures
+```
+
+```
+line (before): 56-57
+removed:       "answered by the framework with the allow-list, and a preflight carries no
+               application data or credential"
+why uncertain: trimmed to "a plain OPTIONS is a probe, answered with the allow-list"
+survives:      the kept half of that comment
+```
+
+### `lib/theme.js` (commit `b37546c`)
+
+```
+line (before): 4-6
+removed:       "Three cases in order: a stored choice naming a palette gives that palette,
+               a stored choice meaning 'follow system' gives the palette matching
+               prefers-color-scheme, and no stored choice follows the system too."
+why uncertain: enumerates the branches the if/else already shows
+survives:      resolveTheme's branches; "correct on the first paint" was kept
+```
+
+```
+line (before): 62-64
+removed:       "named --o-* so public/css/app.css reads the same way the reference stylesheet
+               does"
+why uncertain: a convention, visible in the returned object's keys
+survives:      paletteVars' return value
+```
+
+```
+line (before): 28, 44, 68, 130
+removed:       four @param tags
+why uncertain: restate signatures
+survives:      the signatures
+```
+
+```
+line (before): 130-131
+removed:       "The display name, for the picker's label and any page that names it."
+why uncertain: `name:` says it
+survives:      the property name
+```
+
+### `lib/auth/rate-limit.js` (commit `3cae27e`)
+
+```
+line (before): 5-6
+removed:       "per email, which stops one address being mail-bombed, and per IP, which stops
+               one source enumerating many addresses"
+why uncertain: the two windows are the two record() calls
+survives:      the kept "both must pass, email stricter"
+```
+
+```
+line (before): 26, 37, 48-50, 71-72
+removed:       seven @param tags
+why uncertain: restate signatures
+survives:      the signatures
+```
+
+### `lib/store/write-timing.js` (commit `5d0a0d7`)
+
+```
+line (before): 5-6
+removed:       "No retry: a write that still fails has already waited up to
+               STORE_BUSY_TIMEOUT_MS, so a retry would delay surfacing a real fault."
+why uncertain: compressed to one clause; the reasoning half was cut
+survives:      the kept "No retry ... has already waited up to STORE_BUSY_TIMEOUT_MS"
+```
+
+```
+line (before): 18-23
+removed:       "True when an error is a lock failure, by message or by error code." + @param/@returns
+why uncertain: isLockError's body is three lines and says it
+survives:      the function body
+```
+
+```
+line (before): 35, 37
+removed:       "@param {string} orgId" / "@param {() => any} write"
+why uncertain: restate signatures
+survives:      the signature
+```
+
+### Code changes deferred
+
+**These are not comment removals. They are places where the cull found that a comment was
+standing in for a code change, which the rulebook says to record rather than do.**
+
+```
+1  lib/mail/proton.js
+   The login-advice string is built twice, in describeFailure and readinessProblems.
+   One helper would remove the duplication, and the two cannot then drift.
+
+2  scripts/build-palette-css.js
+   The --o-mode fact is documented in both the HEADER and the FOLLOW SYSTEM template
+   literals. Removing one means regenerating public/css/palette.css, which is a decision
+   about the generated artefact rather than about the script.
+
+3  views/partials/demo-banner.ejs
+   The "not centralised" decision is defended in a comment. The durable form is a named
+   partial for the product sentence, which is a code change.
+```
+
+### What cannot be reconstructed
+
+**Three removals were made under rule 9 without a written entry at the time, and are
+recorded below as re-judged rather than as recovered:**
+
+- **`ai/response-shape.js`** — the `@param data` / `@returns` tag pair. Recorded here as
+  re-judged: the diff shows they were removed, but the report for that file listed only
+  "the module header block" and the shape note.
+- **`lib/palettes.js`** — "The palette ids in menu order" (the `PALETTE_IDS` doc). Re-judged
+  from the diff: derivable from `Object.keys(PALETTES)` and the `PALETTES` comment above it.
+- **`lib/auth/demo-token-policy.js`** — two `@param` lines. Re-judged from the diff.
+
+**Everything else above was flagged in the cull report at the time of removal.**
+
+**A missing entry is worse than a listed uncertainty**, which is why these three are named
+rather than omitted.

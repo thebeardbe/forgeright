@@ -1,14 +1,9 @@
 /**
- * The admin console is scoped to the session, never to the request.
+ * The admin console is scoped to the session, never to the request: a console route learns its
+ * organisation from the SESSION, never from a parameter, query string, body field or path segment.
  *
- * THE PROPERTY: a console route learns its organisation from the SESSION, never from a parameter, a
- * query string, a body field or a path segment. `scopeForSession` is meant to be the only place that
- * happens; this file tests that it is.
- *
- * INSPECT THE FILES, NOT THE STATUS CODE: a console action that returns 302 while writing to the
- * wrong organisation is the failure this exists to catch, and only reading the databases sees it.
- *
- * Sign-ins go through the real route and consume the login rate limit, so they are kept few.
+ * INSPECT THE FILES, NOT THE STATUS CODE: only reading the databases sees a 302 that wrote to the
+ * wrong organisation.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,7 +23,6 @@ const SERVER = path.join(__dirname, '..', 'server.js');
 const ALLOWED_HOST = 'allowed.example.test';
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-console-scope-'));
 
-/** A free TCP port, released before the child claims it. */
 function freePort() {
     return new Promise((resolve, reject) => {
         const probe = net.createServer();
@@ -42,7 +36,6 @@ function freePort() {
 
 const PORT = await freePort();
 
-/** Every environment variable the child reads, pinned as its WHOLE environment. */
 function spawnedEnv(port) {
     return {
         PATH: process.env.PATH,
@@ -58,15 +51,13 @@ function spawnedEnv(port) {
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // An empty string is PRESENT, so dotenv (which fills only ABSENT keys) leaves it alone,
-        // holding the demo gate closed against an untracked .env. See test/demo-login.test.js.
+        // PRESENT (empty), so dotenv leaves it alone: the demo gate stays closed.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: ''
     };
 }
 
-/** One HTTP request with the trusted forwarded-protocol header. */
 function request({ method = 'GET', path: urlPath = '/', form, cookie, headers = {} } = {}) {
     const payload = form === undefined ? undefined : new URLSearchParams(form).toString();
     return new Promise((resolve, reject) => {
@@ -101,8 +92,6 @@ const postForm = (urlPath, cookie, form) => request({ method: 'POST', path: urlP
 let child;
 let childOutput = '';
 
-// Set up inside before(): the sign-ins and console setup below need the child
-// running, and top-level code would run before the server was listening.
 let cookieA;
 let cookieB;
 let ORG_A;
@@ -120,14 +109,12 @@ before(async () => {
             const res = await request({ path: '/healthz' });
             if (res.status === 200) break;
         } catch {
-            // Not up yet.
         }
         if (Date.now() - start > 8000) throw new Error('server did not start');
         await new Promise((r) => setTimeout(r, 50));
     }
 
-    // Two organisations, each with an invitation, created through the real
-    // console routes so the setup uses the same code path the tests then police.
+    // Created through the real console routes, so the setup uses the code path the tests police.
     cookieA = await signIn('admin-a@scope.test');
     cookieB = await signIn('admin-b@scope.test');
 
@@ -153,9 +140,6 @@ after(async () => {
     });
 });
 
-// --- signing in and file-level evidence --------------------------------------
-
-/** Signs in through the real route and returns the session cookie. */
 async function signIn(email) {
     childOutput = '';
     await postForm('/admin/login', undefined, { email });
@@ -166,7 +150,6 @@ async function signIn(email) {
     return res.setCookie[0].split(';')[0];
 }
 
-/** Runs a function against one organisation file, opening and closing it. */
 function inOrgFile(orgId, fn) {
     const db = new DatabaseSync(path.join(STORE_DIR, 'orgs', `${orgId}.db`));
     try {
@@ -191,15 +174,8 @@ const invitationsIn = (orgId) => inOrgFile(orgId, (db) => db.prepare('SELECT id,
 const orgNameIn = (orgId) => inOrgFile(orgId, (db) => db.prepare('SELECT name FROM organisation').get().name);
 const tokenCountIn = (orgId) => inOrgFile(orgId, (db) => db.prepare('SELECT COUNT(*) AS n FROM participant_tokens').get().n);
 
-// Two organisations are created in before() once the server is listening.
-
-// ===========================================================================
-// 1. THE CONSOLE LISTS ONLY ITS OWN ORGANISATION
-// ===========================================================================
-
 test('a forged organisation id in the QUERY on GET /admin is ignored by the listing', async () => {
-    // The console's own GET must ignore a tenant in the query for what it LISTS: trusting it here
-    // would show B's invitations to A.
+    // The console's own GET must ignore a tenant in the query for what it LISTS.
     const res = await request({ path: `/admin?organisationId=${ORG_B}&orgId=${ORG_B}&id=${ORG_B}`, cookie: cookieA });
 
     assert.equal(res.status, 200);
@@ -209,7 +185,6 @@ test('a forged organisation id in the QUERY on GET /admin is ignored by the list
 });
 
 test('a forged organisation id in the PATH of the console GET is ignored', async () => {
-    // A path segment is the other shape a tenant could arrive in.
     const res = await request({ path: `/admin?organisationId=${ORG_B}`, cookie: cookieB });
     assert.ok(res.text.includes('invited-b@scope.test'), "B still sees only B's data");
     assert.equal(res.text.includes('invited-a@scope.test'), false);
@@ -230,7 +205,6 @@ test('B\'s console lists B\'s invitations and not A\'s', async () => {
 });
 
 test('each console lists only its own users', async () => {
-    // Add a user to A, then check neither console shows the other's people.
     await postForm('/admin/users', cookieA, { email: 'staff-a@scope.test', role: 'user' });
 
     const consoleA = await request({ path: '/admin', cookie: cookieA });
@@ -242,13 +216,8 @@ test('each console lists only its own users', async () => {
     assert.equal(consoleA.text.includes('admin-b@scope.test'), false, "B's admin is not shown in A");
 });
 
-// ===========================================================================
-// 2. A TENANT SUPPLIED IN THE REQUEST IS IGNORED
-// ===========================================================================
-
 test('a forged organisation id in the query string is ignored for a rename', async () => {
-    // The strongest observable: rename A's organisation while naming B in the
-    // query. If the query were honoured, B's NAME would change.
+    // The strongest observable: if the query were honoured, B's NAME would change.
     const beforeB = orgNameIn(ORG_B);
 
     const res = await postForm(`/admin/organisation/name?organisationId=${ORG_B}&orgId=${ORG_B}&id=${ORG_B}`, cookieA, {
@@ -309,10 +278,6 @@ test('a forged organisation id is ignored when creating an invitation', async ()
     assert.equal(invitationsIn(ORG_B).length, beforeInB, 'nothing landed in B');
 });
 
-// ===========================================================================
-// 3. A'S INVITATION ID USED WITH B'S SESSION IS REFUSED
-// ===========================================================================
-
 test('A\'s invitation id with B\'s session is refused for send, and B is unchanged', async () => {
     const beforeA = tokenCountIn(ORG_A);
     const beforeB = tokenCountIn(ORG_B);
@@ -335,13 +300,8 @@ test('A\'s invitation id with B\'s session is refused for reset, and B is unchan
     assert.equal(tokenCountIn(ORG_B), beforeB, 'B is untouched');
 });
 
-// ===========================================================================
-// 4. A'S USER ID USED WITH B'S SESSION IS REFUSED
-// ===========================================================================
-
 test('B\'s user id with A\'s session is refused for a role change, and B is unchanged', async () => {
-    // The route where the consequence is longest-lived: a role change that landed
-    // in the wrong organisation would grant or remove access across tenants.
+    // A role change in the wrong organisation would grant or remove access across tenants.
     const userB = userIdFor('admin-b@scope.test');
     const roleBefore = readAdmin((db) => db.prepare('SELECT role FROM users WHERE id = ?').get(userB).role);
     assert.equal(roleBefore, 'admin');
@@ -357,8 +317,7 @@ test('B\'s user id with A\'s session is refused for a role change, and B is unch
 });
 
 test('a role change for a user in this organisation DOES work', async () => {
-    // The control: the same route succeeds for a user in the session's own
-    // organisation, so the refusal above is about scoping and not a dead route.
+    // The control: the same route succeeds inside the session's own organisation.
     await postForm('/admin/users', cookieA, { email: 'promote-me@scope.test', role: 'user' });
     const target = userIdFor('promote-me@scope.test');
     assert.equal(readAdmin((db) => db.prepare('SELECT role FROM users WHERE id = ?').get(target).role), 'user');
@@ -373,10 +332,6 @@ test('a role change for a user in this organisation DOES work', async () => {
     );
 });
 
-// ===========================================================================
-// 5. AN UNAUTHENTICATED REQUEST REDIRECTS
-// ===========================================================================
-
 test('an unauthenticated request to every console sub-route redirects to the sign-in page', async () => {
     for (const [method, urlPath] of [
         ['GET', '/admin'],
@@ -388,8 +343,7 @@ test('an unauthenticated request to every console sub-route redirects to the sig
         ['POST', `/admin/users/${userIdFor('admin-a@scope.test')}/role`]
     ]) {
         const res = await request({ method, path: urlPath, form: method === 'POST' ? {} : undefined });
-        // GET /admin serves the sign-in form itself (the page an admin bookmarks);
-        // every other route redirects there. Neither serves console data.
+        // GET /admin serves the sign-in form itself; every other route redirects there.
         if (method === 'GET' && urlPath === '/admin') {
             assert.equal(res.status, 200, 'GET /admin serves the sign-in form');
             assert.equal(res.text.includes('invited-a@scope.test'), false, 'but no console data');
@@ -400,13 +354,8 @@ test('an unauthenticated request to every console sub-route redirects to the sig
     }
 });
 
-// ===========================================================================
-// 6. THE ROLE CONTROL IS ADMIN-ONLY IN EFFECT
-// ===========================================================================
-
 test('a `user`-role session cannot reach ANY console route, even by guessing the URL', async () => {
-    // A signed-in `user` must be refused by the guard, not merely steered away from a link. The
-    // account is created through the console route, so it belongs to A.
+    // A signed-in `user` must be refused by the guard, not merely steered away from a link.
     await postForm('/admin/users', cookieA, { email: 'limited@scope.test', role: 'user' });
     const cookieLimited = await signIn('limited@scope.test');
 
@@ -421,10 +370,6 @@ test('a `user`-role session cannot reach ANY console route, even by guessing the
         assert.equal(res.status, 403, `${method} ${urlPath} is forbidden for a plain user`);
     }
 });
-
-// ===========================================================================
-// 7. THE TWO TOKEN ACTIONS REACH THE STORE
-// ===========================================================================
 
 test('Send a link with a REAL invitation id succeeds and issues a token in the session\'s organisation', async () => {
     const before = tokenCountIn(ORG_A);
@@ -441,8 +386,7 @@ test('Reset all access with a REAL invitation id succeeds and revokes the tokens
     const res = await postForm(`/admin/invitations/${INVITATION_A.id}/reset`, cookieA, {});
 
     assert.equal(res.status, 302, 'the action succeeds');
-    // A reset revokes every live token and issues one, so the count grows by one
-    // and exactly one is live.
+    // A reset revokes every live token and issues one.
     assert.equal(tokenCountIn(ORG_A), before + 1, 'one replacement token was issued in A');
     const live = inOrgFile(ORG_A, (db) => db.prepare(
         'SELECT COUNT(*) AS n FROM participant_tokens WHERE invitation_id = ? AND revoked_at IS NULL'
@@ -451,8 +395,7 @@ test('Reset all access with a REAL invitation id succeeds and revokes the tokens
 });
 
 test('Send a link and Reset all access with a FAKE id are refused with 404', async () => {
-    // A fake id matches no real invitation, so both routes are correctly refused
-    // with 404 rather than acting on some other row.
+    // A fake id matches no real invitation, so both routes are refused with 404.
     const send = await postForm('/admin/invitations/not-a-real-id/send', cookieA, {});
     const reset = await postForm('/admin/invitations/not-a-real-id/reset', cookieA, {});
 
@@ -461,8 +404,6 @@ test('Send a link and Reset all access with a FAKE id are refused with 404', asy
 });
 
 test('a forged organisation in the BODY of the token actions is ignored', async () => {
-    // The token actions are the routes where a body field could plausibly be
-    // trusted. Each must act on the session's organisation regardless.
     const beforeA = tokenCountIn(ORG_A);
     const beforeB = tokenCountIn(ORG_B);
 

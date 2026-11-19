@@ -1,11 +1,6 @@
 /**
  * The interview prompt's DERIVE / ASK / RECORD structure, and the `{ said: ... }` marker.
  *
- * WHAT THE PROMPT GOVERNS. It covers all fifteen fields with three steps, makes the overlap
- * between fields concrete, and adds a stop rule. `{ said: ... }` records an answer that will not
- * fit a type, and is refused by the typed minimum so a model cannot complete by writing prose
- * everywhere.
- *
  * PROMPT TESTS ARE TEXT ASSERTIONS, the right shape where the artefact IS prose: the rule governs
  * the model, so its presence and exact condition are the behaviour. Pinned against drift.
  */
@@ -28,14 +23,12 @@ const matrix = await import('../ai/matrix.js');
 const shapes = await import('../ai/field-shapes.js');
 const weighCore = await import('../ai/weigh-core.js');
 
-/** A process with every field typed CORRECTLY, so a test can flood one field at a time. */
 function typedProcess(overrides = {}) {
     const process = { task: 'entering invoices', trigger: 'the mail arrives' };
     process.steps = [Object.fromEntries(matrix.STEP_FIELDS.map((f) => [f, f === 'needsReasoning' ? false : 'a value']))];
     process.frequencyPerWeek = 2;
 
-    // EACH FIELD GETS THE SHAPE IT REQUIRES, not a blanket string: a fixture that got this wrong
-    // would itself be incomplete, making every assertion below meaningless.
+    // EACH FIELD GETS THE SHAPE IT REQUIRES, not a blanket string.
     const typedValues = {
         peopleAffected: 3,
         handoffTo: ['the team'],
@@ -52,7 +45,6 @@ function typedProcess(overrides = {}) {
     return { ...process, ...typedValues, ...overrides };
 }
 
-/** Parses a completion reply asserting that everything is present. */
 function completionWith(process) {
     return parseModelResponse(JSON.stringify({
         status: 'complete',
@@ -63,17 +55,12 @@ function completionWith(process) {
     }));
 }
 
-// ===========================================================================
-// 1. THE THREE STEPS, IN BOTH LANGUAGES, COVERING ALL FIFTEEN FIELDS
-// ===========================================================================
-
 test('the English prompt states the three steps in order', () => {
     const text = prompt('en');
     assert.match(text, /### 1\. DERIVE/, 'step 1 is DERIVE');
     assert.match(text, /### 2\. ASK/, 'step 2 is ASK');
     assert.match(text, /### 3\. RECORD AND MOVE ON/, 'step 3 is RECORD AND MOVE ON');
 
-    // In order, so the sequence is the rule rather than three separate headings.
     assert.ok(text.indexOf('### 1. DERIVE') < text.indexOf('### 2. ASK'), 'DERIVE precedes ASK');
     assert.ok(text.indexOf('### 2. ASK') < text.indexOf('### 3. RECORD AND MOVE ON'), 'ASK precedes RECORD');
 });
@@ -86,14 +73,12 @@ test('the Dutch prompt states the three steps in order', () => {
 });
 
 test('the steps cover EVERY field rather than the four of the old rule', () => {
-    // The sweep must apply to every field, not only the typed minimum.
     const text = prompt('en');
     assert.match(text, /it applies to every field/i, 'the scope is stated as every field');
     assert.match(text, /DERIVE BEFORE YOU ASK\.\*\* For every field in `missing`/s, 'the rule names `missing`, which is every field');
 });
 
 test('the REMOVED wording is gone from both languages', () => {
-    // The instruction that produced the loop, asserted absent so it cannot return.
     for (const lang of LANGS) {
         assert.equal(
             /ask about it\s*-\s*once, in different words/i.test(prompt(lang)),
@@ -104,8 +89,7 @@ test('the REMOVED wording is gone from both languages', () => {
 });
 
 test('neither language allows an unconditional re-ask of the same field', () => {
-    // At most TWO attempts, the second in genuinely different words, a third forbidden. Both
-    // languages must state the cap.
+    // At most TWO attempts, the second in genuinely different words.
     for (const lang of LANGS) {
         const text = prompt(lang);
         const capped = /TWO ATTEMPTS, THEN RECORD AND MOVE ON/i.test(text)
@@ -116,10 +100,6 @@ test('neither language allows an unconditional re-ask of the same field', () => 
         assert.ok(noThird, `${lang} must forbid a third asking`);
     }
 });
-
-// ===========================================================================
-// 2. THE DERIVATION RULES
-// ===========================================================================
 
 test('the derivation examples are present: one fact, two fields', () => {
     const text = prompt('en');
@@ -137,14 +117,9 @@ test('the sweep instruction is present: re-read the WHOLE conversation', () => {
 
 test('the Dutch prompt carries the same derivations', () => {
     const text = prompt('nl');
-    // The same examples, in Dutch: the advert trigger and the "alone" peopleAffected.
     assert.match(text, /advertentie/i, 'the advert example is present');
     assert.match(text, /alleen/i, 'and the "alone" example');
 });
-
-// ===========================================================================
-// 3. THE STOP RULE
-// ===========================================================================
 
 test('the stop rule is stated in both languages', () => {
     assert.match(prompt('en'), /ASKING THE SAME THING A THIRD TIME IS A FAILURE, NOT PERSISTENCE/i);
@@ -158,38 +133,25 @@ test('the stop rule is made detectable through the conversation, with NO new sta
 });
 
 test('the model really does receive its own earlier turns, so the stop rule rests on something true', async () => {
-    // An assistant turn the model produced is in the next request's messages, so it can read its
-    // own earlier questions.
-    //
-    // THE CLAIM IS NO-NEW-STATE, NOT NO-TRANSFORMATION: non-user messages are forwarded, and the
-    // forwarded form pushes `{ role, content }` rather than the whole message.
+    // THE CLAIM IS NO-NEW-STATE, NOT NO-TRANSFORMATION: the forwarded form pushes
+    // `{ role, content }` rather than the whole message.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
 
-    // 1. A NON-USER MESSAGE IS FORWARDED, wherever the guard builds the safe list.
     assert.match(source, /if \(msg\.role !== 'user'\) \{[\s\S]{0,120}?safeMessages\.push\(/,
         'non-user messages are forwarded rather than dropped');
-    // 2. THE FORWARDED FORM KEEPS ROLE AND CONTENT, which is what makes it the model's own turn.
     assert.match(source, /safeMessages\.push\(\{ role: msg\.role, content: msg\.content \}\)/,
         'an assistant turn is forwarded as role and content');
-    // 3. and only those, so the internal fields do not reach the provider.
     assert.equal(/safeMessages\.push\(msg\)/.test(source), false,
         'the raw message is not what is forwarded');
-    // 4. The whole list reaches the provider, so the forwarded turns are actually sent.
     assert.match(source, /messages: withFormatCommitment\(safeMessages\)/, 'and the whole list is sent to the provider');
 });
 
-// ===========================================================================
-// 4. `{ said: ... }` AND THE TYPED MINIMUM
-// ===========================================================================
-
 test('the typed minimum is exactly the five names the prompt lists', () => {
-    // Five names, four requirements: the effort pair is either/or.
     assert.deepEqual(
         [...shapes.TYPED_MINIMUM_FIELDS],
         ['task', 'trigger', 'steps', 'frequencyPerWeek', 'timePerPeriod'],
         'the code list matches the prompt'
     );
-    // And the prompt names them.
     const text = prompt('en');
     assert.match(text, /WHICH FIELDS MAY NOT BE PROSE/, 'the prompt states the rule');
     for (const field of shapes.TYPED_MINIMUM_FIELDS) {
@@ -207,19 +169,14 @@ test('the typed minimum REFUSES prose, each field asserted', () => {
 });
 
 test('the effort pair refuses prose on EITHER half, which is why both are listed', () => {
-    // The pair is one requirement: a typed `frequencyPerWeek` satisfies it however
-    // `timePerPeriod` is written, and a typed `timePerPeriod` satisfies it however
-    // `frequencyPerWeek` is written. Prose alone on the pair, with neither typed, leaves the
-    // requirement unmet - which is the property the two names exist for.
+    // The pair is ONE requirement: prose on both halves, with neither typed, leaves it unmet.
     for (const [typed, prose] of [['frequencyPerWeek', 'timePerPeriod'], ['timePerPeriod', 'frequencyPerWeek']]) {
-        // A typed value on one half: the requirement is satisfied despite prose on the other.
         const satisfied = completionWith(typedProcess({
             [typed]: typed === 'frequencyPerWeek' ? 2 : { hours: 2, period: 'week' },
             [prose]: { said: 'often enough' }
         }));
         assert.equal(satisfied.status, 'complete', `a typed ${typed} satisfies the pair`);
 
-        // Prose on BOTH halves: nothing typed, so the requirement is unmet.
         const unmet = completionWith(typedProcess({
             frequencyPerWeek: { said: 'often' },
             timePerPeriod: { said: 'a while' }
@@ -230,7 +187,6 @@ test('the effort pair refuses prose on EITHER half, which is why both are listed
 });
 
 test('a NORMAL field ACCEPTS prose', () => {
-    // The other half: eleven fields may legitimately carry the participant's words.
     for (const field of ['peopleAffected', 'handoffTo', 'waitsFor', 'dependsOn', 'systems', 'touchedDepartments',
         'mistakesPerPeriod', 'mistakeConsequence', 'currentState', 'frustration']) {
         const process = typedProcess({ [field]: { said: `what they said about ${field}` } });
@@ -242,21 +198,13 @@ test('a NORMAL field ACCEPTS prose', () => {
 });
 
 test('a malformed prose marker is not a marker, so it cannot close a field by asserting nothing', () => {
-    // `{ said: "" }`, `{ said: 42 }` and `{ said: " " }` are not prose: the ordinary shape check
-    // refuses the object.
     for (const bad of [{ said: '' }, { said: '   ' }, { said: 42 }, { said: null }]) {
         assert.equal(shapes.proseSaidIn(bad), null, `${JSON.stringify(bad)} is not a marker`);
     }
     assert.equal(shapes.proseSaidIn({ said: 'real words' }), 'real words');
 });
 
-// ===========================================================================
-// 5. THE TWO CONDITIONS THAT MAKE THE TRADE ACCEPTABLE
-// ===========================================================================
-
 test('A `{ said: ... }` ON EVERY FIELD DOES NOT COMPLETE — the property that stops prose winning', () => {
-    // A model cannot finish by writing words into everything, because the typed minimum is still
-    // missing.
     const allProse = {};
     for (const field of [...matrix.PROCESS_FIELDS, ...matrix.EFFORT_FIELDS]) {
         allProse[field] = { said: `words for ${field}` };
@@ -272,7 +220,6 @@ test('A `{ said: ... }` ON EVERY FIELD DOES NOT COMPLETE — the property that s
 });
 
 test('prose on the ELEVEN normal fields, with the typed minimum typed, DOES complete', () => {
-    // All-prose fails for the right reason: the typed minimum is the floor.
     const process = { task: 'entering invoices', trigger: 'the mail arrives' };
     process.steps = [Object.fromEntries(matrix.STEP_FIELDS.map((f) => [f, f === 'needsReasoning' ? false : 'v']))];
     process.frequencyPerWeek = 2;
@@ -287,8 +234,7 @@ test('prose on the ELEVEN normal fields, with the typed minimum typed, DOES comp
 });
 
 test('GENUINELY ABSENT evidence is still refused, distinct from prose', () => {
-    // "They answered, in words" and "they were never asked" must not collapse: a field omitted
-    // entirely stays missing, the same field recorded as prose does not.
+    // "They answered, in words" and "they were never asked" must not collapse.
     for (const field of ['dependsOn', 'frustration', 'peopleAffected']) {
         const present = typedProcess({ [field]: { said: 'their words' } });
         const absent = typedProcess();
@@ -316,13 +262,7 @@ test('the two outcomes are DIFFERENT for the SAME field, asserted directly', () 
     assert.notEqual(asProse.status, asAbsent.status, 'prose and absence are not the same outcome');
 });
 
-// ===========================================================================
-// 6. THE WEIGHING MARKER
-// ===========================================================================
-
 test('a `{ said: ... }` reaches the weighing prompt as saidInTheirWords, with a note', () => {
-    // The raw marker must not reach the model: `{ said: "just me" }` would arrive as an
-    // unexplained object it might score as a figure.
     const grouping = {
         responses: [{ responseId: 'r1', department: 'Finance', data: { task: 'invoices', peopleAffected: { said: 'just me' } } }]
     };
@@ -331,16 +271,13 @@ test('a `{ said: ... }` reaches the weighing prompt as saidInTheirWords, with a 
     assert.match(message, /saidInTheirWords/, 'the value is labelled as the participant\'s words');
     assert.match(message, /"saidInTheirWords":\s*"just me"/, 'and carries the words themselves');
 
-    // The note must be present: it is what tells the model the value is not a figure.
     assert.match(message, /not a figure/i, 'the note says it is not a figure');
     assert.match(message, /not measured/i, 'and that an unmeasurable field differs from an empty one');
 
-    // The raw marker must NOT reach the model.
     assert.equal(/"said":/.test(message), false, 'the raw { said } object must not appear');
 });
 
 test('an ORDINARY value reaches the weighing prompt unchanged, not wrapped', () => {
-    // The marker transformation applies to prose only, so a typed value is not relabelled.
     const grouping = {
         responses: [{ responseId: 'r1', department: 'Finance', data: { task: 'invoices', peopleAffected: 3 } }]
     };
@@ -349,10 +286,6 @@ test('an ORDINARY value reaches the weighing prompt unchanged, not wrapped', () 
     assert.match(message, /"peopleAffected":\s*3/, 'a number is passed through');
     assert.equal(/saidInTheirWords/.test(message), false, 'and is not labelled as prose');
 });
-
-// ===========================================================================
-// 7. THE RENDER
-// ===========================================================================
 
 test('the participant\'s words are rendered ESCAPED, tagged "in their own words"', async () => {
     const ejs = await import('ejs');
@@ -371,7 +304,6 @@ test('the prose tag is in the CALM register, not the warning one', async () => {
         data: { peopleAffected: { said: 'just me' } }
     });
 
-    // A prose answer is legitimate, so the tag must not use a warning class.
     assert.equal(/class="[^"]*warn/i.test(rendered), false, 'no warning register for a legitimate answer');
     assert.match(rendered, /class="tag"/, 'the ordinary tag class is used');
 });
@@ -387,24 +319,14 @@ test('a prose field renders the words, with no leftover marker object', async ()
     assert.equal(/"said"/.test(rendered), false, 'and the marker key is not shown');
 });
 
-// ===========================================================================
-// TWO PROMPT GAPS THAT NEED A LIVE PROVIDER
-// ===========================================================================
-//
-// These are assertions about the PROMPT, because the model's behaviour needs a live
-// provider. They pin whether the rule as written can govern what it claims to.
-
 test('REPORT 1: the stop rule forbids a repeated PHRASE, not only a repeated field', () => {
-    // A question repeated eight times while `missing` falls shows the stop rule governs ASKING and
-    // does not catch the phrase: counting asks-per-field lets one sentence serve different fields.
+    // Counting asks-per-field lets one sentence serve different fields.
     const text = prompt('en');
 
-    // The rule DOES name a repeated question, not only a repeated field.
     assert.match(text, /ASKING THE SAME QUESTION AGAIN IS A FAILURE/i, 'the rule names the same QUESTION');
     assert.match(text, /five times, to the same question/i, 'and records the observed repetition');
 
-    // But detection is left to the model reading its own turns, with no mechanical count, so
-    // a model may still rephrase-and-repeat. Stated as a gap rather than asserted as working.
+    // NOT covered: detection is left to the model reading its own turns, with no mechanical count.
     assert.match(text, /count them/i, 'the mechanism is the model counting its own questions');
     assert.equal(
         /do not ask a question you have already asked in any form/i.test(text),
@@ -414,8 +336,6 @@ test('REPORT 1: the stop rule forbids a repeated PHRASE, not only a repeated fie
 });
 
 test('REPORT 2: the prompt states that a prose-recorded field IS supplied', () => {
-    // The rule that a prose-recorded field IS supplied, asserted here; the CODE behaviour is
-    // asserted above.
     const text = prompt('en');
     assert.match(text, /the field stops being in `missing`/i, 'the prompt says the field stops being missing');
     assert.match(text, /it RECORDS what they told you/i, 'and that it is a record, not a failure');

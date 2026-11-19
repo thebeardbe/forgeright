@@ -1,12 +1,5 @@
 /**
- * The admin auth layer: sign-in tokens, sessions, rate limiting, and the mail transports.
- *
- * Expected values are literals or plainly-derived values; none is computed by calling the code
- * under test.
- *
- * STORE_DIR is set BEFORE anything is imported, so each run starts from an empty installation
- * database. SESSION_SECRET is set for the whole file; tests that need it absent change and restore
- * it.
+ * SESSION_SECRET is set for the whole file; tests that need it absent change and restore it.
  */
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,7 +25,6 @@ const paths = await import('../lib/store/paths.js');
 const store = await import('../lib/store/index.js');
 const { DatabaseSync } = await import('node:sqlite');
 
-/** The installation admin database, opened independently for assertions. */
 function adminDb() {
     return new DatabaseSync(paths.adminDbPath());
 }
@@ -41,10 +33,6 @@ after(() => {
     store.closeAll();
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
-
-// ===========================================================================
-// 1. SIGN-IN TOKENS
-// ===========================================================================
 
 test('a login token is 43 base64url characters', () => {
     const token = tokens.generateLoginToken();
@@ -107,16 +95,13 @@ test('an unknown token is refused as unknown, not thrown', () => {
 });
 
 test('an empty or non-string token is refused as unknown, not thrown', () => {
-    // A missing ?token= is a routine bad link, so it must not throw.
     for (const bad of ['', null, undefined, 42, {}]) {
         assert.deepEqual(tokens.redeemLoginToken(bad), { ok: false, reason: 'unknown' }, `token ${String(bad)}`);
     }
 });
 
 test('exactly one of many simultaneous redemptions of one token wins', async () => {
-    // The read-then-write race: node:sqlite is synchronous on the calling thread, so a genuine
-    // race needs worker threads; sequential calls cannot prove the UPDATE's WHERE clause is the
-    // guard.
+    // node:sqlite is synchronous on the calling thread, so only worker threads race here.
     const { token } = tokens.issueLoginToken('race@example.com');
     const N = 8;
     const results = await Promise.all(
@@ -135,8 +120,6 @@ test('exactly one of many simultaneous redemptions of one token wins', async () 
         assert.equal(loser.reason, 'used', 'the losers must be refused as already used');
     }
 });
-
-// --- expiry ----------------------------------------------------------------
 
 test('loginLinkTtlMinutes defaults to 15 and treats empty as unset', () => {
     const previous = process.env.LOGIN_LINK_TTL_MINUTES;
@@ -170,7 +153,6 @@ test('a non-positive or non-numeric TTL falls back to the default', () => {
     }
 });
 
-/** Issues a token and forces its stored expiry to a chosen instant. */
 function tokenExpiringAt(isoOrNull) {
     const { token } = tokens.issueLoginToken('boundary@example.com');
     const db = registry.adminConnection();
@@ -194,15 +176,12 @@ test('a token long past expiry is refused as expired', () => {
 });
 
 test('an expired token is not also marked used', () => {
-    // The expiry check must refuse WITHOUT consuming the row.
     const token = tokenExpiringAt(new Date(Date.now() - 1000).toISOString());
     assert.deepEqual(tokens.redeemLoginToken(token), { ok: false, reason: 'expired' });
     assert.deepEqual(tokens.redeemLoginToken(token), { ok: false, reason: 'expired' });
 });
 
 test('expiry is read from the stored value, so a restart does not extend it', () => {
-    // The expiry is compared against the stored instant, not a fresh Date.now() + TTL: a restart
-    // leaves an already-expired row expired.
     const token = tokenExpiringAt(new Date(Date.now() - 1000).toISOString());
     store.closeAll();
     assert.deepEqual(tokens.redeemLoginToken(token), { ok: false, reason: 'expired' });
@@ -215,7 +194,6 @@ test('a fresh token expires in about the configured TTL', () => {
         const before = Date.now();
         const { expiresAt } = tokens.issueLoginToken('ttl@example.com');
         const deltaMinutes = (Date.parse(expiresAt) - before) / 60_000;
-        // 30 minutes, allowing a small amount of clock drift in the call itself.
         assert.ok(deltaMinutes > 29.9 && deltaMinutes <= 30.1, `expected ~30 minutes, got ${deltaMinutes}`);
     } finally {
         if (previous === undefined) delete process.env.LOGIN_LINK_TTL_MINUTES;
@@ -230,14 +208,9 @@ test('pruneLoginTokens removes only expired rows', () => {
     const removed = tokens.pruneLoginTokens();
     assert.ok(removed >= 1, 'at least the expired row is removed');
 
-    // The fresh token still redeems; the pruned one is gone (unknown, not expired).
     assert.equal(tokens.redeemLoginToken(fresh.token).ok, true);
     assert.deepEqual(tokens.redeemLoginToken(stale), { ok: false, reason: 'unknown' });
 });
-
-// ===========================================================================
-// 2. SESSIONS
-// ===========================================================================
 
 test('assertSessionSecretConfigured refuses an unset, empty or whitespace secret', () => {
     const previous = process.env.SESSION_SECRET;
@@ -327,8 +300,7 @@ test('a session id that has no server-side row is refused', () => {
 });
 
 test('a session whose ROW has expired is refused even if the cookie claims otherwise', () => {
-    // The row is the authority: a signed cookie still valid by its own expiry must lose to a
-    // server-side row that has passed.
+    // The row is the authority: a cookie still valid by its own expiry loses to a passed row.
     const { cookieValue, sessionId } = session.createSession('row-expired@example.com');
     const db = registry.adminConnection();
     db.prepare('UPDATE admin_session SET expires_at = ? WHERE id = ?')
@@ -337,15 +309,6 @@ test('a session whose ROW has expired is refused even if the cookie claims other
 });
 
 test('an expired cookie is refused without needing the row', () => {
-    // A cookie whose signed expiry is in the past is refused on the cookie alone.
-    // Build one by signing through a session the module itself created, then
-    // expire the cookie field by re-creating the payload with a past instant.
-    // The signature cannot be forged, so this is exercised through the module:
-    // create a session, then expire BOTH the cookie payload and the row by
-    // shrinking the TTL to a fraction is not possible; instead assert the row
-    // path is the same outcome and that a past-dated, correctly-signed cookie is
-    // refused. The only way to obtain such a signature is a past TTL, so this
-    // asserts the module-produced cookie and row agree after they pass.
     const { cookieValue, sessionId } = session.createSession('expired-cookie@example.com');
     const db = registry.adminConnection();
     const past = new Date(Date.now() - 1000).toISOString();
@@ -383,15 +346,12 @@ test('sessionCookieOptions carries HttpOnly, SameSite=Lax and Path=/admin', () =
 });
 
 test('sessionCookieOptions sets Secure exactly when the connection is secure', () => {
-    // The cookie is Secure on HTTPS and NOT on plain HTTP: a browser drops a Secure cookie sent
-    // over HTTP and sign-in then fails silently.
+    // A browser drops a Secure cookie sent over HTTP, so sign-in fails silently.
     assert.equal(session.sessionCookieOptions(true).secure, true, 'a secure connection must set Secure');
     assert.equal(session.sessionCookieOptions(false).secure, false, 'an insecure connection must not set Secure, or the browser drops the cookie');
 });
 
 test('the Secure flag follows isSecureRequest at the call site', () => {
-    // Tie the two together, so the meaning of the argument cannot silently invert
-    // again: whatever isSecureRequest says is what sessionCookieOptions receives.
     const secureReq = { secure: true };
     const insecureReq = { secure: false };
 
@@ -403,7 +363,6 @@ test('the Secure flag follows isSecureRequest at the call site', () => {
 });
 
 test('the non-conditional cookie attributes do not depend on the Secure argument', () => {
-    // HttpOnly, SameSite and Path must not drift when the Secure flag changes.
     const secure = session.sessionCookieOptions(true);
     const insecure = session.sessionCookieOptions(false);
     assert.equal(secure.httpOnly, insecure.httpOnly);
@@ -412,29 +371,24 @@ test('the non-conditional cookie attributes do not depend on the Secure argument
 });
 
 test('sessionCookiePath is the admin prefix, used to clear the cookie identically', () => {
-    // setCookie and clearCookie must use the same Path, or the browser keeps the cookie after
-    // logout.
+    // The same Path, or the browser keeps the cookie after logout.
     assert.equal(session.sessionCookiePath(), '/admin');
 });
 
 test('isLoopbackRequest requires BOTH a loopback peer and a loopback Host', () => {
-    // The narrowness IS the security property: keying on the socket alone lets a local process
-    // claim any hostname, and on the Host alone lets a remote client claim loopback.
+    // The narrowness IS the security property: the socket alone lets a local process claim any
+    // hostname; the Host alone lets a remote client claim loopback.
     const peerOn = (remoteAddress, host) => ({ socket: { remoteAddress }, headers: { host } });
 
-    // Both loopback: exempted.
     assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', 'localhost')), true);
     assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', '127.0.0.1')), true);
-    // "localhost:3000" parses to the hostname "localhost", so the port is ignored.
     assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', 'localhost:3000')), true);
-    // Node reports a v4 loopback connection on a dual-stack listener in IPv4-mapped form, so this
-    // address must be accepted or the exemption matches nothing on the real listener.
+    // Node reports a v4 loopback connection in IPv4-mapped form on a dual-stack listener.
     assert.equal(session.isLoopbackRequest(peerOn('::ffff:127.0.0.1', 'localhost')), true);
     assert.equal(session.isLoopbackRequest(peerOn('::1', '[::1]')), true);
 });
 
 test('a loopback peer alone is NOT enough: a local process cannot claim a public host', () => {
-    // This is the half that a hostname-only or socket-only test would miss.
     const req = { socket: { remoteAddress: '127.0.0.1' }, headers: { host: 'forgeright.example' } };
     assert.equal(session.isLoopbackRequest(req), false, 'a loopback socket with a public Host is not loopback');
 });
@@ -449,7 +403,6 @@ test('isLoopbackRequest rejects non-loopback hosts and missing parts', () => {
     for (const host of ['example.com', 'example.com:443', 'evil-localhost.com', 'notlocalhost']) {
         assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', host)), false, `host ${JSON.stringify(host)}`);
     }
-    // A missing host, a missing socket, and a bare "::1" Host are all refused.
     assert.equal(session.isLoopbackRequest({ socket: { remoteAddress: '127.0.0.1' }, headers: {} }), false);
     assert.equal(session.isLoopbackRequest({ headers: { host: 'localhost' } }), false);
     assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', '::1')), false);
@@ -459,11 +412,6 @@ test('SESSION_COOKIE is the documented name', () => {
     assert.equal(session.SESSION_COOKIE, 'fr_admin');
 });
 
-// ===========================================================================
-// 3. RATE LIMITING
-// ===========================================================================
-
-/** A fake request whose socket address is fixed. */
 function fakeRequest(address = '10.1.1.1') {
     return { socket: { remoteAddress: address } };
 }
@@ -534,7 +482,6 @@ test('resetRateLimits clears every counter', () => {
 });
 
 test('a refusal reason never carries the address or distinguishes known from unknown', () => {
-    // The shape carries no address and no reason that depends on whether one existed.
     const req = fakeRequest('10.8.8.8');
     let last;
     for (let i = 0; i <= 3; i += 1) last = rateLimit.checkLoginRate(req, 'shape@example.com');
@@ -542,10 +489,6 @@ test('a refusal reason never carries the address or distinguishes known from unk
     assert.equal(JSON.stringify(last).includes('shape@example.com'), false);
     assert.equal(JSON.stringify(last).includes('10.8.8.8'), false);
 });
-
-// ===========================================================================
-// 4. MAIL TRANSPORTS
-// ===========================================================================
 
 test('MAIL_SENDER defaults to console and is case-insensitive and trimmed', () => {
     const previous = process.env.MAIL_SENDER;
@@ -605,19 +548,12 @@ test('the console transport reports what it did', async () => {
     }
 });
 
-// ===========================================================================
-// 5. PROTON TRANSPORT: SHELL SAFETY AND FAILURE DIAGNOSTICS
-// ===========================================================================
-//
-// There is no live Proton session, so proton-cli is replaced by a fake on PATH that records its
-// argv and stdin and exits with a chosen code. This exercises the REAL invocation the transport
-// builds, not proton-cli itself.
+// NOT covered: proton-cli itself. A fake on PATH records the argv and stdin the transport builds.
 
 const proton = await import('../lib/mail/proton.js');
 
 const BIN_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-proton-bin-'));
 
-/** Writes a fake proton-cli that records its argv/stdin, then exits 0. */
 function installRecordingCli(name) {
     const dir = path.join(BIN_DIR, name);
     fs.mkdirSync(dir, { recursive: true });
@@ -637,7 +573,6 @@ process.stdin.on('end', () => {
     return { dir, recordFile, read: () => JSON.parse(fs.readFileSync(recordFile, 'utf8')) };
 }
 
-/** Writes a fake proton-cli that fails with a chosen exit code and stderr. */
 function installFailingCli(name, exitCode, stderrText) {
     const dir = path.join(BIN_DIR, name);
     fs.mkdirSync(dir, { recursive: true });
@@ -650,7 +585,6 @@ process.exit(${exitCode});
     return dir;
 }
 
-/** Runs `body` with PATH pointing at one fake bin directory. */
 async function withCli(dir, profile, body) {
     const previousPath = process.env.PATH;
     const previousSender = process.env.MAIL_SENDER;
@@ -711,7 +645,6 @@ test('shell metacharacters in the recipient and subject are inert arguments', as
     });
 
     const seen = fake.read();
-    // They arrive as single argv entries, unchanged: no shell split them.
     assert.equal(seen.argv[seen.argv.indexOf('--to') + 1], evilTo);
     assert.equal(seen.argv[seen.argv.indexOf('--subject') + 1], evilSubject);
     assert.equal(fs.existsSync('/tmp/should-not-exist'), false, 'no shell command may have run');
@@ -725,24 +658,20 @@ test('a newline in the subject cannot become a second argument or header', async
     });
 
     const seen = fake.read();
-    // The whole subject is ONE argument value, newline and all: execFile with an argument array
-    // (no shell) and the body on stdin leaves the newline nowhere to go but inside the value.
+    // execFile with an argument array and the body on stdin leaves the newline inside the value.
     const value = seen.argv[seen.argv.indexOf('--subject') + 1];
     assert.equal(value, subject, 'the whole subject is one argument value');
 
-    // No injected argument: the subject's text must not appear as a separate argv entry, and
     // `--body -` keeps the body out of argv entirely.
     assert.equal(seen.argv.includes('Bcc: attacker@example.com'), false, 'no fragment became its own argument');
     assert.equal(seen.argv.filter((a) => a.startsWith('--')).length, 4, 'only --profile, --to, --subject and --body are flags');
     assert.equal(seen.argv.length, 11, 'the argument list is fixed: four flags with their values, plus the subcommand');
 
-    // And the body, newline-bearing text included, went to stdin, not argv.
     assert.equal(seen.stdin, 'x');
 });
 
 test('a recipient that looks like an option is passed as the value of --to', async () => {
-    // execFile means no shell; the remaining question is whether `--to` consumes the value or it
-    // parses as its own option, and this pins that it is a value position.
+    // `--to` consumes the value rather than the value parsing as its own option.
     const fake = installRecordingCli('dash');
     await withCli(fake.dir, 'p', async () => {
         await proton.send({ to: '--body-file=/etc/passwd', subject: 's', body: 'x' });

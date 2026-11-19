@@ -4,8 +4,11 @@
 corrections. The earlier drafts buried the thing that matters most: **three
 separate LLM sessions, each with one job.**
 
-**Status:** draft for correction. Open questions are marked **Q** and are not
-guesses.
+**Status: shipped.** This describes a system that is built and in use, not a proposal.
+The revision-3 open questions have been answered by implementation; where the built system
+differs from what this document originally proposed, the difference is recorded in
+`ARCHITECTURE.md` and `NOTES.md` rather than here. **It remains a specification rather
+than a description of the code**: read `ARCHITECTURE.md` for what runs.
 
 ---
 
@@ -152,6 +155,13 @@ words; the model knows they are one process.
 **One participant answer is one process.** A description containing a chain is
 recorded as one process with several steps — not several processes.
 
+**It runs automatically when a round finishes, not on request.** The participant route
+finalises the round and then identifies it, without an admin pressing anything; the reply
+to the participant is sent first and identification continues behind it. **An admin never
+has to trigger workflow 2 for an ordinary interview.** A failure leaves the answer reading
+"not yet read", which the console shows and an admin can fix with a rejudge — so a
+finished round is never lost to an identification failure.
+
 The model **reports its reasoning** for every match, and its confidence.
 
 ### The admin's correction
@@ -178,6 +188,31 @@ on factors nobody can enumerate in advance, so the admin's contribution is an
 disputing the score or the grouping, the flow goes back to workflow 2, because a
 process cannot be reweighed before it is certain what it is. A merge implied by
 the reasoning brings the other process in too.
+
+### The admin's correction, which is a different action
+
+**A rejudge argues about the grouping and can never reach a stored value.** When the model
+has read an answer wrongly - "56 checks every morning" stored as a weekly frequency - the
+grouping is right and the reading is wrong, so a rejudge has nothing to correct.
+
+**A correction edits one value the score is computed from**, and then reweighs:
+
+```
+Admin sees:   one answer, and a field in it that was read wrongly
+Admin says:   "not 56 a week but 56 every morning", with a reason
+              -> the value is validated and stored as a correction
+              -> the process is reweighed from the corrected value
+```
+
+**The participant's answer is never rewritten.** The correction is the analysis's reading
+of what they said, held in its own row, so the answers view shows their words and the score
+uses the corrected figure. **The two are shown together**, because a corrected number
+beside an uncorrected field is the disagreement this exists to record rather than create.
+
+**Only the four fields the effort formula reads can be corrected**: the frequency, the
+minutes per instance, the people affected, and the time per period. A field the score
+depends on and cannot be corrected would be the defect. A correction requires a reason, for
+the same purpose as a reweighing: a changed number must be reviewable.
 
 ---
 

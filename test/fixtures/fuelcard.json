@@ -1,0 +1,90 @@
+[
+  {
+    "id": "going-through-customer-complaints-that-came-in-overnight-and",
+    "title": "Going through customer complaints that came in overnight and deciding which ones the support team should call back",
+    "task": "Going through customer complaints that came in overnight and deciding which ones the support team should call back",
+    "trigger": "the morning starts and the complaints have piled up",
+    "peopleAffected": {
+      "said": "nobody else is involved"
+    }
+  },
+  {
+    "id": "going-through-overnight-customer-complaints-and-deciding-which-on",
+    "title": "Going through overnight customer complaints and deciding which ones the support team should call back",
+    "task": "Going through overnight customer complaints and deciding which ones the support team should call back",
+    "trigger": "the overnight complaints queue is full at the start of the day",
+    "steps": [
+      {
+        "name": "open the overnight complaints queue",
+        "whatHappens": "Open the queue of complaints that came in overnight.",
+        "decidedHow": "the queue is the list of what arrived while nobody was watching",
+        "needsReasoning": false
+      },
+      {
+        "name": "read each complaint and tag it by type",
+        "whatHappens": "Read the complaint and tag what kind it is.",
+        "decidedHow": "the type decides who answers it",
+        "needsReasoning": true
+      },
+      {
+        "name": "check the order and the delivery date",
+        "whatHappens": "Look up the order and when it was meant to arrive.",
+        "decidedHow": "the dates decide whether it is urgent",
+        "needsReasoning": false
+      },
+      {
+        "name": "decide whether the support team should call back",
+        "whatHappens": "Decide whether this one needs a call back today.",
+        "decidedHow": "the support team has only so many calls in a day",
+        "needsReasoning": true
+      },
+      {
+        "name": "assign it to a support agent",
+        "whatHappens": "Give the complaint to one of the support agents.",
+        "decidedHow": "each agent has their own customers",
+        "needsReasoning": true
+      },
+      {
+        "name": "note the complaint and the decision",
+        "whatHappens": "Note the complaint and what was decided.",
+        "decidedHow": "the note is what the agent sees",
+        "needsReasoning": false
+      },
+      {
+        "name": "close the complaint in the system",
+        "whatHappens": "Close the complaint once it is assigned.",
+        "decidedHow": "an open complaint stays on the queue",
+        "needsReasoning": false
+      }
+    ],
+    "frequencyPerWeek": 40,
+    "timePerPeriod": {
+      "hours": 12,
+      "period": "week"
+    },
+    "peopleAffected": 3,
+    "minutesPerInstance": 18,
+    "handoffTo": [
+      "the support team"
+    ],
+    "waitsFor": [
+      "the overnight batch"
+    ],
+    "dependsOn": [
+      "the complaints queue being available"
+    ],
+    "systems": [
+      "complaints system",
+      "order system"
+    ],
+    "touchedDepartments": [
+      "Customer Service",
+      "Operations"
+    ],
+    "mistakesPerPeriod": 5,
+    "mistakeConsequence": "a customer waits a second day for a call",
+    "currentState": "by hand from a printed queue",
+    "frustration": "the same complaint types come back every morning",
+    "reportedBy": "Support"
+  }
+]

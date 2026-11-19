@@ -1,13 +1,6 @@
 /**
- * The workflow-2 fixes: a move, and the transaction join.
- *
- * WHAT THIS FILE COVERS. A response re-identified into a different process must leave the one it
- * left, and a nested write must join the outer transaction rather than opening its own. The
- * existing re-identification tests all stay WITHIN one process, so none of them moves one, and a
- * move is the behaviour that needs its own fixture.
- *
- * Every test here is mutation-verified: a test for these behaviours that has never been seen to
- * fail is the failure this file exists to prevent.
+ * A response re-identified into a different process must leave the one it left, and a nested write
+ * must join the outer transaction. The existing re-identification tests all stay WITHIN one process.
  */
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,9 +24,6 @@ after(() => {
     fs.rmSync(STORE_DIR, { recursive: true, force: true });
 });
 
-// --- helpers -----------------------------------------------------------------
-
-/** An organisation with an invitation, and a way to add responses to it. */
 function orgWithInvitation() {
     const org = store.createOrganisation('Org');
     const invitation = store.addInvitation(org.id, { email: 'p@example.test', department: 'Finance' });
@@ -41,7 +31,6 @@ function orgWithInvitation() {
     return { org, invitation, addResponse };
 }
 
-/** Identifies a response into a NEW process and returns the process id. */
 function createProcess(orgId, responseId, name) {
     return processes.recordIdentification({
         orgId,
@@ -50,7 +39,6 @@ function createProcess(orgId, responseId, name) {
     });
 }
 
-/** Identifies a response into an EXISTING process, returning the whole result. */
 function joinProcess(orgId, responseId, processId, extra = {}) {
     return processes.recordIdentification({
         orgId,
@@ -59,13 +47,11 @@ function joinProcess(orgId, responseId, processId, extra = {}) {
     });
 }
 
-/** The current member count of a process, read through the console view. */
 function memberCount(orgId, processId) {
     const row = processes.listProcessesForConsole(orgId).find((p) => p.id === processId);
     return row ? row.current.responses.length : null;
 }
 
-/** Every response id behind every process's CURRENT revision, with its process. */
 function currentMembership(orgId) {
     const rows = processes.listProcessesForConsole(orgId);
     const pairs = [];
@@ -75,7 +61,6 @@ function currentMembership(orgId) {
     return pairs;
 }
 
-/** The store's own invariant read, opened independently of the module under test. */
 function doubledResponses(orgId) {
     const db = new DatabaseSync(store.orgDbPath(orgId));
     try {
@@ -91,13 +76,7 @@ function doubledResponses(orgId) {
     }
 }
 
-// ===========================================================================
-// 1. THE MOVE — the critical one
-// ===========================================================================
-
 test('a response re-identified into ANOTHER process leaves the one it left', () => {
-    // Every re-identification test in test/processes.test.js stays within one process, so
-    // none of them exercises a move.
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const two = addResponse({ task: 'two' });
@@ -110,7 +89,6 @@ test('a response re-identified into ANOTHER process leaves the one it left', () 
     assert.equal(memberCount(org.id, a.process.id), 2, 'A starts with two members');
     assert.equal(memberCount(org.id, b.process.id), 1, 'B starts with one');
 
-    // THE MOVE: two is re-identified into B.
     const moved = joinProcess(org.id, two.id, b.process.id);
 
     assert.ok(moved.left, 'the source process is reported');
@@ -118,7 +96,6 @@ test('a response re-identified into ANOTHER process leaves the one it left', () 
     assert.equal(memberCount(org.id, a.process.id), 1, "A's member count DROPS by one");
     assert.equal(memberCount(org.id, b.process.id), 2, 'B gains the response');
 
-    // The total is the real response count, not one more.
     const total = currentMembership(org.id).length;
     assert.equal(total, 3, 'three responses across the two processes, not four');
 });
@@ -150,14 +127,12 @@ test('NO response is in two current revisions after any sequence', () => {
     const b = createProcess(org.id, responses[2].id, 'B');
     joinProcess(org.id, responses[3].id, b.process.id);
 
-    // Move one out of A, then one out of B, then back.
     joinProcess(org.id, responses[1].id, b.process.id);
     joinProcess(org.id, responses[3].id, a.process.id);
     joinProcess(org.id, responses[1].id, a.process.id);
 
     assert.deepEqual(doubledResponses(org.id), [], 'the invariant holds after every move');
 
-    // And the store's own check agrees.
     const db = registry.connectionFor(org.id);
     assert.deepEqual(processSql.selectResponsesInTwoCurrentRevisions(db), []);
 });
@@ -198,7 +173,6 @@ test('a NON-MOVING create returns left: null and membership is what it was', () 
 });
 
 test('a NON-MOVING merge returns left: null and the process keeps both members', () => {
-    // THE COMMON PATH. A defect here would be worse than one on the unusual path.
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const two = addResponse({ task: 'two' });
@@ -226,8 +200,7 @@ test('a NON-MOVING in-place re-identify returns left: null and membership is unc
 });
 
 test('THE INVARIANT FIRES on a forced double link, and the transaction rolls back', () => {
-    // A forced double link outside the guarded path, so the store's assertion has something to
-    // find: an identification must throw and nothing it wrote may survive.
+    // A forced double link outside the guarded path, so the store's assertion has something to find.
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const two = addResponse({ task: 'two' });
@@ -235,7 +208,6 @@ test('THE INVARIANT FIRES on a forced double link, and the transaction rolls bac
     const a = createProcess(org.id, one.id, 'A');
     const b = createProcess(org.id, two.id, 'B');
 
-    // Force the double link directly, bypassing recordIdentification.
     const db = registry.connectionFor(org.id);
     const bRevision = processSql.selectCurrentRevision(db, b.process.id);
     processSql.linkResponse(db, {
@@ -251,14 +223,12 @@ test('THE INVARIANT FIRES on a forced double link, and the transaction rolls bac
     const revisionsBefore = processes.listProcessesForConsole(org.id)
         .map((p) => p.history.length);
 
-    // Now any identification must find it and throw.
     assert.throws(
         () => joinProcess(org.id, two.id, a.process.id),
         /more than one current revision/,
         'the invariant assertion fires'
     );
 
-    // THE ROLLBACK: the identification it refused wrote nothing.
     assert.equal(processes.listProcessesForConsole(org.id).length, historyBefore, 'no process was added');
     assert.deepEqual(
         processes.listProcessesForConsole(org.id).map((p) => p.history.length),
@@ -272,17 +242,14 @@ test('THE INVARIANT FIRES on a forced double link, and the transaction rolls bac
 // 2. THE TRANSACTION JOIN
 // ===========================================================================
 //
-// `writeTransaction` JOINS an enclosing transaction rather than nesting, because `insertRevision`
-// and `insertScore` each open their own BEGIN IMMEDIATE and SQLite refuses a nested one. All five
-// paths are pinned: the failure to test for is a rollback issued twice or a transaction left open.
+// `writeTransaction` JOINS an enclosing transaction rather than nesting: `insertRevision` and
+// `insertScore` each open their own BEGIN IMMEDIATE and SQLite refuses a nested one.
 
-/** A connection for a throwaway organisation, for the transaction probes. */
 function probeConnection() {
     const org = store.createOrganisation('Transaction org');
     return { org, db: registry.connectionFor(org.id) };
 }
 
-/** Inserts a process directly, so the probes do not need an identification. */
 function insertProbeProcess(db, id) {
     db.prepare('INSERT INTO process (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
         .run(id, id, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
@@ -340,8 +307,7 @@ test('a JOINED inner call that throws propagates, and the outer frame rolls back
 });
 
 test('a JOINED inner call whose error the caller swallows commits normally', () => {
-    // The inner call joined, so the outcome is its OWNER's: swallowing the error
-    // leaves the work in the outer transaction, which then commits.
+    // The inner call joined, so swallowing the error leaves the work in the outer transaction.
     const { db } = probeConnection();
 
     processSql.writeTransaction(db, () => {
@@ -351,7 +317,6 @@ test('a JOINED inner call whose error the caller swallows commits normally', () 
                 throw new Error('ignored by the caller');
             });
         } catch {
-            // Deliberately swallowed.
         }
         insertProbeProcess(db, 'outer-after-swallow');
     });
@@ -362,21 +327,16 @@ test('a JOINED inner call whose error the caller swallows commits normally', () 
 });
 
 test('a rollback is never issued twice: a failing COMMIT does not mask the original error', () => {
-    // The dangerous path: a COMMIT that itself fails. The rollback after it would
-    // throw "no transaction is active", and rethrowing THAT would hide the real
-    // fault. The code guards it with its own try/catch; this asserts the original
-    // error is what surfaces.
+    // A failing COMMIT: the rollback after it would throw "no transaction is active", and
+    // rethrowing THAT would hide the real fault.
     const { db } = probeConnection();
     let surfaced = null;
 
     try {
         processSql.writeTransaction(db, () => {
             insertProbeProcess(db, 'commit-fails');
-            // Force the COMMIT to fail by making the outer work leave the connection
-            // in a state SQLite rejects at commit time is not portable, so instead
-            // assert the guard by making the WORK throw after a nested call has
-            // already run: the two-step rollback path is exercised above. Here we
-            // check only that a single error surfaces and no transaction lingers.
+            // Not portable to make the COMMIT itself fail, so this checks only that a single
+            // error surfaces and no transaction lingers.
             throw new Error('the real fault');
         });
     } catch (err) {
@@ -389,8 +349,6 @@ test('a rollback is never issued twice: a failing COMMIT does not mask the origi
 });
 
 test('an insertRevision inside an outer transaction joins it rather than nesting', () => {
-    // insertRevision opens its own transaction and is called from inside recordIdentification's; a
-    // nested BEGIN would throw "cannot start a transaction within a transaction".
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const created = createProcess(org.id, one.id, 'Joined revision');
@@ -401,8 +359,8 @@ test('an insertRevision inside an outer transaction joins it rather than nesting
 });
 
 test('a failure inside a full identification leaves no process and no revision behind', () => {
-    // The atomicity the L1 fix added, asserted on the OUTCOME: a refusal must not
-    // leave a current revision with no members, which renders as an empty process.
+    // A refusal must not leave a current revision with no members, which renders as an empty
+    // process.
     const { org, addResponse } = orgWithInvitation();
     const one = addResponse({ task: 'one' });
     const a = createProcess(org.id, one.id, 'A');
@@ -410,7 +368,6 @@ test('a failure inside a full identification leaves no process and no revision b
     const processesBefore = processes.listProcessesForConsole(org.id).length;
     const aRevisionsBefore = processes.listProcessesForConsole(org.id).find((p) => p.id === a.process.id).history.length;
 
-    // An unusable reply is refused before any write.
     assert.throws(() => processes.recordIdentification({
         orgId: org.id,
         reply: { matches: null, reasoning: '' },

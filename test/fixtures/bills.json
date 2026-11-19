@@ -1,0 +1,109 @@
+[
+  {
+    "id": "checking-the-company-mobile-phone-bills-against-the-handset",
+    "title": "Checking the company's mobile phone bills against the handset list and the contracts on file",
+    "task": "Checking the company's mobile phone bills against the handset list and the contracts on file",
+    "trigger": "the monthly bill arrives by email at the start of the month",
+    "steps": [
+      {
+        "name": "open the bill and download the lines",
+        "whatHappens": "Open the bill and download the spreadsheet of lines.",
+        "decidedHow": "the bill arrives by email and I download the spreadsheet of lines",
+        "needsReasoning": false
+      },
+      {
+        "name": "check each line against the handset list",
+        "whatHappens": "Check every line on the bill against the list of handsets we have.",
+        "decidedHow": "the handset list is the record of what people are meant to have",
+        "needsReasoning": false
+      },
+      {
+        "name": "check the line against the contract",
+        "whatHappens": "Check the line against the contract for that handset.",
+        "decidedHow": "the contract says what the line is meant to cost",
+        "needsReasoning": true
+      },
+      {
+        "name": "note the line and mark the issue type",
+        "whatHappens": "Note the line and mark what kind of problem it is.",
+        "decidedHow": "the issue type decides whether finance or IT deals with it",
+        "needsReasoning": true
+      },
+      {
+        "name": "total the charges and write the summary",
+        "whatHappens": "Total the charges and write a summary for finance.",
+        "decidedHow": "finance needs one figure rather than the line detail",
+        "needsReasoning": false
+      }
+    ],
+    "frequencyPerWeek": 0.25,
+    "timePerPeriod": {
+      "hours": 3,
+      "period": "week"
+    },
+    "peopleAffected": 3,
+    "minutesPerInstance": 240,
+    "handoffTo": [
+      "finance"
+    ],
+    "waitsFor": [
+      "the monthly bill"
+    ],
+    "dependsOn": [
+      "the handset list being up to date"
+    ],
+    "systems": [
+      "email",
+      "spreadsheet"
+    ],
+    "touchedDepartments": [
+      "Finance",
+      "IT"
+    ],
+    "mistakesPerPeriod": 2,
+    "mistakeConsequence": "a wrong charge is paid for another month",
+    "currentState": "by hand in a spreadsheet",
+    "frustration": "the same wrong charges come back every month",
+    "reportedBy": "Finance"
+  },
+  {
+    "id": "checking-the-company-s-mobile-phone-bills-against-the-handse",
+    "title": "Checking the company's mobile phone bills against the handset list",
+    "task": "Checking the company's mobile phone bills against the handset list",
+    "trigger": "the monthly bill arrives by email",
+    "steps": [
+      {
+        "name": "open the bill and download the lines",
+        "whatHappens": "Open the bill and download the lines.",
+        "decidedHow": "the bill comes by email",
+        "needsReasoning": false
+      },
+      {
+        "name": "check each line against the handset list",
+        "whatHappens": "Compare the line to the handset list.",
+        "decidedHow": "the handset list shows who has what",
+        "needsReasoning": false
+      },
+      {
+        "name": "check each line against the contract",
+        "whatHappens": "Look at the contract for that line.",
+        "decidedHow": "the contract has the agreed price",
+        "needsReasoning": true
+      },
+      {
+        "name": "mark the issue type",
+        "whatHappens": "Mark what kind of issue it is.",
+        "decidedHow": "it decides who fixes it",
+        "needsReasoning": true
+      },
+      {
+        "name": "total the charges and write the summary",
+        "whatHappens": "Add up the charges and write the summary.",
+        "decidedHow": "finance wants a total",
+        "needsReasoning": false
+      }
+    ],
+    "frequencyPerWeek": 0.25,
+    "peopleAffected": 3
+  }
+]

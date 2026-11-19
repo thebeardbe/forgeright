@@ -1,21 +1,9 @@
 /**
  * Provisioning: turning a sign-in into a user with an organisation.
  *
- * THE DECISIONS THESE TESTS PROTECT, which are not obvious from the code:
- *
- *   1. an unknown address creates an organisation and becomes its admin
- *   2. the same address signs in to the SAME organisation, not a second one
- *   3. the address is case-normalised and trimmed
- *   4. provisioning happens at REDEEM, not at link request
- *   5. a user row whose organisation file is missing is refused, not re-provisioned
- *   6. the sign-in response does not depend on whether the address is known
- *   7. a first sign-in is admin; a user added as `user` gets no console
- *
  * SPLIT BY NECESSITY. The redeem-time properties run against a spawned child; the
  * organisation-identity properties are tested in-process, because the login route is rate limited
- * to 10 per IP per 15 minutes and driving every case over HTTP exhausts that budget.
- *
- * Where it matters the assertions inspect the FILES rather than inferring from a response.
+ * to 10 per IP per 15 minutes.
  */
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,7 +22,6 @@ const SERVER = path.join(__dirname, '..', 'server.js');
 
 const ALLOWED_HOST = 'allowed.example.test';
 const STORE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-provision-'));
-// The test process imports the store to inspect the files the child writes.
 process.env.STORE_DIR = STORE_DIR;
 process.env.SESSION_SECRET = 'a'.repeat(64);
 
@@ -42,7 +29,6 @@ const store = await import('../lib/store/index.js');
 const provision = await import('../lib/provision.js');
 const users = await import('../lib/users.js');
 
-/** A free TCP port, released before the child claims it. */
 function freePort() {
     return new Promise((resolve, reject) => {
         const probe = net.createServer();
@@ -56,7 +42,6 @@ function freePort() {
 
 const PORT = await freePort();
 
-/** Every environment variable the child reads, pinned as its WHOLE environment. */
 function spawnedEnv(port) {
     return {
         PATH: process.env.PATH,
@@ -72,15 +57,13 @@ function spawnedEnv(port) {
         STORE_DIR,
         AI_PROVIDER: 'mock',
         MAIL_SENDER: 'console',
-        // An empty string is PRESENT, so dotenv (which fills only ABSENT keys) leaves it alone,
-        // holding the demo gate closed against an untracked .env. See test/demo-login.test.js.
+        // PRESENT (empty), so dotenv leaves it alone: the demo gate stays closed.
         DEMO_LOGIN: '',
         DEMO_LOGIN_ORG: '',
         DEMO_LOGIN_TOKEN: ''
     };
 }
 
-/** One HTTP request with the trusted forwarded-protocol header. */
 function request({ method = 'GET', path: urlPath = '/', form, headers = {} } = {}) {
     const payload = form === undefined ? undefined : new URLSearchParams(form).toString();
     return new Promise((resolve, reject) => {
@@ -120,7 +103,6 @@ function request({ method = 'GET', path: urlPath = '/', form, headers = {} } = {
 const postForm = (urlPath, form) => request({ method: 'POST', path: urlPath, form });
 
 let child;
-/** Everything the child has printed to stdout, so the mailed link can be read. */
 let childOutput = '';
 
 before(async () => {
@@ -133,7 +115,6 @@ before(async () => {
             const res = await request({ path: '/healthz' });
             if (res.status === 200) break;
         } catch {
-            // Not up yet.
         }
         if (Date.now() - start > 8000) throw new Error('server did not start');
         await new Promise((r) => setTimeout(r, 50));
@@ -152,18 +133,14 @@ after(async () => {
     });
 });
 
-// --- file-level evidence -----------------------------------------------------
-
 const orgsDir = () => path.join(STORE_DIR, 'orgs');
 
-/** How many organisation database files exist on disk right now. */
 function organisationFileCount() {
     const dir = orgsDir();
     if (!fs.existsSync(dir)) return 0;
     return fs.readdirSync(dir).filter((name) => name.endsWith('.db')).length;
 }
 
-/** Every user row in the installation database, read directly. */
 function userRows() {
     const dbPath = path.join(STORE_DIR, 'admin.db');
     if (!fs.existsSync(dbPath)) return [];
@@ -175,18 +152,12 @@ function userRows() {
     }
 }
 
-/** Requests a sign-in link and reads the token the console sender printed. */
 async function requestLinkAndReadToken(email) {
     childOutput = '';
     const res = await postForm('/admin/login', { email });
     const match = childOutput.match(/token=([A-Za-z0-9_-]{43})/);
     return { res, token: match ? match[1] : null };
 }
-
-// ===========================================================================
-// HTTP: PROVISIONING HAPPENS AT REDEEM, NOT AT LINK REQUEST
-// (the most valuable property here; it needs the real redeem route)
-// ===========================================================================
 
 test('requesting a sign-in link creates NO organisation and NO user', async () => {
     const orgsBefore = organisationFileCount();
@@ -195,8 +166,8 @@ test('requesting a sign-in link creates NO organisation and NO user', async () =
     const { res } = await requestLinkAndReadToken('request-only@provisioning.test');
     assert.equal(res.status, 200, 'the link is sent');
 
-    // Creating an organisation when a link is merely REQUESTED would let anyone fill the
-    // installation from an address they do not control.
+    // Creating one when a link is merely REQUESTED fills the installation from an uncontrolled
+    // address.
     assert.equal(organisationFileCount(), orgsBefore, 'requesting a link created no organisation file');
     assert.equal(userRows().length, usersBefore, 'requesting a link created no user row');
 });
@@ -238,13 +209,8 @@ test('a FAILED redeem of a missing token creates nothing', async () => {
     assert.equal(organisationFileCount(), orgsBefore);
 });
 
-// ===========================================================================
-// HTTP: THE SIGN-IN RESPONSE DOES NOT DEPEND ON WHETHER THE ADDRESS IS KNOWN
-// ===========================================================================
-
 test('the login response is byte-identical for a known and an unknown address', async () => {
-    // An unknown address provisions and a known one does not, so any difference
-    // would say which addresses have signed in. Compared on the ACTUAL BYTES.
+    // Any difference would say which addresses have signed in. Compared on the ACTUAL BYTES.
     const known = await postForm('/admin/login', { email: 'first-signin@provisioning.test' });
     const unknown = await postForm('/admin/login', { email: 'never-seen-before@provisioning.test' });
 
@@ -269,10 +235,6 @@ test('redeeming a link signs in identically whether the address was known or new
     assert.match(known.setCookie[0], /^fr_admin=/);
 });
 
-// ===========================================================================
-// 7. ROLE (HTTP: the redirect differs by role)
-// ===========================================================================
-
 test('a user added as `user` signs in but does not reach the console', async () => {
     const admin = userRows().find((u) => u.email === 'first-signin@provisioning.test');
     assert.ok(admin, 'the admin created earlier exists');
@@ -296,13 +258,6 @@ test('an invalid address is refused by the login form and provisions nothing', a
     assert.equal(res.status, 400, 'an invalid address is refused before the rate limiter counts it as a send');
     assert.equal(organisationFileCount(), orgsBefore, 'no organisation was created for an invalid address');
 });
-
-// ===========================================================================
-// IN-PROCESS: ORGANISATION IDENTITY (1, 2, 3, 5)
-// ===========================================================================
-//
-// These are properties of resolveSignIn and driving each over HTTP would exhaust the login route's
-// 10-per-IP rate limit. The store is the same code path the route uses.
 
 test('an unknown address creates an organisation and becomes its admin', () => {
     const result = provision.resolveSignIn('new-address@identity.test');
@@ -344,15 +299,13 @@ test('a whitespace-padded address is the same user', () => {
 });
 
 test('the placeholder organisation name is derived from the address domain', () => {
-    // Self-service, so there is nobody to ask for a real name. The name exists so
-    // the console does not show a blank row.
+    // Self-service, so nobody to ask for a real name: the name exists so the console is not blank.
     const result = provision.resolveSignIn('naming@some-company.test');
     assert.equal(result.organisation.name, 'Organisation for some-company.test');
 });
 
 test('a user whose organisation file has been deleted is refused, not re-provisioned', () => {
-    // Otherwise a deleted file silently becomes a new empty tenant, and the user's
-    // data is gone with no error.
+    // Otherwise a deleted file silently becomes a new empty tenant.
     const created = provision.resolveSignIn('orphan@identity.test');
     assert.equal(created.created, true);
 
@@ -365,7 +318,6 @@ test('a user whose organisation file has been deleted is refused, not re-provisi
         'the sign-in is refused rather than silently re-provisioned'
     );
 
-    // No replacement was created for that address in the installation database.
     assert.equal(
         userRows().filter((u) => u.email === 'orphan@identity.test').length,
         1,
@@ -379,8 +331,7 @@ test('the users table holds one row per address, never two', () => {
 });
 
 test('resolveSignIn does not accept or use an organisation id', () => {
-    // The design rule: the id comes from the user row, never from the caller.
-    // A second argument is ignored, so passing one cannot redirect the sign-in.
+    // The id comes from the user row, never from the caller, so a second argument is ignored.
     const result = provision.resolveSignIn('no-second-arg@identity.test', 'some-other-organisation-id');
     assert.notEqual(result.organisation.id, 'some-other-organisation-id', 'a supplied id is not honoured');
     assert.equal(result.user.organisation_id, result.organisation.id);
