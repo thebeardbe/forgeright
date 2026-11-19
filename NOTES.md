@@ -2,6 +2,54 @@
 
 Open items for this project. Remove entries as they are resolved.
 
+**This file has four registers. Read the one you need.**
+
+**1. Known defects** - what is wrong now. Safe to show a client; nothing here is secret.
+
+```
+Found by review, not yet fixed      the open defects, ordered by what matters
+The weighing call fails intermittently, and the mechanism is not understood
+The interview could not finish, and the total was an artifact
+A step-less workflow may appear as a second roadmap row: accepted, not a bug
+The extra roadmap row: the information to fold it is not in the payload
+Deferred deliberately: console CSS   styling and other work deferred by decision
+Next up in V1                        not defects: work not yet started
+```
+
+**2. Architecture facts** - things that belong in `ARCHITECTURE.md` and have not moved yet.
+
+```
+Step 1 (storage) — open items
+Decisions still open
+V2, not now
+Constraints to respect
+Deployment: the Tailscale test host
+Testing notes
+Testing through the Tailscale proxy
+`ai/audit-core.js` is 833 lines, and still doing four jobs
+```
+
+**3. Process notes** - how this project is worked on. For agents, not for a reader.
+
+```
+Process notes
+Subagent stalls: how to detect and recover
+The write-contention test trap, which cost two agents real time
+The working loop
+Never end a turn with work queued and unsent
+Do not push while an agent has uncommitted changes
+```
+
+**4. The comment cull** - what was removed and why. A record, not a task.
+
+```
+The comment cull: five batches, then a review
+Comment cull: borderline removals
+```
+
+**Also at the top:** "Deferred: split this file" - the recommendation to divide this file into
+`KNOWN-ISSUES.md` and `NOTES-agents.md`, and why that is not done yet.
+
 ## Deferred: split this file
 
 **This file is 1500+ lines and holds two different things**: known issues in the product, and
@@ -244,6 +292,19 @@ The reviewer's full report is the source for these. Ordered by what matters.
   shipped suite.** The builder's 18 tests were moved aside and the test-writer
   wrote 40 fresh ones from the source. The claim in the test header is accurate.
   The file is gitignored and should be deleted once the suite is stable.
+
+### Not addressed, and live
+
+- **The questionnaire's AI endpoints are not rate-limited.** `POST /api/chat` and
+  `POST /api/score` both call a paid provider and neither is throttled: `checkLoginRate`
+  protects the sign-in form and the lost-link form only. **Whatever holds a valid
+  participant token can spend the provider key in a loop**, and a token is a URL that
+  appears in browser history and proxy logs by design (see "Long-lived participant links"
+  in `DEPLOY.md`). Rate limiting was deferred until after deploy by the owner's decision,
+  recorded under "Deferred deliberately: console CSS" - **it is listed here because a
+  deferred decision is still a live risk, and this is the section a reader is sent to.**
+  The intended fix is a limit on the participant token and on the client address, in front
+  of the provider call.
 
 ## Next up in V1
 
@@ -563,13 +624,11 @@ must not be treated as a blocker for going live.
 Recorded here so a later reader, or a future session, does not treat these as
 oversights:
 
-**Also deferred, same reason:** rate limiting. *"rate-limiting is for after deploy
-and css as that is something I will setup but we are on a time crunch for deploy
-now. squising bugs to get to a working PoC with demodata."*
-
 So the priority order is: **a working proof of concept with demo data, deployed.**
 Anything that is not a bug blocking that is deferred by decision, not by oversight.
-The open sign-up spending the provider key is a known, accepted cost for now.
+
+Rate limiting was deferred under this decision too. It is a live risk rather than a styling
+item, so it is recorded under "Found by review, not yet fixed" instead of here.
 
 ## The interview could not finish, and the total was an artifact
 
