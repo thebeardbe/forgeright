@@ -250,9 +250,13 @@ about a particular grouping; a rejudge adds a weighing rather than editing one. 
 always carries its ten terms and its paragraph, so a reader can see why the number came
 out where it did. A process with no weighing sorts last rather than disappearing.
 
-**The ten-term model replaced an earlier formula for the roadmap.** `lib/scoring.js` is
-that earlier formula, described below, and it is still live - but only for the participant
-preview at `POST /api/score`. **Nothing joins the two numbers.**
+**The composition is provisional**, and tuned by editing the prompt as real answers come
+in. The cost of keeping it in the prompt rather than in code is real: two models can weight
+the same terms differently, so a score is comparable **within one set of processes** and not
+necessarily between runs.
+
+`lib/scoring.js`, described below, is a separate calculation and is live only for the
+participant preview at `POST /api/score`. **Nothing joins the two numbers.**
 
 ### The participant preview: `lib/scoring.js`
 
