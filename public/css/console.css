@@ -54,10 +54,14 @@
 
 /* The body of an expanded item. */
 .detail { padding: 0 16px 16px; border-top: 1px solid var(--line); margin-top: -1px; }
+/* A LABEL, NOT A CAPTION: it used to be 0.8rem against 0.9rem body text, so the heading above a
+   paragraph was smaller than the paragraph and read as a caption for it. 0.95rem is slightly larger
+   than the body it introduces, and the uppercase tracking still marks it as a label rather than a
+   second level of content. */
 .detail h3 {
-    font-size: 0.8rem;
+    font-size: 0.95rem;
     text-transform: uppercase;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.12em;
     /* --ink rather than --muted, which is mixed toward the foreground to carry paragraphs and so was no
        darker than the text under it. */
     color: var(--ink);
@@ -70,17 +74,26 @@
 .weight-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
 
 /* The paragraph explaining a score, set apart from the raw fields because it is
-   the model's reading rather than the participant's words. */
+   the model's reading rather than the participant's words.
+
+   THE MEASURE IS THE FIX, not the styling. The block already had its background and rule; it ran
+   the full 1014px of the console card, which is a ten-line wall and past a readable line length.
+   68ch caps the text while the block keeps its width, so the background still marks it as one thing.
+   1.6 is the line spacing that makes a paragraph of prose readable at 14px. */
 .paragraph {
     background: var(--sunken);
     border-left: 3px solid var(--accent);
     padding: 12px 14px;
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
     font-size: 0.9rem;
+    line-height: 1.6;
+    max-width: 68ch;
     margin: 0;
 }
 
-/* The participant's own words, which the paragraph is checked against. */
+/* The participant's own words, which the paragraph is checked against. ONE BLOCK OF PROSE, so it
+   keeps the card: the transcript turns and the merged reasoning use this. The FIELD LIST below does
+   not, because fourteen cards in a column read as fourteen objects rather than one answer. */
 .words {
     background: var(--raised);
     border-radius: var(--radius-sm);
@@ -88,6 +101,25 @@
     margin: 0 0 10px;
     white-space: pre-wrap;
     font-size: 0.88rem;
+}
+
+/* One row per field, hairlines between them, no per-field card. The label column is fixed so the
+   values line up down the page, which is what makes fourteen fields read as one answer. */
+.field-rows { margin: 0 0 14px; border-top: 1px solid var(--line); }
+.field-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 9rem) 1fr;
+    gap: 4px 14px;
+    padding: 7px 2px;
+    border-bottom: 1px solid var(--line);
+    font-size: 0.88rem;
+}
+.field-row dt { color: var(--muted); }
+.field-row dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.field-row.declined dd { color: var(--muted); font-style: italic; }
+/* A phone has no room for two columns; the label sits above its value. */
+@media (max-width: 560px) {
+    .field-row { grid-template-columns: 1fr; gap: 2px; }
 }
 
 /* The ten terms. A definition list rather than a table, so a phone can wrap it. */
@@ -298,3 +330,39 @@ details.item { scroll-margin-top: 74px; }
     word-break: normal;
 }
 .transcript-turn.analyst { background: var(--idle-bg); }
+
+/* ─── TABS INSIDE A PROCESS ──────────────────────────────────────────────────
+ *
+ * Six sections were stacked, which is a scroll rather than a page. These are links, so the page works
+ * without a script; the script only avoids the round trip. The bar wraps on a phone, because six
+ * labels do not fit one line at 390px.
+ */
+.tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 12px 0 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--line);
+}
+.tabs a {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 999px;
+    text-decoration: none;
+    color: var(--muted);
+    border: 1px solid var(--line);
+}
+.tabs a:hover { color: var(--ink); border-color: var(--line-strong); }
+/* The selected tab, and it must not rely on colour alone: the border and the fill move together. */
+.tabs a.active {
+    color: var(--accent-ink);
+    background: var(--accent);
+    border-color: var(--accent);
+}
+/* A panel is hidden by the `hidden` attribute, set by the script. Without a script the server marks
+ * none of them hidden, so every section renders - which is the safe failure, not a blank page. */
+.tab-panel[hidden] { display: none; }
+/* The heading of a panel is its label repeated, so it can be tight at the top. */
+.tab-panel > h3:first-child { margin-top: 10px; }

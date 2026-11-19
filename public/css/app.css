@@ -195,9 +195,15 @@ input:focus::placeholder, textarea:focus::placeholder { color: transparent; }
 
 /* 15px top and bottom gives a 46px button, a comfortable touch target on a phone and enough to read as a
    button rather than a label with a background. The horizontal padding is unchanged at 18px. Every button
-   on every surface shares this selector. */
+   on every surface shares this selector.
+
+   THE VERTICAL MARGIN IS WHAT STOPS IT READING AS SQUASHED. With none, a button directly under an input
+   and directly above a note touches both and the three read as one block. It is cancelled inside `.row`
+   (below) and inside a table cell, where the row's own `gap` or the cell's padding already separates
+   things and a margin would push a button out of line with the field beside it. */
 button {
     padding: 15px 18px;
+    margin: 10px 0;
     font-size: 0.9rem;
     font-weight: 700;
     font-family: inherit;
@@ -207,6 +213,10 @@ button {
     color: var(--accent-ink);
     cursor: pointer;
 }
+
+/* The layouts that place a button ALONGSIDE something, and already space it. A margin here would
+   misalign it: `.row` aligns on `flex-end`, and a table cell has padding of its own. */
+.row button, td button, th button, .row a.button, td a.button { margin: 0; }
 
 button:hover { filter: brightness(1.1); }
 button:disabled { opacity: 0.55; cursor: default; filter: none; }

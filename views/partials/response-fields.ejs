@@ -88,24 +88,33 @@
         different requirements rather than one that drifted.
     %>
     <% if (typeof includeFields === 'undefined' || includeFields) { %>
+    <%#
+        ONE CONTAINER OF ROWS, not one card per field. Each `.words` was a raised card with padding,
+        radius and margin, so fourteen fields rendered as fourteen separate boxes; the owner's words
+        were "blocks of text ... separate big boxes that should be reshaped". A `<dl>` with hairlines
+        between rows is what `.terms` already does on the roadmap, so the two read as the same object.
+        `.words` is kept for the places that ARE one block of prose: the transcript turns and the
+        model's paragraph.
+    %>
+    <dl class="field-rows">
     <% FIELDS.filter(function (field) { return data[field.key] !== undefined && data[field.key] !== null; })
              .forEach(function (field) { %>
-        <p class="words">
-            <strong><%= field.label %>:</strong>
-            <%= show(data[field.key]) %>
-            <% if (isProse(data[field.key])) { %>
-                <span class="tag" title="The participant answered in words. This is their answer, kept verbatim; it was not a figure or a list.">in their own words</span>
-            <% } else if (isDeclined(data[field.key])) { %>
-                <%#
-                    THE REFUSAL TAG. Deliberately distinct from "in their own words": that one
-                    means they answered and the answer did not fit a field, and this one means
-                    they were asked and did not answer. A reader deciding whether to follow up
-                    needs to tell those apart - one is data, the other is a gap with a reason.
-                %>
-                <span class="tag" title="The participant was asked and did not answer. It is recorded as unanswered rather than counted as a result.">not answered</span>
-            <% } %>
-        </p>
+        <div class="field-row<%= isDeclined(data[field.key]) ? ' declined' : '' %>">
+            <dt><%= field.label %></dt>
+            <%#
+                THE VALUE AND ITS TAG ON ONE LINE, with no template newlines inside the `dd`.
+                `white-space: pre-wrap` is set so a multi-line ANSWER keeps its breaks, and the
+                newlines this template would otherwise emit around the value are each a rendered
+                line: a row reading "40" measured 87px tall before this.
+
+                THE REFUSAL TAG IS DISTINCT FROM "in their own words". That one means they answered
+                and the answer did not fit a field; this one means they were asked and did not
+                answer. A reader deciding whether to follow up needs to tell those apart.
+            %>
+            <dd><%= show(data[field.key]) %><% if (isProse(data[field.key])) { %> <span class="tag" title="The participant answered in words. This is their answer, kept verbatim; it was not a figure or a list.">in their own words</span><% } else if (isDeclined(data[field.key])) { %> <span class="tag" title="The participant was asked and did not answer. It is recorded as unanswered rather than counted as a result.">not answered</span><% } %></dd>
+        </div>
     <% }); %>
+    </dl>
     <% } %>
 
     <% /* The steps, with the reasoning flag marked: the flag IS the automation boundary,

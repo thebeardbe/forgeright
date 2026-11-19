@@ -123,6 +123,27 @@
             </summary>
 
             <div class="detail">
+                <%#
+                    THE DETAIL BLOCK IS TABS, because six sections stacked is a scroll rather than a
+                    page: the owner reads one process at a time and does not need the terms and the
+                    history in the same view as the steps.
+
+                    WORKS WITHOUT JAVASCRIPT AND WITHOUT IT: each tab is an <a href="?tab=..."> that
+                    the server resolves, so a link can be bookmarked and the back button works. The
+                    script at the bottom of this file intercepts the click and swaps the panels
+                    instead, which is one attribute change rather than a page load. Ordering: the
+                    store's own default is the first, so a URL without `?tab=` shows the steps.
+                %>
+                <nav class="tabs" role="tablist">
+                    <a href="?tab=steps"     role="tab" data-tab="steps">The steps</a>
+                    <a href="?tab=departments" role="tab" data-tab="departments">Departments</a>
+                    <a href="?tab=score"     role="tab" data-tab="score">Why it scored this</a>
+                    <a href="?tab=grouping"  role="tab" data-tab="grouping">Read together because</a>
+                    <a href="?tab=answers"   role="tab" data-tab="answers">The answers behind it</a>
+                    <a href="?tab=history"   role="tab" data-tab="history">Earlier versions</a>
+                </nav>
+
+                <section class="tab-panel" data-panel="steps">
                 <h3>The steps, in order</h3>
                 <%# WHERE TWO ACCOUNTS DISAGREE ABOUT A STEP, the row below shows the
                     pessimistic flag and ONE account's quotation, which may be from the
@@ -167,6 +188,9 @@
                     </div>
                 <% }); %>
 
+                </section>
+
+                <section class="tab-panel" data-panel="departments" hidden>
                 <h3>Departments, and how many described it</h3>
                 <ul class="depts">
                     <% describedBy.forEach(function (pair) { %>
@@ -179,6 +203,9 @@
                     console page.
                 </p>
 
+                </section>
+
+                <section class="tab-panel" data-panel="score" hidden>
                 <% if (process.score) { %>
                     <h3>Why it scored this</h3>
                     <p class="paragraph"><%= process.score.reasoning %></p>
@@ -199,6 +226,9 @@
                     <p class="empty">This process has not been weighed, so it has no number. It sorts last rather than disappearing.</p>
                 <% } %>
 
+                </section>
+
+                <section class="tab-panel" data-panel="grouping" hidden>
                 <h3>Read together because</h3>
                 <% if (process.grouping) { %>
                     <p class="paragraph"><%= process.grouping.reasoning %></p>
@@ -232,6 +262,9 @@
                     the `<details>` in admin-answers.ejs: the fragment scrolls, the parameter
                     opens, and they are built from one value so they cannot disagree.
                 %>
+                </section>
+
+                <section class="tab-panel" data-panel="answers" hidden>
                 <h3>The answers behind it</h3>
                 <% if (responses.length === 0) { %>
                     <p class="empty">
@@ -253,6 +286,9 @@
                     <% }); %>
                 </ul>
 
+                </section>
+
+                <section class="tab-panel" data-panel="history" hidden>
                 <h3>Earlier versions</h3>
                 <div class="history">
                     <%# REVISIONS, NOT ONLY THE CURRENT ONE. A rejudge groups again, which
@@ -284,16 +320,81 @@
                     <% } %>
                 </div>
 
+                </section>
+
+                <%#
+                    THE REJUDGE FORM IS OUTSIDE THE TABS, deliberately and for the reason that it is
+                    the action an admin opens this block to take: behind a tab it would be invisible
+                    until somebody guessed which one held it. It sits under every tab, so wherever a
+                    reader starts, the action is in reach.
+
+                    A CORRECTION OF A FIGURE IS NOT THIS FORM. Rejudging argues about the grouping,
+                    and the message it returns says so when a value correction is attempted; the
+                    "Correct this value" form is on the answer itself, linked from "The answers
+                    behind it" above.
+                %>
                 <% /* The second entry point. The same mechanism as the one on an answer. */ %>
                 <form class="rejudge" method="post" action="<%= basePath %>/admin/roadmap/<%= process.id %>/rejudge">
                     <label for="reason-<%= process.id %>">This flow is wrong</label>
                     <textarea id="reason-<%= process.id %>" name="reason" required
                               placeholder="Say why the grouping looks wrong. The tool re-identifies with your reasoning, then weighs the result again."></textarea>
                     <button type="submit"<%= readOnly ? ' disabled' : '' %> class="secondary">Rejudge this process</button>
+                    <%#
+                        THE HINT IS HERE BECAUSE THE REFUSAL NAMES THIS FORM. A rejudge argues about
+                        the GROUPING, and the most common attempt on a live deployment was a
+                        correction of a number - which is refused, with a message pointing at
+                        "Correct this value". So the form says where that is before the admin types,
+                        rather than only after the request comes back refused.
+                    %>
+                    <p class="note">
+                        This form is for the grouping - which answers belong to this process.
+                        To correct a FIGURE the model read wrongly, open the answer under
+                        "The answers behind it" and use <strong>Correct this value</strong> there.
+                    </p>
                 </form>
             </div>
         </details>
     <% }); %>
 </div>
+<script>
+    // THE TABS, WITHOUT A ROUND TRIP. Every tab is a real link, so with no script the server renders
+    // the panel named in `?tab=` and the page still works. With a script, the click swaps panels here
+    // and `replaceState` keeps the URL honest, so a reload or a bookmark lands on the same tab and the
+    // back button is not filled with tab switches.
+    //
+    // ONE LISTENER ON THE DOCUMENT, not one per link: the roadmap renders a tab bar per process, and a
+    // listener each would be hundreds of handlers for one delegated one.
+    (function () {
+        var initial = new URLSearchParams(location.search).get('tab') || 'steps';
+
+        function show(tabs, name) {
+            var bar = tabs.closest('.detail');
+            if (!bar) return;
+            bar.querySelectorAll('.tab-panel').forEach(function (panel) {
+                panel.hidden = panel.getAttribute('data-panel') !== name;
+            });
+            tabs.querySelectorAll('[data-tab]').forEach(function (link) {
+                var on = link.getAttribute('data-tab') === name;
+                link.classList.toggle('active', on);
+                link.setAttribute('aria-selected', on ? 'true' : 'false');
+            });
+        }
+
+        document.querySelectorAll('.tabs').forEach(function (tabs) {
+            show(tabs, initial);
+        });
+
+        document.addEventListener('click', function (event) {
+            var link = event.target.closest('.tabs [data-tab]');
+            if (!link) return;
+            event.preventDefault();
+            var name = link.getAttribute('data-tab');
+            show(link.closest('.tabs'), name);
+            var url = new URL(location.href);
+            url.searchParams.set('tab', name);
+            history.replaceState(null, '', url);
+        });
+    })();
+</script>
 </body>
 </html>
