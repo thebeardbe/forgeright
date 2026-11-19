@@ -73,8 +73,21 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
         parts.push(adminReasoning);
         parts.push('');
         parts.push(
-            'Weigh that reasoning. If it is right, say so and re-group accordingly; if it is '
-            + 'wrong, explain why. Either way, give your reasoning for the result.'
+            'THIS IS A REJUDGE, NOT A RE-GROUPING. The admin is disputing how this process was '
+            + 'READ, not which responses belong to it.'
+        );
+        parts.push('');
+        parts.push(
+            'UNLESS THE ARGUMENT IS EXPLICITLY ABOUT WHICH WORK THIS IS, keep the response where '
+            + 'it already is: answer `matches` with the id of the process marked as its current '
+            + 'home. A new process is only right when the admin says this answer describes '
+            + 'DIFFERENT work.'
+        );
+        parts.push('');
+        parts.push(
+            'If the argument is right, say so and explain how the reading should change - the '
+            + 'weighing receives the same argument and applies it to the terms. If it is wrong, '
+            + 'explain why. Either way, give your reasoning for the result.'
         );
     }
 
