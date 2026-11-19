@@ -349,6 +349,54 @@ disagreeing is how the same data gets scored two ways.
 Each of these rules was a defect found by an independent reviewer, and each has a
 regression test.
 
+## Workflow 2: identification
+
+**Input:** one completed response. **Output:** the process it belongs to, and the
+responses behind it.
+
+A second model session, separate from the interview, whose only job is **sameness**:
+deciding whether this describes work somebody has already described. Three people
+describing the order-to-supplier loop in different words are one process.
+
+**It reports, it does not decide.** The model returns `matches` (an existing
+process id, or null), a `confidence`, its `reasoning`, and which fields the
+response `contributed`. The code validates that shape and refuses anything
+unusable. **The confidence is recorded and never filtered on**: a threshold would
+silently drop a process, and the spec says the tool proposes rather than decides.
+
+**The reasoning is required, not decoration.** It is the only way the step can be
+reviewed, so a reply without it is refused rather than stored. An admin who
+disagrees does not set a category: they ask for a **rejudge with a reason**, which
+re-runs identification for that process with their argument. The model is free to
+push back, and measurably does when the argument turns on the desk or the system
+rather than on the work itself.
+
+**The participant never sees any of it.** Identification runs on the way out of
+`POST /api/response`, its outcome is never in the response body, and the
+participant's next turn cannot reflect it back. What must never happen is the
+result being *shown*, not the module being reached: a participant who could see
+where their answer was grouped would write to influence where it landed.
+
+### How a grouping is stored
+
+| table | what it holds |
+| :--- | :--- |
+| `process` | the work, named. The stable identity: it survives a rejudge. |
+| `process_revision` | one grouping judgement: reasoning, confidence, who decided, and the admin's argument when there was one. |
+| `process_response` | which responses a revision covers, and what each contributed. |
+
+**Every judgement is a revision and none is overwritten**, so an earlier grouping
+stays readable for anyone reviewing why a result changed. `is_current` marks the one
+the console shows, enforced by a partial unique index so the database refuses a second.
+
+**A revision is a snapshot of the process, not a record of one response.** When a
+response joins, the new revision carries forward every response the process
+already had, or "the responses behind this process" would lose the work it just
+merged. Each response keeps the field list **it** contributed.
+
+**One response is one process.** A description containing a chain is one process
+with several steps, not several processes, and the prompt says so explicitly.
+
 ## Deliberate omissions
 
 - **No roadmap generation.** The first roadmaps are written by hand, so the
@@ -431,3 +479,90 @@ file, so behaviour is unchanged when the variable is unset.
 A missing or empty rules file falls back to a built-in minimum and logs the fact,
 rather than silently passing everything through. An invalid regex is skipped with
 a log naming the rule, and the remaining rules stay active.
+
+## Layout
+
+```
+server.js                  express app, routes, host check
+config/ai-config.json      provider definitions
+config/tools.js            tool registry (one entry in V1)
+ai/audit-core.js           the interview turn, the matrix gate, the completion guard
+ai/field-shapes.js         what a value must look like to count as supplied
+ai/matrix.js               what is missing, and the judgement band
+ai/identify-core.js        workflow 2: which process a response belongs to
+ai/weigh-core.js           workflow 3: the weighing, and its reply parsing
+ai/response-shape.js       the one resolver for the two stored payload shapes
+ai/workflow-identity.js    the id and title a workflow is given
+data/prompts/<tool>/       the prompts, one per language
+lib/store/                 SQLite, one file per organisation
+lib/auth/                  sessions, sign-in, the console, the participant routes
+lib/mail/                  console and Proton transports
+views/                     EJS templates
+public/                    client script, styles, committed theme data
+```
+
+## Storage
+
+**One SQLite database file per organisation**, at `<STORE_DIR>/orgs/<orgId>.db`.
+
+This is the isolation mechanism, not an implementation detail. The schema carries
+no `orgId` column, because the file *is* the tenant boundary: a query that forgot a
+`WHERE` clause would lose a row, and could not reach another organisation's rows.
+Only `lib/store/registry.js` opens a connection, so a code path cannot widen its
+scope by accident. A symlink in place of an organisation's file is refused rather
+than followed.
+
+V2 replaces this with one database and row-level security, which moves the same
+boundary into the database engine. The registry is the seam.
+
+### Anonymity, and its limit
+
+A participant's answers are stored against their invitation, so they can return
+and edit them until the questionnaire closes. **The admin path must never receive
+that link**, and it does not: `getResponsesForAnalysis(orgId)` omits the join in
+the query, so the attribution is not in the row and cannot be leaked by a view.
+
+The accepted limit: **a person with direct access to the database file can join
+the two tables and see who said what.** That is a deliberate decision, not an
+oversight. The honest phrasing is *"the admin console does not show who said
+what"*, never *"answers are anonymous"*.
+
+**The stored transcript makes that limit wider, and this is accepted too.** Each
+response keeps the whole conversation, not just the extracted fields, because an
+answer is only meaningful against its question and the questions are where the
+interview's quality lives. The transcript holds **whatever the participant
+typed**, and free text can contain a name, an employer or a customer even though
+the prompt tells the model not to ask for personal data and the guardrails screen
+injection.
+
+That does not change the property above: the console still cannot join an answer
+to a person. What it means is that the raw text exists in the database file, so
+"do not read the file if you should not know who said what" is load-bearing.
+Exporting or sharing an organisation's file shares the conversations too.
+
+### The round model
+
+**A round is the work of one process.** It is the unit the interview is saved and
+scored in, and every turn belongs to exactly one.
+
+A turn **continues the open round**: the participant's answers, and the whole
+conversation, are written on every turn, so nothing is lost if they close the tab.
+When the model reports that the matrix is satisfied - `status: "complete"`, which the
+server computes rather than trusting - **the round is finalised** in the same reply
+that carries the closing question *"is there another process?"*, so a finished process
+is on disk before that question can be answered. Saying yes **starts a new round**.
+
+`submitted_at` is the boundary: **null is a partial round, a timestamp is a finished
+one.** A partial round is readable in the answers view, marked "still in progress"
+there, and **excluded from the roadmap's sorting and scoring** - no figure is computed
+from work the participant did not finish. A participant who reopens their link resumes
+the open round, with their conversation replayed.
+
+`processes` in a reply holds **the process being worked on now**, not every process of
+the interview. That is a prompt instruction rather than something the server enforces;
+`alreadyIdentified` is what stops a finished process being identified twice.
+
+### Editable until closed
+
+Participants can add and edit until the admin calls `finishOrganisation`. After
+that, writes throw and reads still work.
