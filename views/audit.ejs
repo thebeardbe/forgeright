@@ -68,7 +68,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= typeof cspNonce === 'string' ? cspNonce : '' %>">
     window.AUDIT_CONFIG = {
         toolId: "<%= toolId %>",
         lang: "<%= lang %>",
@@ -78,11 +78,11 @@
         // The participant's link token, so an answer is attributed to them. It is
         // already in the page URL, so exposing it here reveals nothing new, and
         // without it answers could not be attached to a participant.
-        participantToken: <%- JSON.stringify(typeof participantToken === 'string' ? participantToken : null) %>,
+        participantToken: <%- jsonForScript(typeof participantToken === 'string' ? participantToken : null) %>,
         // Work already done, so a returning participant resumes rather than
         // starting again. This is what a reset preserves.
-        existingResponses: <%- JSON.stringify(typeof existingResponses === 'undefined' ? [] : existingResponses) %>,
-        strings: <%- JSON.stringify(strings) %>
+        existingResponses: <%- jsonForScript(typeof existingResponses === 'undefined' ? [] : existingResponses) %>,
+        strings: <%- jsonForScript(strings) %>
     };
 </script>
 <script src="<%= basePath %>/js/audit.js"></script>

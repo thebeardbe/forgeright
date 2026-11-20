@@ -147,13 +147,32 @@ export async function runAuditTurn({ messages, lang = 'en', toolId = 'cartiere_a
     }
 
     // Guardrail: the model must never see unsanitised participant text.
+    //
+    // THE ROLE IS CHECKED BEFORE ANYTHING ELSE HAPPENS TO IT. This loop once copied every role that
+    // was not `user` straight through, which handed a `system` message to the provider untouched and,
+    // in the Gemini adapter, into `systemInstruction`. The route now refuses those bodies, and this
+    // CHECK IS THE SECOND DOOR on the same lock: anything that is not `user` or `assistant` is
+    // skipped here, so a future caller reaching runAuditTurn directly cannot smuggle a role in.
     const safeMessages = [];
     for (const msg of messages) {
-        // Assistant turns are rebuilt as role and content only.
-        if (msg.role !== 'user') {
+        if (!msg || typeof msg !== 'object') continue;
+
+        if (msg.role !== 'user' && msg.role !== 'assistant') {
+            // Skipped, not mapped to `user`: a system message promoted to the participant's voice
+            // would be read as evidence of what they said, which is the same mistake in a quieter
+            // form.
+            console.warn(`[audit] dropped a message with role ${JSON.stringify(msg.role)}`);
+            continue;
+        }
+
+        if (msg.role === 'assistant') {
+            // Assistant turns are rebuilt as role and content only.
+            if (typeof msg.content !== 'string') continue;
             safeMessages.push({ role: msg.role, content: msg.content });
             continue;
         }
+
+        if (typeof msg.content !== 'string') continue;
 
         const cleaned = sanitizeInput(msg.content);
         if (await checkPromptInjection(cleaned)) {

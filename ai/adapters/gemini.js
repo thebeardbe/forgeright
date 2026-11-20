@@ -11,17 +11,26 @@ export async function generate({ model, messages, systemInstruction, temperature
     const apiVersion = providerConfig.apiVersion || 'v1beta';
     const url = `${providerConfig.baseUrl}/${apiVersion}/models/${modelName}:generateContent`;
 
-    let systemText = systemInstruction || '';
+    // THE SYSTEM INSTRUCTION COMES FROM THE CALLER ONLY, NEVER FROM THE CONVERSATION.
+    //
+    // This loop used to append any `system` message it found to systemText, which put a client-sent
+    // string in the highest-authority position the model reads. The route and runAuditTurn both
+    // refuse that role now, and this is the third lock: an unknown role falls back to `user` here,
+    // so nothing a conversation carries can ever become an instruction at this boundary.
+    const systemText = systemInstruction || '';
     const contents = [];
     for (const msg of messages) {
+        if (!msg || typeof msg.content !== 'string') continue;
         if (msg.role === 'system') {
-            systemText += (systemText ? '\n' : '') + msg.content;
-        } else {
-            contents.push({
-                role: msg.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: msg.content }]
-            });
+            // Named in the log because it should be impossible: reaching this means a caller bypassed
+            // both checks above, and the text is DROPPED rather than promoted.
+            console.warn("[gemini] dropped a system message from the conversation; system text is the caller's alone");
+            continue;
         }
+        contents.push({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+        });
     }
 
     const generationConfig = {

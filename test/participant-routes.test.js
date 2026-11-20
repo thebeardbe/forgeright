@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
+import { maskNonce } from './helpers/mask-nonce.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(__dirname, '..', 'server.js');
 
@@ -513,7 +515,11 @@ test('POST /lost-link responds identically whether or not the address was invite
     const stranger = await post('/lost-link', { email: 'never-invited@example.test' });
 
     assert.equal(invited.status, stranger.status, 'the status is the same');
-    assert.equal(invited.text, stranger.text, 'the response body is byte-identical');
+    // THE NONCE DIFFERS PER RESPONSE and carries nothing about the request, so it is masked before the
+    // comparison. Anything else that differed - an address echoed back, a different sentence - still
+    // fails here.
+    assert.equal(maskNonce(invited.text), maskNonce(stranger.text),
+        'the response body is byte-identical once the nonce is masked');
 });
 
 // ===========================================================================

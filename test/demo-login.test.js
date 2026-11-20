@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
+import { maskNonce } from './helpers/mask-nonce.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(__dirname, '..', 'server.js');
 const DEMO_TOKEN = 'demo-token-for-tests-0123456789abcdef';
@@ -423,8 +425,10 @@ test('a WRONG and a MISSING token are indistinguishable over HTTP', async () => 
         assert.equal(wrong.status, 404);
         assert.equal(missing.status, wrong.status, 'a missing token gives the same status as a wrong one');
         assert.equal(empty.status, wrong.status);
-        assert.equal(missing.text, wrong.text, 'and the same body');
-        assert.equal(empty.text, wrong.text);
+        // THE NONCE DIFFERS PER RESPONSE and says nothing about the request, so it is masked before
+        // the comparison rather than compared. Anything else that differed would still fail below.
+        assert.equal(maskNonce(missing.text), maskNonce(wrong.text), 'and the same body, once the nonce is masked');
+        assert.equal(maskNonce(empty.text), maskNonce(wrong.text));
         assert.equal(wrong.setCookie, null, 'no session is created for a bad token');
     } finally {
         await server.stop();
