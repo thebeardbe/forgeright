@@ -7,8 +7,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
-import { sanitizeInput, checkPromptInjection, stripControlCharsDeep } from './security.js';
-import { capParticipantString } from './prompt-budget.js';
+import { checkPromptInjection, stripControlCharsDeep } from './security.js';
+import { capMessage, capAdminReasoning, capParticipantString } from './prompt-budget.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
 
@@ -153,12 +153,18 @@ export async function runIdentification({
         throw new Error(`No identification prompt found for tool "${toolId}" in ${PROMPTS_DIR}`);
     }
 
-    const message = buildComparisonMessage(response, knownProcesses, adminReasoning);
+    // The admin's argument is capped as a string, so one paragraph cannot spend the whole document
+    // budget, and the message is then capped as a document.
+    const message = capMessage(
+        buildComparisonMessage(response, knownProcesses, capAdminReasoning(adminReasoning, 'identify')),
+        'identify'
+    );
 
-    // Participant text is about to be placed in a prompt. The admin's reasoning is deliberately included,
-    // because it is an authorised instruction, and screened like everything else so a compromised admin
-    // account is not also an instruction to the model.
-    const cleaned = sanitizeInput(message);
+    // THE SCREENING IS UNCHANGED AND STILL COVERS THE WHOLE MESSAGE. The admin's reasoning is
+    // deliberately included in it, because it is an authorised instruction, and screened so a
+    // compromised admin account is not also an instruction to the model. Truncation and screening
+    // are different concerns and this keeps both.
+    const cleaned = message;
     if (await checkPromptInjection(cleaned)) {
         console.warn('[identify] blocked an input that matched an injection pattern');
         return {

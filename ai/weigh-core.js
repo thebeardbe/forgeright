@@ -10,8 +10,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
-import { sanitizeInput, checkPromptInjection, stripControlCharsDeep } from './security.js';
-import { capParticipantString } from './prompt-budget.js';
+import { checkPromptInjection, stripControlCharsDeep } from './security.js';
+import { capMessage, capAdminReasoning, capParticipantString } from './prompt-budget.js';
 import { proseSaidIn, declinedIn } from './field-shapes.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
@@ -245,12 +245,18 @@ export async function runWeighing({
         throw new Error(`No weighing prompt found for tool "${toolId}" in ${PROMPTS_DIR}`);
     }
 
-    const message = buildWeighingMessage({ process, grouping, adminReasoning });
+    // The admin's argument is capped as a string here, so one paragraph cannot spend the whole
+    // document budget, and the message is then capped as a document.
+    const message = capMessage(
+        buildWeighingMessage({ process, grouping, adminReasoning: capAdminReasoning(adminReasoning, 'weigh') }),
+        'weigh'
+    );
 
-    // The same guardrail as the other two: participant text is about to be placed in a prompt, and the
-    // admin's reasoning is screened like everything else so a compromised admin account is not also an
-    // instruction.
-    const cleaned = sanitizeInput(message);
+    // THE SCREENING IS UNCHANGED AND STILL COVERS THE WHOLE MESSAGE. Truncation and injection
+    // detection are different concerns: the admin's reasoning is screened deliberately, so a
+    // compromised admin account is not also an instruction. It is screened AFTER the cap, so what is
+    // screened is exactly what the model receives.
+    const cleaned = message;
     if (await checkPromptInjection(cleaned)) {
         console.warn('[weigh] blocked an input that matched an injection pattern');
         return {
