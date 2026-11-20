@@ -595,8 +595,8 @@
         parts.push(
             '<div class="total">' + escapeHtml(S.totalRecoverable) + ': ' +
             (anyUnmeasurable ? escapeHtml(S.totalIsFloor) + ' ' : '') +
-            '<strong>' + result.totalRecoverableHoursPerWeek + '</strong>' +
-            ' <span style="color:var(--muted)">(' + result.workflowCount + ' workflows)</span></div>'
+            '<strong>' + escapeHtml(String(result.totalRecoverableHoursPerWeek)) + '</strong>' +
+            ' <span style="color:var(--muted)">(' + escapeHtml(String(result.workflowCount)) + ' workflows)</span></div>'
         );
 
         if (result.conflicts && result.conflicts.length) {
