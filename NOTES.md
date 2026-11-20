@@ -341,6 +341,26 @@ live leak.
   future change that reaches the provider from that path would silently reopen the
   unbounded-spend hole the limit exists to close.
 
+- **N3: the analytics flag failed open, and now the credential view declares the opt-out.**
+  `theme-head` renders the counting script when `analytics` is undefined, which is right for
+  every ordinary page - a page nobody counts is invisible. But the participant pages were kept
+  uncounted by four `noAnalytics(res)` calls in the router, so A FIFTH RENDER PATH ADDED LATER
+  WOULD HAVE INHERITED THE COUNTED DEFAULT AND SENT A CREDENTIAL, silently, with nothing
+  failing. `views/audit.ejs` and `views/participant-token.ejs` now pass `analytics: false` in
+  their own include, so a new route to either view inherits the opt-out. The route calls stay
+  as a second lock, and the include alone was measured to be sufficient without them.
+  **Do not make this flag default to off**: that would make every page invisible instead, and
+  `test/analytics-exclusion.test.js` asserts the landing page is counted.
+
+- **N4: the tab tests are coupled to the analytics gate.** MEASURED: flipping the analytics
+  gate to default off fails **88 tests across 10 files**, and only 11 of them are the analytics
+  tests. The rest are tab tests, console-scoping tests, cookie-notice tests, demo-login tests
+  and error-page tests, none of which is about analytics. An analytics change can therefore
+  turn the tab suite red and send a reader after the wrong failure. The cause is that the tag
+  is asserted through whole rendered pages, so any change to what a page contains perturbs
+  every test that reads one. Untangling it means asserting the tab behaviour against the
+  template or the route's locals rather than against a fetched page.
+
 ## Next up in V1
 
 - **Guardrail demonstration.** A documented injection attempt against the intake
