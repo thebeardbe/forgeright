@@ -306,6 +306,33 @@ The reviewer's full report is the source for these. Ordered by what matters.
   The intended fix is a limit on the participant token and on the client address, in front
   of the provider call.
 
+### Found in the third review, not fixed here
+
+- **S2: an assistant turn is forwarded to the provider unscreened.** `ai/audit-core.js`
+  screens only `user` turns and passes `assistant` turns through verbatim, and the client
+  chooses both the role and the content. Measured: an injection placed in an assistant turn
+  reached the adapter and screening never saw it. It is a cheap channel rather than an
+  authority like a `system` turn, because the system prompt still governs, but it is
+  unscreened and it is reachable. The fix is to rebuild assistant turns server-side from
+  stored state, which is a change to round reassembly, not a validation rule.
+
+- **S3: a participant field that is a plain string is not capped, only `{ said: ... }`
+  prose is.** `mergeParticipants` strips control characters from every other value and
+  bounds nothing, on the stated grounds that "the document budget covers the whole
+  message". Measured: a 50,000-character plain string in `task` reached the model whole at
+  50,291 characters. The document budget limits the damage to 32,000, **but it does not
+  limit WHO SPENDS IT: one participant can spend the whole budget with a single field and
+  crowd out every other participant and the admin's argument.** That is the same failure
+  the prompt budget was raised to fix, by a different door. The fix is a per-field size
+  bound on the write path, in `lib/store/`, where nothing caps a participant field today.
+
+- **The prompt budget was fixed for data loss, not for a vulnerability.** An earlier
+  reading of this work argued that an injection placed past the old 3,000-character cut
+  "was invisible to the screen". It was not: the old code removed that text from the input,
+  so the model never received it and there was nothing for the screen to miss. The old
+  order destroyed content and the new one does not; **it was never a screening hole, and
+  the record should not say it was.**
+
 ### Found in the second review, not fixed here
 
 Recorded so they are not lost. None is fixed in this branch except B1, which was the

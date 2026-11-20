@@ -10,7 +10,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
-import { sanitizeInput, checkPromptInjection } from './security.js';
+import { checkPromptInjection, stripControlCharsDeep } from './security.js';
+import { capMessage, capAdminReasoning, capParticipantString } from './prompt-budget.js';
 import { proseSaidIn, declinedIn } from './field-shapes.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
@@ -49,31 +50,13 @@ async function loadWeighPrompt(toolId, lang) {
 export function buildWeighingMessage({ process, grouping, adminReasoning = null }) {
     const parts = [];
 
-    parts.push('## The process to weigh');
-    parts.push('');
-    parts.push(`name: ${process.name}`);
-    parts.push('');
-
-    // Merged across everyone who described it: the numbers belong to the process, not one response.
-    const merged = mergeParticipants(grouping?.responses ?? []);
-    parts.push('## What the participants said');
-    parts.push('');
-    parts.push(JSON.stringify(merged, null, 2));
-    parts.push('');
-
-    parts.push('## The steps, in order');
-    parts.push('');
-    parts.push(
-        'Each step carries `decidedHow` (the basis the participant gave) and '
-        + '`needsReasoning` (whether that basis is a rule or a judgement).'
-    );
-    parts.push('');
-    parts.push(JSON.stringify(collectSteps(grouping?.responses ?? []), null, 2));
-    parts.push('');
-
-    parts.push(`Described by ${grouping?.responses?.length ?? 0} participant(s).`);
-    parts.push('');
-
+    // THE ADMIN'S ARGUMENT GOES FIRST, and the reason is measured. This message used to end with it,
+    // and a document bound cuts at the END: on the demo data a weighing message carrying a rejudge
+    // argument is 3145 characters, so at the old 3000-character cut the argument was removed
+    // ENTIRELY and the model weighed without it. That is precisely the case a rejudge exists for.
+    //
+    // FIRST, not merely "marked": whatever is at the end is what a truncation loses, and no marker
+    // protects text that is no longer there.
     if (adminReasoning) {
         parts.push('## An admin disputes the current result, and says why');
         parts.push('');
@@ -84,7 +67,33 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
             + 'given here. If the admin reasoning changes how the terms should be read, say so '
             + 'in your paragraph.'
         );
+        parts.push('');
     }
+
+    parts.push('## The process to weigh');
+    parts.push('');
+    parts.push(`name: ${process.name}`);
+    parts.push('');
+
+    // Merged across everyone who described it: the numbers belong to the process, not one response.
+    // COMPACT, not pretty-printed: indentation is 23% of a payload and buys the model nothing.
+    const merged = mergeParticipants(grouping?.responses ?? []);
+    parts.push('## What the participants said');
+    parts.push('');
+    parts.push(JSON.stringify(merged));
+    parts.push('');
+
+    parts.push('## The steps, in order');
+    parts.push('');
+    parts.push(
+        'Each step carries `decidedHow` (the basis the participant gave) and '
+        + '`needsReasoning` (whether that basis is a rule or a judgement).'
+    );
+    parts.push('');
+    parts.push(JSON.stringify(collectSteps(grouping?.responses ?? [])));
+    parts.push('');
+
+    parts.push(`Described by ${grouping?.responses?.length ?? 0} participant(s).`);
 
     return parts.join('\n');
 }
@@ -148,10 +157,19 @@ function mergeParticipants(responses) {
             .map((response) => responseWorkflow(response.data)?.[field])
             .map((value) => {
                 const said = proseSaidIn(value);
-                if (said !== null) return proseForWeighing(said);
+                // THE PER-STRING BOUND BELONGS HERE, on one participant's words for one field.
+                if (said !== null) return proseForWeighing(capParticipantString(said, `weigh ${field}`));
                 const declined = declinedIn(value);
-                if (declined !== null) return declinedForWeighing(declined.words);
-                return value;
+                if (declined !== null) {
+                    return declinedForWeighing(
+                        declined.words === null
+                            ? null
+                            : capParticipantString(declined.words, `weigh ${field} (declined)`)
+                    );
+                }
+                // Anything else is a number, a list or a short phrase; strip control characters from
+                // its strings without capping, because the document budget covers the whole message.
+                return stripControlCharsDeep(value);
             })
             .filter((value) => value !== undefined && value !== null);
 
@@ -181,7 +199,18 @@ function mergeParticipants(responses) {
  * @returns {Array<object>} Steps in first-seen order, one entry per distinct name.
  */
 function collectSteps(responses) {
-    return mergeProcessSteps(responses).steps;
+    // A step is participant text too, so each of its strings meets the per-string bound here rather
+    // than the whole list meeting a document bound later.
+    return stripControlCharsDeep(mergeProcessSteps(responses).steps).map((step) => {
+        if (!step || typeof step !== 'object') return step;
+        const capped = { ...step };
+        for (const key of ['name', 'whatHappens', 'decidedHow', 'needsReasoningNote']) {
+            if (typeof capped[key] === 'string') {
+                capped[key] = capParticipantString(capped[key], `weigh step.${key}`);
+            }
+        }
+        return capped;
+    });
 }
 
 /** Distinct values, compared by their JSON form so objects and arrays work. */
@@ -216,12 +245,18 @@ export async function runWeighing({
         throw new Error(`No weighing prompt found for tool "${toolId}" in ${PROMPTS_DIR}`);
     }
 
-    const message = buildWeighingMessage({ process, grouping, adminReasoning });
+    // The admin's argument is capped as a string here, so one paragraph cannot spend the whole
+    // document budget, and the message is then capped as a document.
+    const message = capMessage(
+        buildWeighingMessage({ process, grouping, adminReasoning: capAdminReasoning(adminReasoning, 'weigh') }),
+        'weigh'
+    );
 
-    // The same guardrail as the other two: participant text is about to be placed in a prompt, and the
-    // admin's reasoning is screened like everything else so a compromised admin account is not also an
-    // instruction.
-    const cleaned = sanitizeInput(message);
+    // THE SCREENING IS UNCHANGED AND STILL COVERS THE WHOLE MESSAGE. Truncation and injection
+    // detection are different concerns: the admin's reasoning is screened deliberately, so a
+    // compromised admin account is not also an instruction. It is screened AFTER the cap, so what is
+    // screened is exactly what the model receives.
+    const cleaned = message;
     if (await checkPromptInjection(cleaned)) {
         console.warn('[weigh] blocked an input that matched an injection pattern');
         return {
