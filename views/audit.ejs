@@ -68,7 +68,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= typeof cspNonce === 'string' ? cspNonce : '' %>">
     window.AUDIT_CONFIG = {
         toolId: "<%= toolId %>",
         lang: "<%= lang %>",

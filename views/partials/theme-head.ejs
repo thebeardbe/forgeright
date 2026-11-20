@@ -36,7 +36,7 @@
         <link rel="stylesheet" href="<%= basePath %>/css/<%= sheet %>.css">
     <% }); %>
 <% } %>
-<script>
+<script nonce="<%= typeof cspNonce === 'string' ? cspNonce : '' %>">
     // Runs before the body renders, so no frame is painted in the wrong theme.
     // Only needed when the choice is "follow system"; a stored palette is already
     // on <html> from the server.
@@ -89,7 +89,7 @@
     complete before the request is made.
 %>
 <% if (typeof analytics === 'undefined' || analytics) { %>
-<script>
+<script nonce="<%= typeof cspNonce === 'string' ? cspNonce : '' %>">
     // APPENDED AFTER PARSING, so a slow or silent statistics host cannot delay the page.
     (function () {
         function addAnalytics() {

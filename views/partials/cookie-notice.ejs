@@ -41,7 +41,7 @@
     </div>
 </div>
 
-<script>
+<script nonce="<%= typeof cspNonce === 'string' ? cspNonce : '' %>">
     // The banner records only that it was seen, in localStorage rather than a
     // cookie, so acknowledging it does not itself set one. Sign-in does not depend
     // on this running: the banner is hidden until the script shows it.

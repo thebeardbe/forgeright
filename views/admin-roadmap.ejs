@@ -356,7 +356,7 @@
         </details>
     <% }); %>
 </div>
-<script>
+<script nonce="<%= typeof cspNonce === 'string' ? cspNonce : '' %>">
     // THE TABS WORK WITHOUT A SCRIPT, AND THE SCRIPT ONLY SAVES A ROUND TRIP. The server resolves
     // `?tab=` in the route and already renders that panel with `hidden` off, so a tab link with no
     // JavaScript is an ordinary page load that lands on the right panel. This script intercepts the
