@@ -183,14 +183,37 @@ test('a page that does not opt out IS counted', async () => {
     assert.equal(hasAnalyticsTag(res.text), true, 'the landing page counts its views');
 });
 
-test('the default is ON in the view: an undefined flag renders the tag', () => {
-    // Read from the partial, because that is where the default lives. `!== false` would flip the
-    // whole site off the moment somebody tidied it.
-    const partial = fs.readFileSync(
-        path.join(PROJECT_ROOT, 'views', 'partials', 'theme-head.ejs'), 'utf8');
+test('EVERY VIEW that renders participant data opts out of counting, at its include', () => {
+    // THE TEST THAT CATCHES A NEW CREDENTIAL VIEW. The tests above enumerate PATHS, so a second
+    // entry point to an existing view - `/q/:token/preview`, say - is not in that list and would
+    // not be caught by them. This reads the VIEWS instead: if a view that shows participant data
+    // includes `theme-head`, the include must carry `analytics: false`, so a new route to it
+    // inherits the opt-out and no flag has to be remembered.
+    //
+    // What it would miss: a new view that renders participant data WITHOUT including theme-head
+    // (it has no analytics tag at all, so it is safe by omission), and a page that pulls a
+    // credential into the URL from somewhere other than the participant - the path tests above are
+    // the guard for that.
+    const VIEWS = path.join(PROJECT_ROOT, 'views');
 
-    assert.match(partial, /typeof analytics === 'undefined' \|\| analytics/,
-        'the tag renders unless the page explicitly passes analytics: false');
+    const CREDENTIAL_VIEWS = ['audit.ejs', 'participant-token.ejs'];
+    for (const file of CREDENTIAL_VIEWS) {
+        const source = fs.readFileSync(path.join(VIEWS, file), 'utf8');
+        const include = /include\(\s*'partials\/theme-head'([^)]*)\)/.exec(source);
+        assert.ok(include, `${file} includes theme-head`);
+        assert.match(include[1], /analytics:\s*false/,
+            `${file} passes analytics: false in its own include, so a new route to it inherits the opt-out`);
+    }
+
+    // AND THE INVERSE, so this list cannot quietly grow to cover a counted view.
+    const COUNTED_VIEWS = ['landing.ejs', 'admin-roadmap.ejs', 'participant-lost-link.ejs'];
+    for (const file of COUNTED_VIEWS) {
+        const source = fs.readFileSync(path.join(VIEWS, file), 'utf8');
+        const include = /include\(\s*'partials\/theme-head'([^)]*)\)/.exec(source);
+        assert.ok(include, `${file} includes theme-head`);
+        assert.equal(/analytics:\s*false/.test(include[1]), false,
+            `${file} is counted, so it must not opt out`);
+    }
 });
 
 // ===========================================================================
