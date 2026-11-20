@@ -135,15 +135,15 @@
                     store's own default is the first, so a URL without `?tab=` shows the steps.
                 %>
                 <nav class="tabs" role="tablist">
-                    <a href="?tab=steps"     role="tab" data-tab="steps">The steps</a>
-                    <a href="?tab=departments" role="tab" data-tab="departments">Departments</a>
-                    <a href="?tab=score"     role="tab" data-tab="score">Why it scored this</a>
-                    <a href="?tab=grouping"  role="tab" data-tab="grouping">Read together because</a>
-                    <a href="?tab=answers"   role="tab" data-tab="answers">The answers behind it</a>
-                    <a href="?tab=history"   role="tab" data-tab="history">Earlier versions</a>
+                    <a href="?tab=steps" role="tab" data-tab="steps"<% if (tab === 'steps') { %> class="active" aria-selected="true"<% } %>>The steps</a>
+                    <a href="?tab=departments" role="tab" data-tab="departments"<% if (tab === 'departments') { %> class="active" aria-selected="true"<% } %>>Departments</a>
+                    <a href="?tab=score" role="tab" data-tab="score"<% if (tab === 'score') { %> class="active" aria-selected="true"<% } %>>Why it scored this</a>
+                    <a href="?tab=grouping" role="tab" data-tab="grouping"<% if (tab === 'grouping') { %> class="active" aria-selected="true"<% } %>>Read together because</a>
+                    <a href="?tab=answers" role="tab" data-tab="answers"<% if (tab === 'answers') { %> class="active" aria-selected="true"<% } %>>The answers behind it</a>
+                    <a href="?tab=history" role="tab" data-tab="history"<% if (tab === 'history') { %> class="active" aria-selected="true"<% } %>>Earlier versions</a>
                 </nav>
 
-                <section class="tab-panel" data-panel="steps">
+                <section class="tab-panel" data-panel="steps"<% if (tab !== 'steps') { %> hidden<% } %>>
                 <h3>The steps, in order</h3>
                 <%# WHERE TWO ACCOUNTS DISAGREE ABOUT A STEP, the row below shows the
                     pessimistic flag and ONE account's quotation, which may be from the
@@ -190,7 +190,7 @@
 
                 </section>
 
-                <section class="tab-panel" data-panel="departments" hidden>
+                <section class="tab-panel" data-panel="departments"<% if (tab !== 'departments') { %> hidden<% } %>>
                 <h3>Departments, and how many described it</h3>
                 <ul class="depts">
                     <% describedBy.forEach(function (pair) { %>
@@ -205,7 +205,7 @@
 
                 </section>
 
-                <section class="tab-panel" data-panel="score" hidden>
+                <section class="tab-panel" data-panel="score"<% if (tab !== 'score') { %> hidden<% } %>>
                 <% if (process.score) { %>
                     <h3>Why it scored this</h3>
                     <%- include('partials/reasoning-paragraph', { reasoning: process.score.reasoning }) %>
@@ -228,7 +228,7 @@
 
                 </section>
 
-                <section class="tab-panel" data-panel="grouping" hidden>
+                <section class="tab-panel" data-panel="grouping"<% if (tab !== 'grouping') { %> hidden<% } %>>
                 <h3>Read together because</h3>
                 <% if (process.grouping) { %>
                     <p class="paragraph"><%= process.grouping.reasoning %></p>
@@ -264,7 +264,7 @@
                 %>
                 </section>
 
-                <section class="tab-panel" data-panel="answers" hidden>
+                <section class="tab-panel" data-panel="answers"<% if (tab !== 'answers') { %> hidden<% } %>>
                 <h3>The answers behind it</h3>
                 <% if (responses.length === 0) { %>
                     <p class="empty">
@@ -288,7 +288,7 @@
 
                 </section>
 
-                <section class="tab-panel" data-panel="history" hidden>
+                <section class="tab-panel" data-panel="history"<% if (tab !== 'history') { %> hidden<% } %>>
                 <h3>Earlier versions</h3>
                 <div class="history">
                     <%# REVISIONS, NOT ONLY THE CURRENT ONE. A rejudge groups again, which
@@ -357,15 +357,20 @@
     <% }); %>
 </div>
 <script>
-    // THE TABS, WITHOUT A ROUND TRIP. Every tab is a real link, so with no script the server renders
-    // the panel named in `?tab=` and the page still works. With a script, the click swaps panels here
-    // and `replaceState` keeps the URL honest, so a reload or a bookmark lands on the same tab and the
-    // back button is not filled with tab switches.
+    // THE TABS WORK WITHOUT A SCRIPT, AND THE SCRIPT ONLY SAVES A ROUND TRIP. The server resolves
+    // `?tab=` in the route and already renders that panel with `hidden` off, so a tab link with no
+    // JavaScript is an ordinary page load that lands on the right panel. This script intercepts the
+    // click and swaps the panels in place, and `replaceState` keeps the URL honest so a reload or a
+    // bookmark lands on the same tab without filling the back button with tab switches.
+    //
+    // IT STARTS FROM THE SERVER'S CHOICE, read off the rendered markup, rather than from
+    // `location.search`: the two agree, and this way there is one rule for which panel is selected.
     //
     // ONE LISTENER ON THE DOCUMENT, not one per link: the roadmap renders a tab bar per process, and a
     // listener each would be hundreds of handlers for one delegated one.
     (function () {
-        var initial = new URLSearchParams(location.search).get('tab') || 'steps';
+        var first = document.querySelector('.tab-panel:not([hidden])');
+        var initial = first ? first.getAttribute('data-panel') : 'steps';
 
         function show(tabs, name) {
             var bar = tabs.closest('.detail');
