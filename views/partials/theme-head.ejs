@@ -15,6 +15,11 @@
          That is what keeps the flash off the screen rather than making it brief.
       3. Nothing here reads localStorage: the cookie is the one source of truth,
          which is why the server could render the right theme in the first place.
+
+      THE ANALYTICS TAG IS `defer`, AND THAT IS NOT OPTIONAL. Part 2 above must run before the body
+      is parsed, so a blocking or competing script here would reintroduce the paint flash it
+      exists to prevent. `defer` also means an unreachable host cannot hold up the page: the
+      browser fetches it in parallel and the page renders whether it answers or not.
  
       THE COOKIE NOTICE IS INCLUDED FROM HERE, at the end, and that is the same reasoning as
       the picker above: it is site chrome rather than one page's content, and it must appear
@@ -49,6 +54,44 @@
         } catch (err) {
             // matchMedia unavailable: palette.css already applied the dark pair for
             // the "system" category, so there is a usable theme and nothing to do.
+        }
+    })();
+</script>
+
+<%#
+    ANONYMOUS PAGE-VIEW STATISTICS, on every page including the questionnaire, the lost-link form
+    and the public demo. Umami sets no cookies and stores nothing that identifies a visitor: it
+    counts a page view. That is why there is no consent control here - there is no cookie to consent
+    to - and why the cookie notice below had to be corrected in the same commit that added this.
+
+    WHY IT IS APPENDED BY SCRIPT RATHER THAN WRITTEN INTO THE HEAD, AND IT IS MEASURED. A `defer`
+    script in the head still holds up the parser finishing the head, and `DOMContentLoaded` waits for
+    it. With the analytics host accepting the connection and never answering, the page stalled:
+    `readyState` stayed `interactive`, the roadmap's own script never ran, and the page showed only
+    the cookie banner after 12 seconds. An unreachable host was fine (ERR_NAME_NOT_RESOLVED fails
+    fast); a SILENT one was not.
+
+    So the tag is built here and appended to `<body>` once the document has parsed. The page is
+    already complete and interactive before the request is even made, which is the whole point of
+    counting page views and the only way a statistics host can be allowed to fail silently.
+
+    `defer` is kept on the element, as it should be: it is what stops the download competing with the
+    theme script for a parse slot in the page's own execution order.
+%>
+<script>
+    // APPENDED AFTER PARSING, so a slow or silent statistics host cannot delay the page.
+    (function () {
+        function addAnalytics() {
+            var s = document.createElement('script');
+            s.defer = true;
+            s.src = 'https://stats.thebeard.be/script.js';
+            s.setAttribute('data-website-id', '89c983d9-1018-40ee-a3bd-48c54b691f7f');
+            (document.body || document.documentElement).appendChild(s);
+        }
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', addAnalytics);
+        } else {
+            addAnalytics();
         }
     })();
 </script>
