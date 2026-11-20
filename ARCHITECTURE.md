@@ -557,7 +557,11 @@ that carries the closing question *"is there another process?"*, so a finished p
 is on disk before that question can be answered. Saying yes **starts a new round**.
 
 `submitted_at` is the boundary: **null is a partial round, a timestamp is a finished
-one.** A partial round is readable in the answers view, marked "still in progress"
+one.** `markResponseSubmitted` returns the row for a first finalise **and for a
+repeat**, because an already-finished round is a success the participant route
+answers with; it returns null **only for an id belonging to another invitation**.
+Its sibling `updateResponseData` returns null for that case too, so the two agree.
+A partial round is readable in the answers view, marked "still in progress"
 there, and **excluded from the roadmap's sorting and scoring** - no figure is computed
 from work the participant did not finish. A participant who reopens their link resumes
 the open round, with their conversation replayed.
