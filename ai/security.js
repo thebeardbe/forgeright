@@ -14,21 +14,63 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PATTERNS_PATH = process.env.INJECTION_PATTERNS_PATH
     || path.join(__dirname, 'injection-patterns.json');
 
-const MAX_INPUT_CHARS = 3000;
+/**
+ * THE BOUND ON ONE PARTICIPANT-PROVIDED STRING.
+ *
+ * This is what 3000 was always meant to be. MEASURED against the demo store, the longest single
+ * field a participant writes is well under 1500 characters, and the longest whole response payload
+ * is 1956, so 3000 leaves a participant room to write at length and still bounds one string.
+ *
+ * IT MUST NOT BE APPLIED TO AN ASSEMBLED MESSAGE. It was, in identify-core and weigh-core, and a
+ * message is a document: on the demo data a weighing message with an admin's rejudge argument is
+ * already 3145 characters, and the identification message for an organisation with 60 processes is
+ * 22228. The slice cut those at 3000, which silently removed the admin's argument and almost the
+ * whole known-processes list. The document bound is `prompt-budget.js`.
+ */
+export const MAX_INPUT_CHARS = 3000;
 
 /**
  * Strips control characters (keeping tab and newline) and caps length.
+ *
+ * For ONE participant-provided string. See MAX_INPUT_CHARS for why this is not a document bound.
+ *
  * @param {string} text
+ * @param {string} [label] what is being capped, so the log says which field was cut
  * @returns {string}
  */
-export function sanitizeInput(text) {
+export function sanitizeInput(text, label = 'input') {
     if (!text) return '';
     let clean = String(text).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
     if (clean.length > MAX_INPUT_CHARS) {
-        console.warn('[security] input truncated: exceeded', MAX_INPUT_CHARS, 'characters');
+        console.warn(
+            `[security] ${label} truncated: ${clean.length} characters, cap ${MAX_INPUT_CHARS}, ` +
+            `cut ${clean.length - MAX_INPUT_CHARS}`
+        );
         clean = clean.slice(0, MAX_INPUT_CHARS) + '\n...[TRUNCATED]';
     }
     return clean;
+}
+
+/**
+ * Strip control characters from every string inside a value, WITHOUT the length cap.
+ *
+ * Used where a value is going to be assembled into a message and the cap is decided later, on the
+ * whole document. The control-character strip is not a bound on size, so doing it here loses nothing.
+ *
+ * @param {unknown} value any JSON-shaped value
+ * @returns {unknown} the same shape with control characters removed from its strings
+ */
+export function stripControlCharsDeep(value) {
+    if (typeof value === 'string') {
+        return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+    }
+    if (Array.isArray(value)) return value.map(stripControlCharsDeep);
+    if (value && typeof value === 'object') {
+        const out = {};
+        for (const [key, inner] of Object.entries(value)) out[key] = stripControlCharsDeep(inner);
+        return out;
+    }
+    return value;
 }
 
 /**

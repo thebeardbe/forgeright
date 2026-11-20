@@ -10,7 +10,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
-import { sanitizeInput, checkPromptInjection } from './security.js';
+import { sanitizeInput, checkPromptInjection, stripControlCharsDeep } from './security.js';
+import { capParticipantString } from './prompt-budget.js';
 import { proseSaidIn, declinedIn } from './field-shapes.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
@@ -148,10 +149,19 @@ function mergeParticipants(responses) {
             .map((response) => responseWorkflow(response.data)?.[field])
             .map((value) => {
                 const said = proseSaidIn(value);
-                if (said !== null) return proseForWeighing(said);
+                // THE PER-STRING BOUND BELONGS HERE, on one participant's words for one field.
+                if (said !== null) return proseForWeighing(capParticipantString(said, `weigh ${field}`));
                 const declined = declinedIn(value);
-                if (declined !== null) return declinedForWeighing(declined.words);
-                return value;
+                if (declined !== null) {
+                    return declinedForWeighing(
+                        declined.words === null
+                            ? null
+                            : capParticipantString(declined.words, `weigh ${field} (declined)`)
+                    );
+                }
+                // Anything else is a number, a list or a short phrase; strip control characters from
+                // its strings without capping, because the document budget covers the whole message.
+                return stripControlCharsDeep(value);
             })
             .filter((value) => value !== undefined && value !== null);
 
@@ -181,7 +191,18 @@ function mergeParticipants(responses) {
  * @returns {Array<object>} Steps in first-seen order, one entry per distinct name.
  */
 function collectSteps(responses) {
-    return mergeProcessSteps(responses).steps;
+    // A step is participant text too, so each of its strings meets the per-string bound here rather
+    // than the whole list meeting a document bound later.
+    return stripControlCharsDeep(mergeProcessSteps(responses).steps).map((step) => {
+        if (!step || typeof step !== 'object') return step;
+        const capped = { ...step };
+        for (const key of ['name', 'whatHappens', 'decidedHow', 'needsReasoningNote']) {
+            if (typeof capped[key] === 'string') {
+                capped[key] = capParticipantString(capped[key], `weigh step.${key}`);
+            }
+        }
+        return capped;
+    });
 }
 
 /** Distinct values, compared by their JSON form so objects and arrays work. */
