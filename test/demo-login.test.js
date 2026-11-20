@@ -400,6 +400,19 @@ test('a wrong-length value does not throw, so the length is never compared first
     assert.equal(demoTokenMatches('x'.repeat(33), DEMO_TOKEN), false);
 });
 
+test('an EMPTY side never matches, including when BOTH are empty', () => {
+    // The shared `hashToken` refuses an empty string, because an empty token is not a token. This
+    // function is called with `req.query?.token`, so it has to return false rather than throw, or a
+    // bare /admin/demo answers 500 instead of its 404 refusal.
+    //
+    // BOTH EMPTY USED TO RETURN TRUE. With the lenient hash this file used to carry, two empty
+    // strings hashed to two equal hashes, so an unconfigured demo token would have admitted a
+    // request that carried no token at all.
+    assert.equal(demoTokenMatches('', ''), false, 'two empty values are not a match');
+    assert.equal(demoTokenMatches('', DEMO_TOKEN), false, 'an empty supplied value never matches');
+    assert.equal(demoTokenMatches(DEMO_TOKEN, ''), false, 'an empty expected value never matches');
+});
+
 test('a WRONG and a MISSING token are indistinguishable over HTTP', async () => {
     const server = await startServer({ DEMO_LOGIN: '1', DEMO_LOGIN_ORG: ORG_ID, DEMO_LOGIN_TOKEN: DEMO_TOKEN });
     try {
