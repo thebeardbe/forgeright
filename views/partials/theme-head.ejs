@@ -59,25 +59,36 @@
 </script>
 
 <%#
-    ANONYMOUS PAGE-VIEW STATISTICS, on every page including the questionnaire, the lost-link form
-    and the public demo. Umami sets no cookies and stores nothing that identifies a visitor: it
-    counts a page view. That is why there is no consent control here - there is no cookie to consent
-    to - and why the cookie notice below had to be corrected in the same commit that added this.
+    ANONYMOUS PAGE-VIEW STATISTICS. It counts a page view with no cookie and nothing that identifies
+    a visitor, so there is no consent control: there is no cookie to consent to.
 
-    WHY IT IS APPENDED BY SCRIPT RATHER THAN WRITTEN INTO THE HEAD, AND IT IS MEASURED. A `defer`
-    script in the head still holds up the parser finishing the head, and `DOMContentLoaded` waits for
-    it. With the analytics host accepting the connection and never answering, the page stalled:
-    `readyState` stayed `interactive`, the roadmap's own script never ran, and the page showed only
-    the cookie banner after 12 seconds. An unreachable host was fine (ERR_NAME_NOT_RESOLVED fails
-    fast); a SILENT one was not.
+    `analytics: false` TURNS IT OFF, AND THE VIEW THAT CARRIES THE CREDENTIAL DECLARES IT. The counting
+    script sends `location.href` as the page URL, and on `/q/<token>` the participant's 90-day bearer
+    credential is a PATH SEGMENT of that URL: every page view would hand their interview link to the
+    analytics host. `views/audit.ejs` and `views/participant-token.ejs` therefore pass
+    `analytics: false` in their own `theme-head` include, so A NEW ROUTE THAT RENDERS EITHER OF THEM
+    INHERITS THE OPT-OUT without anybody remembering to set a flag.
 
-    So the tag is built here and appended to `<body>` once the document has parsed. The page is
-    already complete and interactive before the request is even made, which is the whole point of
-    counting page views and the only way a statistics host can be allowed to fail silently.
+    THE ROUTES SET IT TOO, and that is deliberate rather than redundant. MEASURED, the include alone is
+    enough for every path that renders those views today; the route calls are a second lock on the same
+    door, and they are what the exclusion tests exercise. Two independent statements that a credential
+    page is not counted is the correct number for this one.
 
-    `defer` is kept on the element, as it should be: it is what stops the download competing with the
-    theme script for a parse slot in the page's own execution order.
+    COUNTING ITSELF STILL DEFAULTS TO ON, because a page nobody counts is invisible and that is the
+    worse failure. The two questions are separate: is this page counted, and does this page carry a
+    credential. One flag answers both only because a credential page must never be counted.
+
+    NOT decided by sniffing the URL in the browser, which would break the moment a route is renamed.
+
+    `data-exclude-search` strips the QUERY STRING, for the demo link, whose token is one.
+
+    APPENDED BY SCRIPT RATHER THAN WRITTEN INTO THE HEAD, and it is measured: a `defer` script in the
+    head still holds up the parser finishing the head, and `DOMContentLoaded` waits for it. With the
+    analytics host accepting the connection and never answering, the page stalled at `interactive`
+    with only the cookie banner rendered, after 12 seconds. Appended after parsing, the page is
+    complete before the request is made.
 %>
+<% if (typeof analytics === 'undefined' || analytics) { %>
 <script>
     // APPENDED AFTER PARSING, so a slow or silent statistics host cannot delay the page.
     (function () {
@@ -86,6 +97,7 @@
             s.defer = true;
             s.src = 'https://stats.thebeard.be/script.js';
             s.setAttribute('data-website-id', '89c983d9-1018-40ee-a3bd-48c54b691f7f');
+            s.setAttribute('data-exclude-search', 'true');
             (document.body || document.documentElement).appendChild(s);
         }
         if (document.readyState === 'loading') {
@@ -95,5 +107,6 @@
         }
     })();
 </script>
+<% } %>
 
 <%- include('cookie-notice') %>

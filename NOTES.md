@@ -306,6 +306,61 @@ The reviewer's full report is the source for these. Ordered by what matters.
   The intended fix is a limit on the participant token and on the client address, in front
   of the provider call.
 
+### Found in the second review, not fixed here
+
+Recorded so they are not lost. None is fixed in this branch except B1, which was the
+live leak.
+
+- **B1 (FIXED on `analytics-leak`): the participant token went to the analytics host.**
+  `/q/<token>` carries the bearer credential as a path segment, the page-view counter
+  sends `location.href`, and nothing stripped a path. The questionnaire and the token form
+  now opt out of counting, and every other page sets `data-exclude-search`.
+
+- **S4: an EXPIRED participant token still passes `mayUseQuestionnaire`.**
+  `routeForParticipantToken` queries `token_index` and does not look at `expires_at`,
+  while `/api/response` goes through `invitationForToken`, which does filter. **So an
+  expired link can still start an interview and spend a full provider budget.** It
+  predates the rate limit, and the limit is what makes it matter. The fix is to check
+  expiry where the token is resolved for the API, not only in the store.
+
+- **S5: the rejudge refusal offers an action an admin cannot take.** It says "describe it
+  as a new process from the participant link", and no console action creates a new process
+  for an already-grouped response. Either add that action or reword the refusal to what
+  the console can actually do.
+
+- **S6: the 429 refusal is English only**, in a questionnaire that is otherwise trilingual.
+  `lib/strings.js` has no key for it, and the refusal is built on the server where the
+  language is known, so the fix is a string per language and a small change to the route.
+
+- **N1: the rate limiter's Map gains a key per token and is never pruned.** One entry per
+  participant token, for the life of the process. Bounded by invitations issued, so it
+  grows slowly, but nothing removes a finished interview's key.
+
+- **N2: `/api/score` is provider-free TODAY, and nothing guards the assumption.** It calls
+  `validateWorkflows` and `aggregate`, both pure, which is why it is not rate-limited. A
+  future change that reaches the provider from that path would silently reopen the
+  unbounded-spend hole the limit exists to close.
+
+- **N3: the analytics flag failed open, and now the credential view declares the opt-out.**
+  `theme-head` renders the counting script when `analytics` is undefined, which is right for
+  every ordinary page - a page nobody counts is invisible. But the participant pages were kept
+  uncounted by four `noAnalytics(res)` calls in the router, so A FIFTH RENDER PATH ADDED LATER
+  WOULD HAVE INHERITED THE COUNTED DEFAULT AND SENT A CREDENTIAL, silently, with nothing
+  failing. `views/audit.ejs` and `views/participant-token.ejs` now pass `analytics: false` in
+  their own include, so a new route to either view inherits the opt-out. The route calls stay
+  as a second lock, and the include alone was measured to be sufficient without them.
+  **Do not make this flag default to off**: that would make every page invisible instead, and
+  `test/analytics-exclusion.test.js` asserts the landing page is counted.
+
+- **N4: the tab tests are coupled to the analytics gate.** MEASURED: flipping the analytics
+  gate to default off fails **88 tests across 10 files**, and only 11 of them are the analytics
+  tests. The rest are tab tests, console-scoping tests, cookie-notice tests, demo-login tests
+  and error-page tests, none of which is about analytics. An analytics change can therefore
+  turn the tab suite red and send a reader after the wrong failure. The cause is that the tag
+  is asserted through whole rendered pages, so any change to what a page contains perturbs
+  every test that reads one. Untangling it means asserting the tab behaviour against the
+  template or the route's locals rather than against a fetched page.
+
 ## Next up in V1
 
 - **Guardrail demonstration.** A documented injection attempt against the intake
