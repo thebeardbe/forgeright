@@ -29,6 +29,7 @@ import { router as participantRouter } from './lib/auth/participant-routes.js';
 import { router as landingRouter } from './lib/landing.js';
 import { registerThemeRoute } from './lib/theme-route.js';
 import { shortInstant, shortDuration, responseTitle, responseWorkflow } from './lib/view-format.js';
+import { jsonForScript } from './lib/json-for-script.js';
 import { router as apiRouter } from './lib/routes-api.js';
 import { DEFAULT_TOOL_ID } from './config/tools.js';
 import { FOLLOW_SYSTEM, PALETTE_IDS, PALETTES } from './lib/palettes.js';
@@ -115,6 +116,9 @@ app.use((req, res, next) => {
     // The response-shape resolvers; see lib/view-format.js.
     res.locals.responseTitle = responseTitle;
     res.locals.responseWorkflow = responseWorkflow;
+    // Serialising a value into a <script> block. A template that reaches for JSON.stringify directly
+    // is the defect this exists to prevent, so the safe form is the one within easy reach.
+    res.locals.jsonForScript = jsonForScript;
     next();
 });
 
