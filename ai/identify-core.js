@@ -44,30 +44,9 @@ async function loadIdentifyPrompt(toolId, lang) {
 export function buildComparisonMessage(response, knownProcesses, adminReasoning = null) {
     const parts = [];
 
-    parts.push('## The new response to identify');
-    parts.push('');
-    parts.push(JSON.stringify(capResponseData(response.data ?? {}), null, 2));
-    parts.push('');
-
-    parts.push('## Processes already identified for this organisation');
-    parts.push('');
-    if (knownProcesses.length === 0) {
-        parts.push('(none yet, so this is a new process)');
-    } else {
-        for (const process of knownProcesses) {
-            parts.push(`### ${process.id}`);
-            parts.push(`name: ${process.name}`);
-            // Naming the current home stops a rejudge spawning a sibling.
-            if (process.isCurrentHome === true) {
-                parts.push('THIS IS WHERE THE RESPONSE IS NOW. It is already in this process, so '
-                    + 'matching it here means the grouping does not change.');
-            }
-            if (process.reasoning) parts.push(`why it exists: ${process.reasoning}`);
-            parts.push('');
-        }
-    }
-
-    // An admin supplies an argument rather than a category, which is why a name change is allowed.
+    // THE ADMIN'S ARGUMENT GOES FIRST. It used to be last, after the known-processes list, so once an
+    // organisation had grown the list alone exceeded the document bound and the argument was removed
+    // entirely. FIRST, not merely marked: what is at the end is what a truncation loses.
     if (adminReasoning) {
         parts.push('## An admin disagrees with the current grouping, and says why');
         parts.push('');
@@ -90,7 +69,35 @@ export function buildComparisonMessage(response, knownProcesses, adminReasoning 
             + 'weighing receives the same argument and applies it to the terms. If it is wrong, '
             + 'explain why. Either way, give your reasoning for the result.'
         );
+        parts.push('');
     }
+
+    // THE PROCESS LIST COMES NEXT, before the response being identified, for the same reason: it is
+    // what the model compares against, and losing its tail is what makes the model invent a
+    // duplicate of a process that already exists.
+    parts.push('## Processes already identified for this organisation');
+    parts.push('');
+    if (knownProcesses.length === 0) {
+        parts.push('(none yet, so this is a new process)');
+    } else {
+        for (const process of knownProcesses) {
+            parts.push(`### ${process.id}`);
+            parts.push(`name: ${process.name}`);
+            // Naming the current home stops a rejudge spawning a sibling.
+            if (process.isCurrentHome === true) {
+                parts.push('THIS IS WHERE THE RESPONSE IS NOW. It is already in this process, so '
+                    + 'matching it here means the grouping does not change.');
+            }
+            if (process.reasoning) parts.push(`why it exists: ${process.reasoning}`);
+            parts.push('');
+        }
+    }
+
+    // The response being identified goes LAST: it is one response, bounded per field, so it is the
+    // smallest and safest thing to lose if this document ever meets its budget.
+    parts.push('## The new response to identify');
+    parts.push('');
+    parts.push(JSON.stringify(capResponseData(response.data ?? {})));
 
     return parts.join('\n');
 }

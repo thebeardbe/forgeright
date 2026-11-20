@@ -50,31 +50,13 @@ async function loadWeighPrompt(toolId, lang) {
 export function buildWeighingMessage({ process, grouping, adminReasoning = null }) {
     const parts = [];
 
-    parts.push('## The process to weigh');
-    parts.push('');
-    parts.push(`name: ${process.name}`);
-    parts.push('');
-
-    // Merged across everyone who described it: the numbers belong to the process, not one response.
-    const merged = mergeParticipants(grouping?.responses ?? []);
-    parts.push('## What the participants said');
-    parts.push('');
-    parts.push(JSON.stringify(merged, null, 2));
-    parts.push('');
-
-    parts.push('## The steps, in order');
-    parts.push('');
-    parts.push(
-        'Each step carries `decidedHow` (the basis the participant gave) and '
-        + '`needsReasoning` (whether that basis is a rule or a judgement).'
-    );
-    parts.push('');
-    parts.push(JSON.stringify(collectSteps(grouping?.responses ?? []), null, 2));
-    parts.push('');
-
-    parts.push(`Described by ${grouping?.responses?.length ?? 0} participant(s).`);
-    parts.push('');
-
+    // THE ADMIN'S ARGUMENT GOES FIRST, and the reason is measured. This message used to end with it,
+    // and a document bound cuts at the END: on the demo data a weighing message carrying a rejudge
+    // argument is 3145 characters, so at the old 3000-character cut the argument was removed
+    // ENTIRELY and the model weighed without it. That is precisely the case a rejudge exists for.
+    //
+    // FIRST, not merely "marked": whatever is at the end is what a truncation loses, and no marker
+    // protects text that is no longer there.
     if (adminReasoning) {
         parts.push('## An admin disputes the current result, and says why');
         parts.push('');
@@ -85,7 +67,33 @@ export function buildWeighingMessage({ process, grouping, adminReasoning = null 
             + 'given here. If the admin reasoning changes how the terms should be read, say so '
             + 'in your paragraph.'
         );
+        parts.push('');
     }
+
+    parts.push('## The process to weigh');
+    parts.push('');
+    parts.push(`name: ${process.name}`);
+    parts.push('');
+
+    // Merged across everyone who described it: the numbers belong to the process, not one response.
+    // COMPACT, not pretty-printed: indentation is 23% of a payload and buys the model nothing.
+    const merged = mergeParticipants(grouping?.responses ?? []);
+    parts.push('## What the participants said');
+    parts.push('');
+    parts.push(JSON.stringify(merged));
+    parts.push('');
+
+    parts.push('## The steps, in order');
+    parts.push('');
+    parts.push(
+        'Each step carries `decidedHow` (the basis the participant gave) and '
+        + '`needsReasoning` (whether that basis is a rule or a judgement).'
+    );
+    parts.push('');
+    parts.push(JSON.stringify(collectSteps(grouping?.responses ?? [])));
+    parts.push('');
+
+    parts.push(`Described by ${grouping?.responses?.length ?? 0} participant(s).`);
 
     return parts.join('\n');
 }
