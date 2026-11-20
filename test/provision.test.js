@@ -17,6 +17,8 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
+import { maskNonce } from './helpers/mask-nonce.mjs';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(__dirname, '..', 'server.js');
 
@@ -216,7 +218,10 @@ test('the login response is byte-identical for a known and an unknown address', 
 
     assert.equal(known.status, 200);
     assert.equal(known.status, unknown.status, 'the status is the same');
-    assert.equal(known.text, unknown.text, 'the response bytes are identical');
+    // THE NONCE DIFFERS PER RESPONSE and carries nothing about the request, so it is masked before
+    // the comparison. Every other byte must still match.
+    assert.equal(maskNonce(known.text), maskNonce(unknown.text),
+        'the response bytes are identical once the nonce is masked');
     assert.equal(known.location, unknown.location, 'neither redirects');
     assert.deepEqual(known.setCookie, unknown.setCookie, 'neither sets a cookie');
 });
