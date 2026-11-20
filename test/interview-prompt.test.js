@@ -8,6 +8,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import fs from 'node:fs';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -132,18 +134,68 @@ test('the stop rule is made detectable through the conversation, with NO new sta
     assert.match(text, /Look at your\s+own questions before asking one, and count them/i, 'and told to count its own questions');
 });
 
-test('the model really does receive its own earlier turns, so the stop rule rests on something true', async () => {
-    // THE CLAIM IS NO-NEW-STATE, NOT NO-TRANSFORMATION: the forwarded form pushes
-    // `{ role, content }` rather than the whole message.
-    const source = fs.readFileSync(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'), 'utf8');
+test('the model really does receive its own earlier turns, so the stop rule rests on something true', () => {
+    // ASSERTED ON WHAT REACHES THE PROVIDER, not on how the loop is written. The role check moved when a
+    // client-chosen `system` role was refused; a source-matching assertion broke with it while the
+    // behaviour it names did not change.
+    //
+    // `ai/provider.js` imports its adapter eagerly, so the stub must be registered BEFORE the module
+    // graph loads. That needs a child process with `register()`, which prints what the provider got.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-capture-'));
+    const hooksFile = path.join(dir, 'hooks.mjs');
+    const runnerFile = path.join(dir, 'runner.mjs');
 
-    assert.match(source, /if \(msg\.role !== 'user'\) \{[\s\S]{0,120}?safeMessages\.push\(/,
-        'non-user messages are forwarded rather than dropped');
-    assert.match(source, /safeMessages\.push\(\{ role: msg\.role, content: msg\.content \}\)/,
-        'an assistant turn is forwarded as role and content');
-    assert.equal(/safeMessages\.push\(msg\)/.test(source), false,
-        'the raw message is not what is forwarded');
-    assert.match(source, /messages: withFormatCommitment\(safeMessages\)/, 'and the whole list is sent to the provider');
+    fs.writeFileSync(hooksFile, `
+        const STUB = 'data:text/javascript,' + encodeURIComponent(
+            'export async function generate(args) {' +
+            '  (globalThis.__captured ||= []).push(args);' +
+            '  return JSON.stringify({ status: "asking", content: "next question" });' +
+            '}'
+        );
+        export async function resolve(specifier, context, next) {
+            if (/adapters\\/mock\\.js$/.test(specifier)) return { url: STUB, shortCircuit: true };
+            return next(specifier, context);
+        }
+    `);
+
+    fs.writeFileSync(runnerFile, `
+        import { register } from 'node:module';
+        register('./hooks.mjs', import.meta.url);
+        process.env.AI_PROVIDER = 'mock';
+        const { runAuditTurn } = await import(${JSON.stringify(path.join(PROJECT_ROOT, 'ai', 'audit-core.js'))});
+        await runAuditTurn({
+            messages: [
+                { role: 'user', content: 'I enter invoices.' },
+                { role: 'assistant', content: 'EARLIER QUESTION MARKER' },
+                { role: 'user', content: 'Every morning.' }
+            ],
+            lang: 'en'
+        });
+        process.stdout.write(JSON.stringify(globalThis.__captured || null));
+    `);
+
+    let out;
+    try {
+        out = execFileSync(process.execPath, [runnerFile], {
+            cwd: PROJECT_ROOT, encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe']
+        });
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    const captured = JSON.parse(out);
+    assert.notEqual(captured, null, 'the provider seam was reached');
+    assert.equal(captured.length, 1, 'and called exactly once');
+    const received = captured[0];
+
+    assert.ok(received.messages.some((m) => m.role === 'assistant' && m.content === 'EARLIER QUESTION MARKER'),
+        'the assistant turn is in the list the provider receives, so the model can read its own questions');
+    assert.ok(received.messages.some((m) => m.content === 'I enter invoices.'),
+        'and so are the participant turns');
+    assert.equal(JSON.stringify(received.messages).includes('substituted'), false,
+        'the forwarded form carries role and content only, not the bookkeeping');
+    assert.equal(/EARLIER QUESTION MARKER/.test(received.systemInstruction || ''), false,
+        'and no conversation content is folded into the system instruction');
 });
 
 test('the typed minimum is exactly the five names the prompt lists', () => {

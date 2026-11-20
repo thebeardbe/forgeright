@@ -45,7 +45,12 @@ const PARTIAL = fs.readFileSync(path.join(VIEWS, 'partials', 'cookie-notice.ejs'
 const STORAGE_KEY = 'fr_cookie_notice';
 
 const SCRIPT = (() => {
-    const match = PARTIAL.match(/<script>([\s\S]*?)<\/script>/);
+    // The tag carries a per-response nonce attribute, and that attribute's EJS expression contains a
+    // `>` of its own, so the tag cannot be matched with `[^>]*`. Quoted attribute values are skipped
+    // explicitly. The partial's `<%# %>` header comment also mentions `<script src>` in prose, so it is
+    // stripped first and the match runs on real markup.
+    const markup = PARTIAL.replace(/<%#[\s\S]*?%>/g, '');
+    const match = markup.match(/<script\b(?:[^>"']|"[^"]*"|'[^']*')*>([\s\S]*?)<\/script>/);
     assert.notEqual(match, null, 'the partial carries an inline script');
     return match[1];
 })();
