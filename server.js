@@ -31,6 +31,8 @@ import { registerThemeRoute } from './lib/theme-route.js';
 import { shortInstant, shortDuration, responseTitle, responseWorkflow } from './lib/view-format.js';
 import { jsonForScript } from './lib/json-for-script.js';
 import { describeAddressSource, startRateLimitSweep } from './lib/auth/rate-limit.js';
+import { assertEveryShapeIsBounded } from './lib/store/field-limits.js';
+import { FIELD_SHAPES } from './ai/field-shapes.js';
 import { applySecurityHeaders } from './lib/security-headers.js';
 import { router as apiRouter } from './lib/routes-api.js';
 import { DEFAULT_TOOL_ID } from './config/tools.js';
@@ -64,6 +66,11 @@ const HOST = (process.env.HOST || '127.0.0.1').trim();
 // Fail before serving anything, rather than at the first sign-in attempt. A
 // missing SESSION_SECRET would otherwise surface as "login is broken", which is
 // the hardest kind of misconfiguration to diagnose from the outside.
+// EVERY FIELD SHAPE MUST HAVE A SIZE BOUND, checked before anything is served. Without this an
+// operator who adds a field with an unmapped shape finds out from a participant's complaint, as a 500
+// or as "the questionnaire is closed", rather than from a failed boot naming the shape.
+assertEveryShapeIsBounded(FIELD_SHAPES);
+
 assertSessionSecretConfigured();
 assertMailSenderUsable();
 // Warned rather than thrown, because the console does not need mail to work; a missing binary or an
