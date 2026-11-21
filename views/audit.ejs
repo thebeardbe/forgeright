@@ -91,6 +91,12 @@
         strings: <%- jsonForScript(strings) %>
     };
 </script>
+<%#
+    The save decision, as a classic script so audit.js can stay one too. See the note at the top of
+    public/js/save-outcome.global.js: test/workflow-identity.test.js runs audit.js in a node:vm context,
+    which a module cannot do. It is loaded first because audit.js reads it when a save completes.
+%>
+<script src="<%= basePath %>/js/save-outcome.global.js"></script>
 <script src="<%= basePath %>/js/audit.js"></script>
 </body>
 </html>
