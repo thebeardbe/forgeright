@@ -18,6 +18,17 @@
         </div>
     </header>
 
+    <%#
+        A CLOSED QUESTIONNAIRE SHOWS THIS INSTEAD OF THE FORM. There is no point offering a box that
+        cannot open anything, and the participant must not have to type a first answer to learn that. The
+        sentence comes from lib/routes-api.js, where the API's refusal gets it too.
+    %>
+    <% if (error === 'questionnaire_closed') { %>
+        <div class="card">
+            <div class="problem" role="alert"><%= closedMessage %></div>
+            <p class="note">Lost the code? <a href="<%= basePath %>/lost-link">Request a new link</a>. Your answers are kept.</p>
+        </div>
+    <% } else { %>
     <p class="intro">Paste the code from your invitation email. It is the long string of letters and numbers, not the whole link.</p>
 
     <div class="card">
@@ -36,6 +47,7 @@
         </form>
         <p class="note">Lost the code? <a href="<%= basePath %>/lost-link">Request a new link</a>. Your answers are kept.</p>
     </div>
+    <% } %>
 </div>
 </body>
 </html>
