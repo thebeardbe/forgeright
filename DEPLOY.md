@@ -146,9 +146,65 @@ theoretical risk.
 `Host` is needed because the app refuses a Host it was not told about - a name missing from
 `ALLOWED_HOST` is answered **421**, which also looks like a broken deploy.
 
-**`proxy_http_version` and `X-Forwarded-For` are NOT needed.** The app reads no client IP
-anywhere, so the extra header would be forwarded and ignored. `http://` in `proxy_pass` is
-correct: TLS ends at nginx, and the app is told that it did by the header above.
+**`proxy_http_version` is not needed.** `http://` in `proxy_pass` is correct: TLS ends at
+nginx, and the app is told that it did by the header above.
+
+### `X-Forwarded-For` IS REQUIRED, and this changed
+
+**The sign-in and lost-link rate limits are keyed on the client address.** An earlier
+version of this document said the opposite - that the app reads no client IP, so the header
+would be forwarded and ignored. **That was true when it was written, and it is no longer
+true.** A reader who followed it today would share one rate-limit bucket between every
+visitor.
+
+**What goes wrong without it.** The app sees the address of the connection peer, which is
+nginx. Every visitor then has the same address, so they share one bucket of **10 sign-in
+attempts per IP per 15 minutes**, and one person mistyping an address ten times locks every
+admin in the organisation out. The startup log says this in as many words:
+
+```
+[server] rate limits key on the connection peer (req.ip). TRUST_PROXY is unset, so if a
+reverse proxy is in front, EVERY visitor shares that one address and one bucket: set
+TRUST_PROXY to the proxy address (see DEPLOY.md).
+```
+
+When it is right, the same line reads:
+
+```
+[server] rate limits key on the client address Express resolves through the trusted proxy
+(...). Every visitor gets their own bucket.
+```
+
+**Two things are needed, and neither alone is enough:**
+
+1. **nginx must send the header.** In a location block, nginx's `proxy_set_header
+   X-Forwarded-For $proxy_add_x_forwarded_for;` appends the client address to any existing
+   header. `$proxy_add_x_forwarded_for` is the right variable: a bare `$remote_addr` would
+   discard a chain set by a proxy in front.
+
+2. **The app must be told to trust that peer.** `TRUST_PROXY` names the address the app sees
+   the connection coming from. Without it the header is ignored however correct it is,
+   because a header is caller-controlled unless the peer that sent it is trusted.
+
+### In Nginx Proxy Manager
+
+NPM runs nginx underneath, so it sends the header for you on its proxy hosts, and the part
+you must set is the app side:
+
+- **NPM sends `X-Forwarded-For`.** Its generated configuration includes
+  `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` on every proxy host. Check
+  it under **Hosts, Proxy Hosts, your host, Advanced** if a custom configuration has been
+  pasted in that overrides the generated block.
+- **Set `TRUST_PROXY` in the app's `.env`** to the address NPM connects from. Inside a
+  container network it is the NPM container or bridge address, not the public IP. The
+  startup log prints the peer the app actually sees, which is what this value must match.
+- **If NPM runs on the same host**, `TRUST_PROXY=loopback` is enough: the peer is a loopback
+  address, which is trusted, and the header is then read.
+
+**Do not reach for `X-Forwarded-For` to decide anything else.** The app reads the client
+address only through Express's own `trust proxy` handling of `req.ip`, which knows which
+peers are trusted; a hand-written parse of the header would let any caller choose their own
+rate-limit bucket by sending the header themselves.
 
 ## Generating the two secrets
 
@@ -675,7 +731,7 @@ one line in `paletteVars`.
 | Variable | Default | Meaning |
 | :--- | :--- | :--- |
 | `ALLOWED_HOST` | empty | Hosts this instance answers on, comma-separated (`localhost,127.0.0.1,forgeright.bunkens.be`). Empty accepts any host, for development. Compared on hostname only; empty entries are ignored. |
-| `TRUST_PROXY` | `0` | Number of reverse proxies in front. Decides whether `X-Forwarded-Proto` is believed. **Set to 1 when one proxy terminates TLS**, or every request looks insecure and the whole site refuses. |
+| `TRUST_PROXY` | `0` | Which peers may set the forwarded headers. Decides whether `X-Forwarded-Proto` is believed **and which address the sign-in rate limit is keyed on**. **Set to 1 when one proxy terminates TLS**, or every request looks insecure and the whole site refuses. Leave it `0` behind a proxy and every visitor shares one rate-limit bucket, so one person's mistyped addresses lock every admin out. See the `X-Forwarded-For` section above. |
 | `BASE_PATH` | empty | Path the app is **mounted** at: the prefix an incoming request carries, which Express strips. Must be a single safe path, or the server refuses to start. |
 | `PUBLIC_PATH` | derived | Path the app is **visible** at: the prefix every emitted URL and the session cookie carry. Normally derived from `PUBLIC_BASE_URL`, so it needs no value. Set it only to override, and it must then agree with that URL. |
 | `SESSION_SECRET` | none | Signs the admin session cookie. **Required**: the server refuses to start without it. |
