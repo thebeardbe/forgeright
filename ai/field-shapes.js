@@ -149,7 +149,14 @@ export const FIELD_SHAPES = Object.freeze({
     currentState: 'prose',
     frustration: 'prose',
     frequencyPerWeek: 'count',
-    timePerPeriod: 'period'
+    timePerPeriod: 'period',
+    // OPTIONAL, and declared so its bound can be enforced. It is in neither PROCESS_FIELDS nor
+    // EFFORT_FIELDS, so `fieldsPresentIn` never reports it and an absent value still reads as
+    // missing rather than unmeasured-and-refused. It carries a number, and a number nobody bounded
+    // was the M5 defect: `frequencyPerWeek 40 * minutesPerInstance 1e300 * peopleAffected 2` gave
+    // 1.3e+300, which is FINITE, so round()'s floor never caught it and the score dominated the
+    // ranking. Declaring the shape is what makes FIELD_MAXIMUMS apply to it at all.
+    minutesPerInstance: 'count'
 });
 
 /**
