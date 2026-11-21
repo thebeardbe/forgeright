@@ -26,7 +26,13 @@
     <% if (error === 'questionnaire_closed') { %>
         <div class="card">
             <div class="problem" role="alert"><%= closedMessage %></div>
-            <p class="note">Lost the code? <a href="<%= basePath %>/lost-link">Request a new link</a>. Your answers are kept.</p>
+            <%#
+                NO "REQUEST A NEW LINK" HERE. The reset route now refuses a closed organisation, so the
+                link would mint nothing and mail nothing: offering it would send the participant to a form
+                that quietly does nothing. What they can actually do is ask the person who sent the link.
+            %>
+            <p class="note">You do not need a new link. Ask the person who sent you this one if it needs
+                to be reopened.</p>
         </div>
     <% } else { %>
     <p class="intro">Paste the code from your invitation email. It is the long string of letters and numbers, not the whole link.</p>
