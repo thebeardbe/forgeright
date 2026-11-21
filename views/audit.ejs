@@ -95,8 +95,18 @@
     The save decision, as a classic script so audit.js can stay one too. See the note at the top of
     public/js/save-outcome.global.js: test/workflow-identity.test.js runs audit.js in a node:vm context,
     which a module cannot do. It is loaded first because audit.js reads it when a save completes.
+
+    BOTH TAGS CARRY THE SAME ?v= STAMP, a hash of the two files' contents computed at startup and read
+    from res.locals.assetVersion. THE TWO SCRIPTS MUST AGREE: audit.js prefers `window.saveOutcome` when it
+    exists, so a cached older global beside a fresh audit.js runs the old rule silently, with no error.
+    Stamping both with one value means a change to either gives both a URL no cache has answered before.
+
+    It makes that mismatch unlikely rather than impossible, and the limit is worth stating: a proxy that
+    ignores the query string, or a browser serving this HTML itself from cache across a deploy, can still
+    pair an old global with a new audit.js. What it removes is the ordinary case, where one file
+    revalidates and the other does not.
 %>
-<script src="<%= basePath %>/js/save-outcome.global.js"></script>
-<script src="<%= basePath %>/js/audit.js"></script>
+<script src="<%= basePath %>/js/save-outcome.global.js?v=<%= assetVersion %>"></script>
+<script src="<%= basePath %>/js/audit.js?v=<%= assetVersion %>"></script>
 </body>
 </html>
