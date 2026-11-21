@@ -31,11 +31,12 @@
      */
     const outcomeOf = (status, body) => {
         const decide = window.saveOutcome;
-        // FALLS BACK RATHER THAN REFUSING, and the fallback is the same rule. Two existing vm harnesses
-        // (test/workflow-identity.test.js and test/interview-fixes.test.js) run this file in a bare
-        // context that never loaded save-outcome.global.js, so a seam that failed without the global
-        // would break 27 behavioural tests that have nothing to do with saving - and would make a save
-        // fail on any page where the script was missing, which is worse than deciding it here.
+        // FALLS BACK RATHER THAN REFUSING, and the fallback is the same rule. THREE existing vm harnesses
+        // run this file in a bare context that never loaded save-outcome.global.js:
+        // test/workflow-identity.test.js, test/interview-fixes.test.js and test/prose-field.test.js. A
+        // seam that failed without the global would break behavioural tests that have nothing to do with
+        // saving - and would make a save fail on any page where the script was missing, which is worse
+        // than deciding it here.
         //
         // The rule below is a copy, which is a second source of truth; test/save-outcome.test.js loads
         // this file the same way and compares every outcome against the module, so the two cannot drift
