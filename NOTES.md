@@ -388,6 +388,26 @@ live leak.
   every test that reads one. Untangling it means asserting the tab behaviour against the
   template or the route's locals rather than against a fetched page.
 
+- **N5: every /api/chat turn now does a WAL WRITE, through `invitationForToken`.** Resolving
+  the token calls `selectLiveTokenByValue` and then, unconditionally, `touchInvitationOpened`,
+  which runs `UPDATE invitation SET opened_at = COALESCE(opened_at, ?), last_seen_at = ?`.
+  That is a write on a read path, once per conversation turn, and the connection runs
+  `journal_mode=wal` with `synchronous=2` (FULL), so the write is fsynced.
+  MEASURED on this machine, 3000 calls against a copy of the demo store:
+  `selectLiveTokenByValue` alone **0.033 ms**, `touchInvitationOpened` **0.068 ms**, and the
+  whole `mayUseQuestionnaire` **0.358 ms** per turn (cold first 200 calls 0.467 ms).
+  A reviewer measured **2.30 ms**; I could not reproduce that here and I am not quoting it as
+  fact, only as the figure that prompted this entry. The write is real either way, and it is
+  larger than the read it sits beside.
+  Not fixed here, deliberately: a read-only liveness path is its own change with its own
+  review. Two options, neither taken yet:
+  1. **A flag on `invitationForToken`** to skip the touch when the caller only needs to know
+     the token is alive, which is what `/api/chat` wants. Smallest change; leaves two call
+     shapes to keep straight.
+  2. **A read-only liveness query** beside it, used by the API, with the touch left to the
+     routes that actually mean "the participant opened this". One more query to keep in step
+     with the liveness rule, which is the trade N5 is about.
+
 ## Next up in V1
 
 - **Guardrail demonstration.** A documented injection attempt against the intake
