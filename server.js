@@ -32,6 +32,7 @@ import { shortInstant, shortDuration, responseTitle, responseWorkflow } from './
 import { jsonForScript } from './lib/json-for-script.js';
 import { describeAddressSource, startRateLimitSweep } from './lib/auth/rate-limit.js';
 import { assertEveryShapeIsBounded } from './lib/store/field-limits.js';
+import { computeAssetVersion, VERSIONED_SCRIPTS } from './lib/asset-version.js';
 import { FIELD_SHAPES } from './ai/field-shapes.js';
 import { applySecurityHeaders } from './lib/security-headers.js';
 import { router as apiRouter } from './lib/routes-api.js';
@@ -43,6 +44,21 @@ import { publicBaseUrl } from './lib/auth/public-base-url.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+/**
+ * THE QUESTIONNAIRE'S SCRIPT VERSION, computed once from the files' contents.
+ *
+ * audit.js prefers `window.saveOutcome`, installed by save-outcome.global.js, so a browser holding a
+ * cached older global beside a fresh audit.js would run the old rule silently. The stamp goes in the query
+ * string of both tags, so a new audit.js is never served under the URL the cached global came from.
+ * See lib/asset-version.js for what it does and does not guarantee.
+ *
+ * Computed here rather than per request: the files do not change while the process runs, and a hash of
+ * two small files on every page render would be waste.
+ */
+const ASSET_VERSION = await computeAssetVersion(
+    VERSIONED_SCRIPTS, path.join(__dirname, 'public', 'js'));
+
 
 /**
  * Security headers, BEFORE every route and every other middleware, so a response that is refused
@@ -135,6 +151,8 @@ app.use((req, res, next) => {
     // Serialising a value into a <script> block. A template that reaches for JSON.stringify directly
     // is the defect this exists to prevent, so the safe form is the one within easy reach.
     res.locals.jsonForScript = jsonForScript;
+    // The questionnaire's script stamp; see ASSET_VERSION above.
+    res.locals.assetVersion = ASSET_VERSION;
     next();
 });
 

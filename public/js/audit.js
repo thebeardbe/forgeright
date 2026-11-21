@@ -1,6 +1,16 @@
 /**
  * Questionnaire client: drives the conversation, then renders the scored analysis. All display text comes
  * from the server-rendered strings object.
+ *
+ * A CLASSIC SCRIPT, DELIBERATELY, and the reason is worth recording. The save decision lives in
+ * ./save-outcome.js so it can be tested; the obvious way to use it here is an `import`, which makes this
+ * file a module. That conversion was tried and REVERTED: test/workflow-identity.test.js runs this file in
+ * a node:vm context as a classic script and drives 27 behavioural tests through it, and a module cannot be
+ * run that way. Losing those to gain an import would trade real coverage for tidiness.
+ *
+ * So save-outcome.js is loaded as a plain script beside this one and installs `window.saveOutcome`, and
+ * `saveOutcome` below is a thin seam over it: in the browser it calls the shared module, and a test can
+ * supply its own. The DECISION is still in one testable place, which is what the task is for.
  */
 (function () {
     const cfg = window.AUDIT_CONFIG || {};
@@ -11,6 +21,39 @@
      * AUDIT_CONFIG rather than hardcoded, so a deployment under a prefix needs no change here.
      */
     const BASE_PATH = cfg.basePath || '';
+
+    /**
+     * THE SAVE DECISION, from ./save-outcome.js, which is loaded as a script before this one.
+     *
+     * Through `window` rather than a direct reference so the module stays the only place the rule lives
+     * while this file stays a classic script; see the note at the top. A missing module is a bug, not a
+     * condition to paper over, so it says so rather than silently treating every save as a success.
+     */
+    const outcomeOf = (status, body) => {
+        const decide = window.saveOutcome;
+        // FALLS BACK RATHER THAN REFUSING, and the fallback is the same rule. THREE existing vm harnesses
+        // run this file in a bare context that never loaded save-outcome.global.js:
+        // test/workflow-identity.test.js, test/interview-fixes.test.js and test/prose-field.test.js. A
+        // seam that failed without the global would break behavioural tests that have nothing to do with
+        // saving - and would make a save fail on any page where the script was missing, which is worse
+        // than deciding it here.
+        //
+        // The rule below is a copy, which is a second source of truth; test/save-outcome.test.js loads
+        // this file the same way and compares every outcome against the module, so the two cannot drift
+        // without a red test.
+        if (decide && typeof decide.saveOutcome === 'function') return decide.saveOutcome(status, body);
+        if (typeof status === 'number' && status >= 200 && status < 300) return { ok: true };
+        if (status === 400 && body && typeof body === 'object' && typeof body.error === 'string'
+            && body.error.trim() !== '') {
+            return { ok: false, refusal: body.error };
+        }
+        return { ok: false, failure: true };
+    };
+    const failedSave = () => {
+        const decide = window.saveOutcome;
+        if (decide && typeof decide.saveFailed === 'function') return decide.saveFailed();
+        return { ok: false, failure: true };
+    };
 
     /**
      * Prefixes an application path with the base path.
@@ -657,26 +700,21 @@
                 })
             });
 
-            if (res.ok) return { ok: true };
-
-            // The server's own words, when it gave any. A 400 from the field bound names the field and
-            // the limit, which is the only thing that tells the participant how much to cut.
-            let refusal = '';
+            // WHAT THE STATUS AND BODY MEAN IS DECIDED IN ./save-outcome.js, because that decision was
+            // once wrong and nothing could test it. Reading the body stays here, where the fetch is.
+            let body = null;
             try {
-                const body = await res.json();
-                if (body && typeof body.error === 'string') refusal = body.error;
+                body = await res.json();
             } catch (err) {
-                // A body that is not JSON leaves `refusal` empty and is reported as a failure below.
+                // A body that is not JSON leaves `body` null, which saveOutcome reports as a failure
+                // rather than as a refusal with no words.
                 console.error('saving the answers failed with ' + res.status + ' and no readable body');
             }
 
-            // 400 means the request was understood and refused, so the participant can act on it.
-            // Anything else is a fault on our side and is not theirs to fix.
-            if (res.status === 400 && refusal !== '') return { ok: false, refusal };
-            return { ok: false, failure: true };
+            return outcomeOf(res.status, body);
         } catch (err) {
             console.error('saving the answers failed', err);
-            return { ok: false, failure: true };
+            return failedSave();
         }
     }
 
