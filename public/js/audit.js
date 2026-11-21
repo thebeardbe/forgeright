@@ -30,6 +30,11 @@
 
     const state = {
         conversation: [],
+        // WHAT THE PAGE HAS ADDED FOR A TURN THE SERVER HAS NOT YET ACCEPTED. A refused turn is taken
+        // back off the screen and out of `conversation` from exactly these, so the visible transcript
+        // and the stored round agree and a resend is not duplicated.
+        unstoredNodes: [],
+        conversationTurnMark: 0,
         waiting: false,
         audit: null,
         result: null,
@@ -84,6 +89,66 @@
             '<div class="body">' + escapeHtml(text) + '</div>';
         history.appendChild(div);
         history.scrollTop = history.scrollHeight;
+        // Returned so a caller can mark or remove exactly the node it added. A refused turn has to be
+        // taken back off the screen, and guessing which nodes belong to it is how the wrong one goes.
+        return div;
+    }
+
+    /**
+     * Take a refused turn back off the screen and out of the conversation.
+     *
+     * Called when the server has refused to store the turn. Both the participant's message and the
+     * assistant's reply were appended optimistically and their turns pushed onto `state.conversation`
+     * before the save was attempted, so leaving them there makes the visible transcript claim a turn
+     * the stored round does not contain - and resending would then send it twice.
+     *
+     * THE TEXT GOES BACK IN THE INPUT. Losing it is the fault; a message beside an empty box is barely
+     * better, because they are mid-interview holding an answer they must shorten.
+     *
+     * @param {string} text the participant's message, as they typed it
+     */
+    function rollBackRefusedTurn(text) {
+        for (const node of state.unstoredNodes) {
+            if (node && node.parentNode) node.parentNode.removeChild(node);
+        }
+        state.unstoredNodes = [];
+
+        // Drop the user turn and the reply that answered it, so the resent turn is not duplicated.
+        while (state.conversation.length > 0 && state.conversationTurnMark > 0) {
+            state.conversation.pop();
+            state.conversationTurnMark -= 1;
+        }
+
+        const input = $('input');
+        if (input) {
+            input.value = text;
+            input.disabled = false;
+            $('input-area').classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Put a message in front of the participant, where they are already looking.
+     *
+     * The save used to fail to the console only, so a participant whose answer was refused carried on
+     * believing it had been recorded. This is the message they see; it sits directly above the input,
+     * which is the thing they must act on.
+     *
+     * @param {string} text
+     */
+    function showSaveProblem(text) {
+        const box = $('save-problem');
+        if (!box) return;
+        box.textContent = text;
+        box.classList.remove('hidden');
+    }
+
+    /** Clear the message above the input, once a later turn has saved. */
+    function clearSaveProblem() {
+        const box = $('save-problem');
+        if (!box) return;
+        box.textContent = '';
+        box.classList.add('hidden');
     }
 
     function appendTyping() {
@@ -120,8 +185,13 @@
         if (!text) return;
 
         input.value = '';
-        appendMessage('user', S.userLabel, text);
+        // RECORDED SO A REFUSED TURN CAN BE TAKEN BACK. Everything here happens before the server has
+        // agreed to store anything, so a refusal has to undo exactly these additions.
+        state.unstoredNodes = [appendMessage('user', S.userLabel, text)];
+        state.conversationTurnMark = 0;
         state.conversation.push({ role: 'user', content: text });
+        state.conversationTurnMark = 1;
+        clearSaveProblem();
 
         state.waiting = true;
         $('send-btn').disabled = true;
@@ -152,7 +222,7 @@
                 return;
             }
 
-            appendMessage('ai', S.aiLabel, data.content);
+            state.unstoredNodes.push(appendMessage('ai', S.aiLabel, data.content));
             // `substituted` AND `missing` TRAVEL WITH THE TURN, because the server needs them
             // on the way back. A question this gate wrote must not be mistaken for the model's
             // own on a later turn - that is what stops the gate replacing its own sentence in a
@@ -169,6 +239,7 @@
                 // anything; this list only grows when a field is truly written down.
                 evidenced: Array.isArray(data.evidenced) ? data.evidenced : []
             });
+            state.conversationTurnMark += 1;
 
             // THE SERVER NORMALISES THE PAYLOAD, so the client does not have to know both shapes - but
             // it still reads `processes` directly, because a client that understood only one shape is
@@ -280,11 +351,41 @@
             // already decide the round's fate. Gating on `isComplete` conflated "do not lose
             // the answers" with "the round is over", which are different questions.
             const toSave = narrowed.payload;
+
+            // ── THE SAVE IS CHECKED BEFORE ANYTHING BELOW TRUSTS IT ────────────────────────────
+            //
+            // Everything above this line has already happened on screen: the input was cleared, the
+            // participant's message was appended to the visible transcript, and their turn was pushed
+            // onto `state.conversation`. The server, meanwhile, may have refused the payload - most
+            // likely because one answer is over the field bound. Nothing told them, and the interview
+            // went on asking its next question, so the visible transcript claimed a turn the stored
+            // round did not contain.
+            //
+            // THE RESTORE IS THE POINT. They are mid-interview holding a long answer. Showing a message
+            // beside an empty box loses that answer just as surely as saying nothing; putting the text
+            // back in the input, re-enabled and focused, is what lets them shorten it and send again.
+            // `rollBackRefusedTurn` also undoes the optimistic message and the conversation entry, so
+            // the visible transcript and the stored round agree again, and the resent turn is not
+            // duplicated in either.
+            const saved = await saveResponse(toSave, isComplete || nothingAnswered || exhausted);
+            if (!saved.ok) {
+                rollBackRefusedTurn(text);
+
+                // A 400 is the participant's to fix and is shown in their own words. Anything else is
+                // a fault on our side: it is reported, and the same message is offered, because either
+                // way their answer is not stored and retrying is the only useful action.
+                showSaveProblem(saved.refusal || S.saveFailed);
+                state.waiting = false;
+                $('send-btn').disabled = false;
+                $('input').focus();
+                return;
+            }
             // `complete: true` FORCES THE ROUND CLOSED even though the status is not
             // `complete`: `submitted_at` is the store's only way to say a round is finished,
             // and leaving it open is the trap. The STATUS is what says it ended with nothing
             // in it, and that lives in the reply the console already reads.
-            await saveResponse(toSave, isComplete || nothingAnswered || exhausted);
+            //
+            // The save itself happened above, and a refusal returned before reaching here.
 
             // THE RECORD OF WHAT THE ROUND HOLDS IS UPDATED FROM WHAT WAS SAVED, BEFORE ANY
             // RETURN BELOW. This block used to sit after the `exhausted` return, so an exhausted
@@ -517,11 +618,24 @@
      * The transcript goes with the payload because an answer is only meaningful against its question, and
      * the transcript is already in `state.conversation`.
      *
-     * Only when the page came from an invitation link, which is what identifies the participant, and a
-     * failure is logged rather than shown, because an error box would suggest their answers were lost.
+     * Only when the page came from an invitation link, which is what identifies the participant.
+     *
+     * A REFUSAL IS RETURNED TO THE CALLER, NOT MERELY LOGGED. It used to be `console.error` and nothing
+     * else, so a participant whose answer the server refused carried on believing it was recorded: the
+     * input had already been cleared, their message was already in the visible transcript, and the
+     * interview asked its next question as though the turn had landed. The stored round and the
+     * visible one then disagreed, silently, on a record kept under their name.
+     *
+     * Returns `{ ok: true }`, `{ ok: false, refusal }` for a 4xx the participant can act on, or
+     * `{ ok: false, failure }` for anything else, so the caller can tell "your answer is too long,
+     * shorten it" from "something went wrong".
+     *
+     * @param {object} audit
+     * @param {boolean} complete
+     * @returns {Promise<{ok: true} | {ok: false, refusal?: string, failure?: true}>}
      */
     async function saveResponse(audit, complete) {
-        if (!hasToken) return;
+        if (!hasToken) return { ok: true };
         try {
             const res = await fetch(apiPath('/api/response'), {
                 method: 'POST',
@@ -542,11 +656,27 @@
                     }))
                 })
             });
-            if (!res.ok) {
-                console.error('saving the answers failed with ' + res.status);
+
+            if (res.ok) return { ok: true };
+
+            // The server's own words, when it gave any. A 400 from the field bound names the field and
+            // the limit, which is the only thing that tells the participant how much to cut.
+            let refusal = '';
+            try {
+                const body = await res.json();
+                if (body && typeof body.error === 'string') refusal = body.error;
+            } catch (err) {
+                // A body that is not JSON leaves `refusal` empty and is reported as a failure below.
+                console.error('saving the answers failed with ' + res.status + ' and no readable body');
             }
+
+            // 400 means the request was understood and refused, so the participant can act on it.
+            // Anything else is a fault on our side and is not theirs to fix.
+            if (res.status === 400 && refusal !== '') return { ok: false, refusal };
+            return { ok: false, failure: true };
         } catch (err) {
             console.error('saving the answers failed', err);
+            return { ok: false, failure: true };
         }
     }
 
