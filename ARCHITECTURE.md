@@ -488,6 +488,8 @@ a log naming the rule, and the remaining rules stay active.
 
 ```
 server.js                  express app, routes, host check
+limits.js                  the one turn size both the store and the chat endpoint
+                           share, because neither may import from the other
 config/ai-config.json      provider definitions
 config/tools.js            tool registry (one entry in V1)
 ai/audit-core.js           the interview turn, the matrix gate, the completion guard
