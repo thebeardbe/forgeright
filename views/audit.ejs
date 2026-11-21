@@ -42,6 +42,12 @@
         %>
         <div id="conversation">
             <div id="history" class="history"></div>
+            <%#
+                WHERE A REFUSED ANSWER IS SHOWN. Above the input, because that is the thing the
+                participant must act on: the text is put back in the box and this says why. Empty
+                and hidden until the server refuses a save; see showSaveProblem in public/js/audit.js.
+            %>
+            <div id="save-problem" class="problem hidden" role="alert" aria-live="assertive"></div>
             <div id="input-area" class="row">
                 <input type="text" id="input" placeholder="<%= strings.inputPlaceholder %>">
                 <button id="send-btn">&#10148;</button>

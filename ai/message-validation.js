@@ -20,6 +20,8 @@
  * limits CALLS, not the size of one, which is what these limits cover.
  */
 
+import { MAX_TURN_CHARS } from '../limits.js';
+
 /** The only roles a conversation has. Anything else is refused, never mapped. */
 export const ALLOWED_ROLES = Object.freeze(['user', 'assistant']);
 
@@ -39,7 +41,14 @@ export const MAX_MESSAGES = 200;
  * room for a participant pasting a long description of a process, and still bounds one turn to a few
  * thousand tokens rather than a whole context window.
  */
-export const MAX_CONTENT_CHARS = 8000;
+/**
+ * The longest one conversation turn may be.
+ *
+ * Re-exported from limits.js rather than written here as a literal, because /api/response bounds the
+ * same quantity for a stored transcript turn and the two must not drift. This name is kept because the
+ * chat endpoint's own wording and tests use it.
+ */
+export const MAX_CONTENT_CHARS = MAX_TURN_CHARS;
 
 /**
  * The total characters accepted across all turns in one request.
