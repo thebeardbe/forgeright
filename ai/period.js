@@ -2,6 +2,7 @@
  * Periods, and the two questions asked about a `timePerPeriod` value: a period that says the work is zero
  * is not the same as one that could not be measured.
  */
+import { MAX_HOURS_PER_PERIOD } from './field-shapes.js';
 
 /**
  * Both the structured object (`{ hours, period }`) and a description in the participant's own words are
@@ -13,6 +14,8 @@ export function isPeriod(value) {
     if (typeof value === 'string') return value.trim() !== '';
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     if (typeof value.hours !== 'number' || !Number.isFinite(value.hours) || value.hours <= 0) return false;
+    // A week holds 168 hours, so no person works more than that per period. See MAX_HOURS_PER_PERIOD.
+    if (value.hours > MAX_HOURS_PER_PERIOD) return false;
     return PERIODS_IN_WEEK[value.period] !== undefined;
 }
 
@@ -25,6 +28,7 @@ export function isPeriod(value) {
 export function timePerPeriodIsScorable(value) {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
         && typeof value.hours === 'number' && Number.isFinite(value.hours) && value.hours > 0
+        && value.hours <= MAX_HOURS_PER_PERIOD
         && PERIODS_IN_WEEK[value.period] !== undefined;
 }
 
