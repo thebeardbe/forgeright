@@ -397,8 +397,16 @@ live leak.
   `selectLiveTokenByValue` alone **0.033 ms**, `touchInvitationOpened` **0.068 ms**, and the
   whole `mayUseQuestionnaire` **0.358 ms** per turn (cold first 200 calls 0.467 ms).
   A reviewer measured **2.30 ms**; I could not reproduce that here and I am not quoting it as
-  fact, only as the figure that prompted this entry. The write is real either way, and it is
-  larger than the read it sits beside.
+  fact, only as the figure that prompted this entry. **THE TWO FIGURES DISAGREE BECAUSE THE
+  COST IS DISK LATENCY, NOT THE QUERY.** The reviewer measured `synchronous=OFF` at about
+  0.26 ms and `synchronous=FULL` at about 2.0 ms, because FULL waits for the write to reach the
+  disk and OFF does not. Both of their figures are correct on their own storage, so
+  do not treat either as a target. **Measured here**, setting the pragma on the store's own
+  connection over 400 calls each: FULL **0.408 ms** and OFF **0.363 ms** per call, a much
+  smaller gap because this container's disk acknowledges writes quickly. A laptop spinning disk
+  or a busy VPS would sit nearer the reviewer's numbers. THE RULE FOR THE NEXT READER: state
+  the storage and the pragma when a number is quoted, or a third figure will be measured and
+  the disagreement will be re-investigated from scratch.
   Not fixed here, deliberately: a read-only liveness path is its own change with its own
   review. Two options, neither taken yet:
   1. **A flag on `invitationForToken`** to skip the touch when the caller only needs to know
