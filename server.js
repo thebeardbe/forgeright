@@ -30,7 +30,7 @@ import { router as landingRouter } from './lib/landing.js';
 import { registerThemeRoute } from './lib/theme-route.js';
 import { shortInstant, shortDuration, responseTitle, responseWorkflow } from './lib/view-format.js';
 import { jsonForScript } from './lib/json-for-script.js';
-import { describeAddressSource } from './lib/auth/rate-limit.js';
+import { describeAddressSource, startRateLimitSweep } from './lib/auth/rate-limit.js';
 import { applySecurityHeaders } from './lib/security-headers.js';
 import { router as apiRouter } from './lib/routes-api.js';
 import { DEFAULT_TOOL_ID } from './config/tools.js';
@@ -330,6 +330,11 @@ const server = app.listen(PORT, HOST, () => {
     // WHICH ADDRESS THE RATE LIMITER IS KEYED ON. Behind a proxy with TRUST_PROXY unset, every visitor
     // shares one bucket and ten sign-in attempts lock out every admin. That is invisible until a user
     // reports it, so the sentence is printed at startup rather than left to be discovered.
+    // The limiter's map gains a key per address and per email, so it is swept on a timer. unref()ed,
+    // so it cannot keep the process alive at shutdown.
+    startRateLimitSweep();
+    console.log('[server] rate limits: sweeping expired keys once a minute');
+
     const addressSource = describeAddressSource(TRUST_PROXY);
     if (TRUST_PROXY.setting === false) console.warn(`[server] ${addressSource}`);
     else console.log(`[server] ${addressSource}`);
