@@ -167,8 +167,18 @@ function mergeParticipants(responses) {
                             : capParticipantString(declined.words, `weigh ${field} (declined)`)
                     );
                 }
-                // Anything else is a number, a list or a short phrase; strip control characters from
-                // its strings without capping, because the document budget covers the whole message.
+                // ANYTHING ELSE IS A NUMBER, A LIST OR A PLAIN STRING, and this comment used to say
+                // "strip control characters without capping, because the document budget covers the
+                // whole message". THE SECOND HALF WAS FALSE. The document budget caps the MESSAGE, not
+                // who spends it: a 50,000 character plain string in `task` was accepted by its field
+                // shape and reached the model whole, and one such field consumed the entire budget.
+                //
+                // The bound that was missing is now at the WRITE PATH, in lib/store/field-limits.js,
+                // where a field over its bound is REFUSED rather than truncated, so the store cannot
+                // hold one. Nothing here needs to cap it a second time, and a cap here would be the
+                // wrong tool anyway: by this point the participant has been told their answer was
+                // accepted. stripControlCharsDeep still runs, because a control character is not a
+                // size question.
                 return stripControlCharsDeep(value);
             })
             .filter((value) => value !== undefined && value !== null);
