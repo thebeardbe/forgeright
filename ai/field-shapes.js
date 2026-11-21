@@ -91,10 +91,48 @@ export function declinedIn(value) {
 }
 
 /**
+ * THE MOST ANY COUNT FIELD MAY HOLD, PER FIELD.
+ *
+ * A `count` used to accept any finite non-negative number, so `frequencyPerWeek: 1e300` counted as
+ * supplied. Each factor is finite, but `effortHoursPerWeek` multiplies them:
+ * frequency * minutes * people / 60. MEASURED, two values of 1e300 give Infinity, `Math.round` keeps it
+ * Infinity, and JSON serialises it to `null` - so a participant could dominate the ranking with a stored
+ * record that reads as "no value" and SORTS as NaN against another Infinity. A roadmap that sorts on NaN
+ * is worse than one that refuses the input.
+ *
+ * THE BOUNDS ARE MEASURED, not guessed:
+ *
+ *   frequencyPerWeek   MEASURED max in the demo store 40/week. The prompt's own worked example is
+ *                      "40 invoices a week", and monthly work is expressed as 0.25. 10000 is 250 times
+ *                      the largest real answer and covers a machine-generated poll every few seconds.
+ *   peopleAffected     MEASURED max 6. 100000 is a large plant; a country's population is not a team.
+ *   mistakesPerPeriod  MEASURED max 8. 100000, as for frequency: "how often it goes wrong" cannot
+ *                      exceed how often it happens by a meaningful factor.
+ *   hoursPerPeriod     MEASURED max 6 hours. 168 is the hours in a week, so one person cannot work
+ *                      more than a week per week; the period multiplier then scales it.
+ *
+ * A realistic answer at the top of its range is still accepted: 40/week, 6 people and 8 mistakes are far
+ * inside every bound. What is refused is a figure no description of work produces.
+ *
+ * Refused, not clamped: a clamped number is a false record presented as the participant's own figure.
+ */
+export const FIELD_MAXIMUMS = Object.freeze({
+    frequencyPerWeek: 10000,
+    peopleAffected: 100000,
+    mistakesPerPeriod: 100000,
+    minutesPerInstance: 100000
+});
+
+/** The most hours one period may carry. A week holds 168, so no person works more than that per week. */
+export const MAX_HOURS_PER_PERIOD = 168;
+
+/**
  * The shape each field must have to count as supplied; a wrong type counts as missing, so the interview
  * keeps asking rather than scoring a silent zero.
  *
- * `count` treats zero as a real answer while a negative count is not.
+ * `count` treats zero as a real answer while a negative count is not, and a count above its FIELD_MAXIMUMS
+ * entry is not supplied either: the bound is part of the contract, so a shape check that ignored it would
+ * be lying about what counts.
  */
 export const FIELD_SHAPES = Object.freeze({
     task: 'prose',
@@ -166,8 +204,13 @@ function hasShape(value, shape, field) {
             return Array.isArray(value) && value.length > 0
                 && value.every((entry) => typeof entry === 'string' && entry.trim() !== '');
 
-        case 'count':
-            return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+        case 'count': {
+            if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return false;
+            // A count above its bound is not supplied. Without this the declared shape accepts 1e300 and
+            // the effort product overflows to Infinity; see FIELD_MAXIMUMS.
+            const maximum = field !== undefined ? FIELD_MAXIMUMS[field] : undefined;
+            return maximum === undefined || value <= maximum;
+        }
 
         case 'steps':
             return Array.isArray(value) && value.length > 0 && value.every(stepIsComplete);
