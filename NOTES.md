@@ -430,6 +430,33 @@ live leak.
   path that does not return null at all, it falls back to `http://localhost:<PORT>` and is compared
   against, which is why a missing PUBLIC_BASE_URL makes every console write fail closed.
 
+- **N7: a false positive in the injection filter can strand an answer PERMANENTLY, and no route
+  releases it.** The filter is now narrow and measured (0 false positives in 46 honest answers on
+  `security-m1-injection-languages`), but the handling of a match has not changed and it is the fault
+  the red-team report names.
+  WHAT HAPPENS: a phrase in an answer that matches the filter makes `/api/chat` return
+  `{ status: 'rejected' }`, so the model is never called and the turn is not stored. If the phrase is
+  in the stored `data` instead, `runIdentification` and `runWeighing` screen it on EVERY call, the
+  round stays "not yet read", and `lib/auth/identify-response.js` logs "an admin can rejudge it".
+  **MEASURED, THAT IS FALSE:** a rejudge runs the same function on the same stored answer and is
+  refused identically, so the sentence tells an admin there is a way out when there is not.
+  A PARTICIPANT CANNOT FIX IT EITHER, and neither can an admin: `CORRECTABLE_FIELDS` in
+  `lib/store/corrections.js` is four NUMERIC fields, and a refused phrase lands in a PROSE field
+  (`task`, `trigger`, `currentState`, `frustration`, `mistakeConsequence`, step text), which no route
+  can edit.
+  THE SCREENING AT IDENTIFICATION IS NOT REDUNDANT AND MUST NOT BE REMOVED: the stored `data` is
+  never screened on the write path, and the prompt tells the model to record fields "in their words",
+  so identification is the last screen before the model reads those words a second time. I tried
+  removing it, measured that `data` reaches it unscreened, and reverted.
+  THREE WAYS OUT, none taken here, each its own change with its own review:
+  1. **An admin-visible "release" action** on a stranded answer, which re-runs identification with
+     the participant's text passed through unscreened and the fact recorded on the response.
+  2. **Narrow the refusal to the sentence**: tell the participant which phrase was refused and that
+     they can add a sentence saying it is a description, then accept a turn that only explains it.
+  3. **Record the match on the response and let identification proceed anyway**, with the match
+     logged, on the argument that the structural controls (strict schema validation, no tool access,
+     per-tenant data) are what actually contain a successful injection. The report's own preference.
+
 ## Next up in V1
 
 - **Guardrail demonstration.** A documented injection attempt against the intake
