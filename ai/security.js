@@ -86,7 +86,44 @@ const HOMOGLYPH_MAP = {
 };
 
 /**
- * Normalises text for pattern matching only, never for stored or displayed content.
+ * Characters that are INVISIBLE in a rendered string but break a substring match.
+ *
+ * MEASURED BEFORE THIS EXISTED: `ig\u200Bnore all previous instructions` did NOT match, while it reads
+ * as "ignore all previous instructions" to a person AND to a model. A zero-width space is not decoration
+ * to an attacker, it is the whole evasion.
+ *
+ * The ranges, and what each is:
+ *   \u200B-\u200F  zero-width space, non-joiner, joiner, and the LTR/RTL marks
+ *   \u202A-\u202E  the bidi embedding and override controls, which reorder a line's display
+ *   \u2060-\u2064  word joiner and the invisible operators
+ *   \uFEFF          zero-width no-break space, which is also a byte-order mark
+ *   \u00AD          soft hyphen: invisible unless the line breaks, and it breaks a word in two
+ *
+ * BIDI OVERRIDES ARE NOT ONLY AN EVASION. They can make a line DISPLAY in a different order from the one
+ * the model reads, so what a reviewer sees and what the filter sees are two different strings. Removing
+ * them here means the screen sees the same order a reader would.
+ */
+const INVISIBLE_CHARS = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF\u00AD]/g;
+
+/**
+ * Normalises text for pattern matching only, NEVER for stored or displayed content.
+ *
+ * THE SCREEN IS THE ONLY READER. A participant's words are stored exactly as they wrote them and shown
+ * back to them unchanged, so anything this function removes stays in the record. It exists so that the
+ * MATCHER cannot be defeated by a character nobody can see, not to tidy anybody's answer.
+ *
+ * The order matters:
+ *   1. homoglyphs are folded first, because NFKC does not turn a Cyrillic 'о' into a Latin 'o';
+ *   2. NFKC, which composes characters so 'ﬁ' and 'ⅼ' become the letters they look like;
+ *   3. invisible characters are removed, so `ig\u200Bnore` reads as `ignore`;
+ *   4. combining marks are dropped, so an accent cannot split a word;
+ *   5. whitespace is collapsed and the text is lowercased.
+ *
+ * WHAT A LEGITIMATE ANSWER LOOKS LIKE AFTERWARDS, and it is unchanged for a reader: a Dutch answer with
+ * "één" reaches the matcher as "een", an answer with a soft hyphen at a line break joins back into one
+ * word, and an answer containing a zero-width space matches the same patterns it would without one. All
+ * of those are still stored and shown with their original characters, because this value is never stored.
+ *
  * @param {string} text
  * @returns {string}
  */
@@ -94,6 +131,8 @@ export function normalizeForInspection(text) {
     let folded = '';
     for (const char of String(text)) folded += HOMOGLYPH_MAP[char] || char;
     return folded
+        .normalize('NFKC')
+        .replace(INVISIBLE_CHARS, '')
         .normalize('NFKD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/\s+/g, ' ')
