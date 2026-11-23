@@ -45,7 +45,7 @@ const SCRIPT = {
     en: [
         { q: 'What is the task that takes up the most time, and what starts one instance of it?', fields: ['task', 'trigger'] },
         { q: 'What is the first step, and which steps come after it?', fields: ['steps'] },
-        { q: 'How often does this happen, or is it more continuous work?', fields: ['frequencyPerWeek'] },
+        { q: 'How often do you do this yourself, or is it more continuous work?', fields: ['frequencyPerWeek'] },
         { q: 'How many people in the company are involved in this?', fields: ['peopleAffected'] },
         { q: 'On what basis do you decide when you have to make a call here?', fields: [] },
         { q: 'Who does the work go to next, and what does it wait on?', fields: ['handoffTo', 'waitsFor'] },

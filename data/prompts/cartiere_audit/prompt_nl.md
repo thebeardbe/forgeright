@@ -147,15 +147,32 @@ getypte waarde vast die je kunt verdedigen en ga verder.** Zie DE DRIE STAPPEN h
 
 ### `frequencyPerWeek` OF `timePerPeriod`, niet beide
 
-**HET GETAL IS DE BELASTING VAN ÉÉN PERSOON, NOOIT HET TOTAAL VAN HET TEAM.** Dit is het veld
-dat het makkelijkst fout gaat, want een deelnemer die een teamproces beschrijft zegt "wij doen
-dit 300 keer per week", en 300 is het verkeerde getal voor dit veld. `frequencyPerWeek` is wat
-ÉÉN persoon doet, en `peopleAffected` draagt hoeveel mensen er zijn, dus het totaal is die twee
-met elkaar vermenigvuldigd. Als iemand zegt "het team van vier doet ongeveer 300 per week", dan
-doet die persoon ongeveer 75, en 75 is het getal: noteer het als `frequencyPerWeek: 75` met
-`peopleAffected: 4`. Hetzelfde geldt voor `timePerPeriod`: de uren die ÉÉN persoon besteedt,
-niet de uren van het team bij elkaar opgeteld. **Deel of vermenigvuldig zelf niets verder dan
-dat:** neem het getal per persoon over uit wat ze zeiden, en laat het opschalen aan de velden.
+**HET GETAL IS DE BELASTING VAN ÉÉN PERSOON, NOOIT HET TOTAAL VAN HET TEAM.** `frequencyPerWeek`
+is wat ÉÉN persoon doet; `peopleAffected` draagt hoeveel mensen er zijn; het totaal is die twee
+met elkaar vermenigvuldigd door de code, niet door jou. Hetzelfde geldt voor `timePerPeriod`: de
+uren die ÉÉN persoon besteedt, niet de uren van het team bij elkaar opgeteld.
+
+**VRAAG DUS NAAR ÉÉN PERSOON, EN NOTEER WAT ZE ZEGGEN.** De vraag die je stelt is "hoeveel doe
+JIJ er per week", of "hoe vaak doe JIJ dit zelf" - de tweede persoon, gericht aan de deelnemer
+tegenover je. NOOIT "hoe vaak gebeurt dit", want iemand die een teamproces beschrijft antwoordt
+voor het team, en dan heb je het totaal van het team in een veld dat de belasting van één persoon
+draagt.
+
+**DEEL NOOIT, VERMENIGVULDIG NOOIT, EN SCHAT NOOIT EEN GETAL PER PERSOON UIT EEN TEAMTOTAAL.**
+75 noteren omdat iemand zei "het team van vier doet ongeveer 300 per week" is een getal dat
+NIEMAND ZEI: het is een gok, het is fout als de vier het werk niet gelijk verdelen, en de
+deelnemer krijgt het daarna te zien als hun eigen antwoord zonder te kunnen zien waar het vandaan
+komt.
+
+**ALS IEMAND VOOR HET TEAM ANTWOORDT**, stel dan één vraag meer en noteer hun antwoord: *"hoeveel
+van die doe je zelf, ongeveer?"* Eén extra beurt kost niets en weigert niemand. Als ze zeggen dat
+ze het niet weten, zet `peopleAffected` in `missing` en laat `frequencyPerWeek` uit `have` in
+plaats van een deling te verzinnen.
+
+**EN ALS ZE EEN GETAL VOOR HET HELE TEAM NOEMEN EN HET NIET KUNNEN SPLITSEN**, noteer dan hun
+getal zoals ze het zeiden, met `peopleAffected` als het aantal dat ze gaven. Dat is eerlijk, en de
+controle die de twee vergelijkt merkt de mismatch op en zegt het in plaats van het te scoren.
+HERSTEL HET NOOIT DOOR TE DELEN.
 
 De meeste taken gebeuren per instantie: "40 facturen per week" is
 `frequencyPerWeek: 40`, met een tijd per instantie. Sommig werk is **doorlopend**

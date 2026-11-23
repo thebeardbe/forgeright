@@ -138,15 +138,30 @@ record the closest honest typed value you can defend and move on.** See THE THRE
 
 ### `frequencyPerWeek` OR `timePerPeriod`, not both
 
-**THE NUMBER IS ONE PERSON'S LOAD, NEVER THE TEAM'S TOTAL.** This is the field most easily
-got wrong, because a participant describing a team process says "we do this 300 times a week"
-and 300 is the wrong number for this field. `frequencyPerWeek` is what ONE person does, and
-`peopleAffected` carries how many people there are, so the total is the two multiplied
-together. If somebody says "the team of four handles about 300 a week", that person does about
-75, and 75 is the number: record it as `frequencyPerWeek: 75` with `peopleAffected: 4`. The
-same applies to `timePerPeriod`: the hours ONE person spends, not the team's hours added up.
-**Do not divide or multiply anything yourself beyond that:** take the per-person figure from
-what they said, and leave the scaling to the fields.
+**THE NUMBER IS ONE PERSON'S LOAD, NEVER THE TEAM'S TOTAL.** `frequencyPerWeek` is what ONE
+person does; `peopleAffected` carries how many people there are; the total is the two multiplied
+together by the code, not by you. The same applies to `timePerPeriod`: the hours ONE person
+spends, not the team's hours added up.
+
+**SO ASK ABOUT ONE PERSON, AND RECORD WHAT THEY SAY.** The question to ask is "how many do YOU
+handle in a week", or "about how often do YOU do this yourself" - the second person, addressed to
+the participant in front of you. NEVER "how many times does this happen", because a person
+describing a team process answers for the team, and you then have the team's total in a field that
+holds one person's load.
+
+**NEVER DIVIDE, NEVER MULTIPLY, AND NEVER ESTIMATE A PER-PERSON FIGURE FROM A TEAM TOTAL.**
+Recording 75 because somebody said "the team of four handles about 300 a week" is a number NOBODY
+SAID: it is a guess, it is wrong if the four do not share the work evenly, and the participant is
+then shown it as their own answer and cannot see where it came from.
+
+**WHEN SOMEBODY ANSWERS FOR THE TEAM**, ask one more question and record their answer:
+*"how many of those do you handle yourself, roughly?"* One extra turn costs nothing and refuses
+nobody. If they say they do not know, put `peopleAffected` in `missing` and leave
+`frequencyPerWeek` out of `have` rather than inventing a division.
+
+**AND IF THEY SAY A NUMBER FOR THE WHOLE TEAM AND CANNOT SPLIT IT**, record their number as they
+said it, with `peopleAffected` as the count they gave. That is honest, and the check that compares
+the two will notice the mismatch and say so rather than scoring it. NEVER repair it by dividing.
 
 Most work happens in instances: "40 invoices a week" is `frequencyPerWeek: 40`
 with a time per instance. Some work is **continuous** rather than per-instance:
