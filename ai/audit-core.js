@@ -562,8 +562,11 @@ const FIELD_QUESTIONS = {
     task: 'What is the work, in your own words?',
     trigger: 'What starts one instance of this work?',
     steps: 'What are the steps, from beginning to end?',
-    frequencyPerWeek: 'About how many times a week does this happen?',
-    timePerPeriod: 'About how much time does this take per week?',
+    // ASK ABOUT ONE PERSON. "How many times does this happen" invites the team's total, which is then
+    // recorded in a field that holds one person's load. Both fallbacks say "you" for that reason; see
+    // the prompt's section on frequencyPerWeek.
+    frequencyPerWeek: 'About how many times a week do you do this yourself?',
+    timePerPeriod: 'About how much time do you spend on this in a week?',
     peopleAffected: 'Who else is involved in this?',
     handoffTo: 'Who does this go to next?',
     waitsFor: 'Does this wait on anything before it can proceed?',

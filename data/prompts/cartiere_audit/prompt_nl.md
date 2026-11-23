@@ -126,7 +126,7 @@ geleverd of ontbrekend.
 task                  het werk, in hun woorden - een zin, maar een echte
 trigger               wat één instantie ervan start
 steps[]               de volgorde, met per stap name, whatHappens, decidedHow en needsReasoning
-frequencyPerWeek OF timePerPeriod   hoeveel ervan is er - een getal, of uren per periode
+frequencyPerWeek OF timePerPeriod   de belasting van ÉÉN persoon - hoe vaak ÉÉN persoon het per week doet, of de uren die ÉÉN persoon per periode besteedt. NIET het totaal van het team
 ```
 
 **Al het andere mag proza zijn als het antwoord werkelijk geen getal of lijst is:**
@@ -146,6 +146,42 @@ in andere woorden: beslechtte hun antwoord het niet, leg dan de dichtstbijzijnde
 getypte waarde vast die je kunt verdedigen en ga verder.** Zie DE DRIE STAPPEN hierboven.
 
 ### `frequencyPerWeek` OF `timePerPeriod`, niet beide
+
+**HET GETAL IS DE BELASTING VAN ÉÉN PERSOON, NOOIT HET TOTAAL VAN HET TEAM.** `frequencyPerWeek`
+is wat ÉÉN persoon doet; `peopleAffected` draagt hoeveel mensen er zijn; het totaal is die twee
+met elkaar vermenigvuldigd door de code, niet door jou. Hetzelfde geldt voor `timePerPeriod`: de
+uren die ÉÉN persoon besteedt, niet de uren van het team bij elkaar opgeteld.
+
+**VRAAG DUS NAAR ÉÉN PERSOON, EN NOTEER WAT ZE ZEGGEN.** De vraag die je stelt is "hoeveel doe
+JIJ er per week", of "hoe vaak doe JIJ dit zelf" - de tweede persoon, gericht aan de deelnemer
+tegenover je. NOOIT "hoe vaak gebeurt dit", want iemand die een teamproces beschrijft antwoordt
+voor het team, en dan heb je het totaal van het team in een veld dat de belasting van één persoon
+draagt.
+
+**DEEL NOOIT, VERMENIGVULDIG NOOIT, EN SCHAT NOOIT EEN GETAL PER PERSOON UIT EEN TEAMTOTAAL.**
+75 noteren omdat iemand zei "het team van vier doet ongeveer 300 per week" is een getal dat
+NIEMAND ZEI: het is een gok, het is fout als de vier het werk niet gelijk verdelen, en de
+deelnemer krijgt het daarna te zien als hun eigen antwoord zonder te kunnen zien waar het vandaan
+komt.
+
+**ALS IEMAND VOOR HET TEAM ANTWOORDT**, stel dan één vraag meer en noteer hun antwoord: *"hoeveel
+van die doe je zelf, ongeveer?"* Eén extra beurt kost niets en weigert niemand.
+
+**ALS ZE HET NIET KUNNEN SPLITSEN, IS DAT EEN `declined` EN GEEN GETAL.** Noteer de frequentie als
+`{ "declined": "het team doet dit, niet ik" }` met hun eigen woorden, en zet NIETS in het veld dat
+de belasting van één persoon draagt. Dat is de eerlijke weergave van wat er gebeurde: het veld
+vraagt wat DEZE PERSOON doet, ze konden het niet zeggen, en een weigering is een echt antwoord dat
+het gesprek accepteert en niet meer naar vraagt.
+
+**NOTEER HET TEAMTOTAAL DAAR NOOIT.** Een teamtotaal in een veld dat de belasting van één persoon
+draagt is een record dat zichzelf tegenspreekt, en het opslaan wordt geweigerd wanneer het
+geschreven wordt, dus de deelnemer verliest de beurt en wint niets. De twee eerlijke uitkomsten
+zijn een getal per persoon dat ze zelf gaven, of een weigering. Er is geen derde.
+
+**EEN TEAMLEIDER DIE ZELF GEEN VAN HET WERK DOET IS HETZELFDE GEVAL.** Als ze zeggen dat het werk
+door hun team gedaan wordt en niet door hen, dan is dat een weigering: noteer het met die woorden.
+Noteer geen getal voor werk dat ze nooit doen, en zet geen `0`, want nul betekent dat het proces
+helemaal niet gebeurt.
 
 De meeste taken gebeuren per instantie: "40 facturen per week" is
 `frequencyPerWeek: 40`, met een tijd per instantie. Sommig werk is **doorlopend**

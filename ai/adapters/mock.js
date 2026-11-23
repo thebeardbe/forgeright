@@ -35,7 +35,7 @@ const SCRIPT = {
     nl: [
         { q: 'Welke taak kost je het meest, en wat start er één keer zo\'n taak?', fields: ['task', 'trigger'] },
         { q: 'Welke stappen doorloop je daarbij, van begin tot eind?', fields: ['steps'] },
-        { q: 'Hoe vaak komt dit voor, of is het meer doorlopend werk?', fields: ['frequencyPerWeek'] },
+        { q: 'Hoe vaak doe je dit zelf, of is het meer doorlopend werk?', fields: ['frequencyPerWeek'] },
         { q: 'Hoeveel mensen in het bedrijf zijn hierbij betrokken?', fields: ['peopleAffected'] },
         { q: 'Waarop baseer je je beslissing als je hier een knoop doorhakt?', fields: [] },
         { q: 'Naar wie gaat het werk daarna, en waar wacht het op?', fields: ['handoffTo', 'waitsFor'] },
@@ -45,7 +45,7 @@ const SCRIPT = {
     en: [
         { q: 'What is the task that takes up the most time, and what starts one instance of it?', fields: ['task', 'trigger'] },
         { q: 'What is the first step, and which steps come after it?', fields: ['steps'] },
-        { q: 'How often does this happen, or is it more continuous work?', fields: ['frequencyPerWeek'] },
+        { q: 'How often do you do this yourself, or is it more continuous work?', fields: ['frequencyPerWeek'] },
         { q: 'How many people in the company are involved in this?', fields: ['peopleAffected'] },
         { q: 'On what basis do you decide when you have to make a call here?', fields: [] },
         { q: 'Who does the work go to next, and what does it wait on?', fields: ['handoffTo', 'waitsFor'] },
@@ -55,7 +55,7 @@ const SCRIPT = {
     fr: [
         { q: 'Quelle tâche vous prend le plus de temps, et qu\'est-ce qui déclenche une occurrence ?', fields: ['task', 'trigger'] },
         { q: 'Quelles étapes suivez-vous, du début à la fin ?', fields: ['steps'] },
-        { q: 'À quelle fréquence cela arrive-t-il, ou est-ce un travail continu ?', fields: ['frequencyPerWeek'] },
+        { q: 'À quelle fréquence faites-vous cela vous-même, ou est-ce un travail continu ?', fields: ['frequencyPerWeek'] },
         { q: 'Combien de personnes dans l\'entreprise y participent ?', fields: ['peopleAffected'] },
         { q: 'Sur quelle base décidez-vous quand il faut trancher ici ?', fields: [] },
         { q: 'À qui le travail passe-t-il ensuite, et qu\'attend-il ?', fields: ['handoffTo', 'waitsFor'] },

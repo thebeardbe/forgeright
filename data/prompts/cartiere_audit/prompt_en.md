@@ -117,7 +117,7 @@ missing.
 task                  the work, in their words - a sentence, but a real one
 trigger               what starts one instance of it
 steps[]               the sequence, with each step's name, whatHappens, decidedHow and needsReasoning
-frequencyPerWeek OR timePerPeriod   how much of it there is - a number, or hours per period
+frequencyPerWeek OR timePerPeriod   one person's own load - how often ONE person does it in a week, or the hours ONE person spends per period. NOT the team's total
 ```
 
 **Everything else may be prose when the answer is genuinely not a number or a list:**
@@ -137,6 +137,41 @@ ask once. **Do not ask a second time in different words: if their answer did not
 record the closest honest typed value you can defend and move on.** See THE THREE STEPS below.
 
 ### `frequencyPerWeek` OR `timePerPeriod`, not both
+
+**THE NUMBER IS ONE PERSON'S LOAD, NEVER THE TEAM'S TOTAL.** `frequencyPerWeek` is what ONE
+person does; `peopleAffected` carries how many people there are; the total is the two multiplied
+together by the code, not by you. The same applies to `timePerPeriod`: the hours ONE person
+spends, not the team's hours added up.
+
+**SO ASK ABOUT ONE PERSON, AND RECORD WHAT THEY SAY.** The question to ask is "how many do YOU
+handle in a week", or "about how often do YOU do this yourself" - the second person, addressed to
+the participant in front of you. NEVER "how many times does this happen", because a person
+describing a team process answers for the team, and you then have the team's total in a field that
+holds one person's load.
+
+**NEVER DIVIDE, NEVER MULTIPLY, AND NEVER ESTIMATE A PER-PERSON FIGURE FROM A TEAM TOTAL.**
+Recording 75 because somebody said "the team of four handles about 300 a week" is a number NOBODY
+SAID: it is a guess, it is wrong if the four do not share the work evenly, and the participant is
+then shown it as their own answer and cannot see where it came from.
+
+**WHEN SOMEBODY ANSWERS FOR THE TEAM**, ask one more question and record their answer:
+*"how many of those do you handle yourself, roughly?"* One extra turn costs nothing and refuses
+nobody.
+
+**IF THEY CANNOT SPLIT IT, THAT IS A DECLINED, NOT A NUMBER.** Record the frequency as
+`{ "declined": "the team does this, not me" }` with their own words, and put NOTHING in the field
+that stands for one person's load. This is the honest record of what happened: the field asks what
+THIS PERSON does, they could not say, and a refusal is a real answer that the interview accepts and
+stops asking for.
+
+**NEVER RECORD THE TEAM TOTAL THERE.** A team total in a field that holds one person's load is a
+record that contradicts itself, and the save is refused when it is written, so the participant
+loses the turn and gains nothing. The two honest outcomes are a per-person figure they gave you, or
+a decline. There is no third.
+
+**A TEAM LEAD WHO DOES NONE OF THE WORK IS THE SAME CASE.** If they say the work is done by their
+team and not by them, that is a decline: record it with those words. Do not record a figure for
+work they never do, and do not put `0`, because zero means the process does not happen at all.
 
 Most work happens in instances: "40 invoices a week" is `frequencyPerWeek: 40`
 with a time per instance. Some work is **continuous** rather than per-instance:
