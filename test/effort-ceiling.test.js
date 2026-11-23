@@ -65,10 +65,15 @@ const wf = (frequencyPerWeek, minutesPerInstance, peopleAffected) => ({
 // --- the per-instance ceiling: below, at, above ---
 
 test('minutesPerInstance: 10079 and 10080 are accepted, 10081 is refused', () => {
-    assert.deepEqual(checkEffortCeiling(wf(40, 10079, 1)), { ok: true }, 'one minute under');
-    assert.deepEqual(checkEffortCeiling(wf(40, 10080, 1)), { ok: true }, 'exactly at the ceiling');
+    // FREQUENCY 1, not 40, so the consistency rule cannot fire first and this pins the PER-INSTANCE
+    // bound on its own. frequencyPerWeek is ONE PERSON's load, so 40 occurrences of a week-long instance
+    // is 40 weeks of work in a week, which consumes the ceiling it is meant to be testing beside.
+    // At frequency 1, 10080 minutes is exactly one person's whole week: still consistent, still inside
+    // the per-instance bound.
+    assert.deepEqual(checkEffortCeiling(wf(1, 10079, 1)), { ok: true }, 'one minute under');
+    assert.deepEqual(checkEffortCeiling(wf(1, 10080, 1)), { ok: true }, 'exactly at the ceiling');
 
-    const over = checkEffortCeiling(wf(40, 10081, 1));
+    const over = checkEffortCeiling(wf(1, 10081, 1));
     assert.equal(over.ok, false, 'one minute over');
     assert.equal(over.limit, MAX_MINUTES_PER_INSTANCE);
     assert.equal(over.actual, 10081);
@@ -87,12 +92,18 @@ test('100000 minutes for one instance is refused, and the reason says a week', (
 // --- the effort ceiling: below, at, above ---
 
 test('the effort ceiling is a strict inequality: at it passes, one hour over is refused', () => {
-    // Constructed so the per-instance ceiling cannot fire first: one minute each, a large frequency.
-    const atCeiling = (MAX_EFFORT_HOURS_PER_WEEK * 60) / 1;
-    assert.deepEqual(checkEffortCeiling(wf(atCeiling, 1, 1)), { ok: true },
+    // TO REACH THE CEILING AT ALL, the record must first survive the consistency rule, which allows at
+    // most peopleAffected x 168. So the fixture names 1000000 people: their capacity IS the ceiling, and
+    // the effort is built to land exactly on it. This is the only shape in which the ceiling can fire,
+    // and it cannot arrive from a participant - peopleAffected is bounded at 100000 on the write path.
+    // It is reachable from /api/score, which does not apply the field bounds, which is why the ceiling
+    // is kept.
+    const PEOPLE = 1_000_000;
+    const atCeiling = (MAX_EFFORT_HOURS_PER_WEEK * 60) / PEOPLE;
+    assert.deepEqual(checkEffortCeiling(wf(atCeiling, 1, PEOPLE)), { ok: true },
         `exactly ${MAX_EFFORT_HOURS_PER_WEEK} h/week is accepted`);
 
-    const over = checkEffortCeiling(wf(atCeiling + 60, 1, 1));
+    const over = checkEffortCeiling(wf(atCeiling + 60, 1, PEOPLE));
     assert.equal(over.ok, false, 'and 60 minutes more is refused');
     assert.equal(over.limit, MAX_EFFORT_HOURS_PER_WEEK);
 });
@@ -124,24 +135,57 @@ test('the demo\u2019s largest real product, 44 h/week, is ACCEPTED', () => {
     assert.deepEqual(checkEffortCeiling(demoLargest), { ok: true }, 'and it is accepted');
 });
 
-test('a CALL CENTRE - 100,000 occurrences of 4 minutes across 200 people - is ACCEPTED', () => {
-    // A process is a KIND of work, and its hours are the total across everyone who does it, so a large
-    // operation legitimately has a large total. A ceiling on the total alone would refuse this.
-    const callCentre = wf(100_000, 4, 200);
+// --- the per-person reading, and the team total that is now refused ---
+//
+// frequencyPerWeek is ONE PERSON'S LOAD, not the organisation's total. The prompt says so in both
+// languages, and the demo confirms it: 40 invoices a week x 22 minutes is 14.7 hours for one person,
+// and 44 across three. These two fixtures were first written with the TEAM TOTAL in that field, which
+// is why they appeared to be refused by a consistency rule: 100,000 calls a week each, for 200 people,
+// is 39.7 weeks of work per person per week. The operation was real; the figure was in the wrong
+// reading. Both readings are asserted below, so the difference cannot come back unnoticed.
+
+test('a CALL CENTRE described PER PERSON - 500 calls each, 4 minutes, 200 people - is ACCEPTED', () => {
+    // 100,000 calls a week across 200 people is 500 each. At 4 minutes that is 33.3 hours per person per
+    // week, and 6,667 hours in total, well inside the 33,600 those 200 people can work.
+    const callCentre = wf(500, 4, 200);
 
     const hours = effortHoursPerWeek(callCentre);
-    assert.equal(Math.round(hours * 100) / 100, 1_333_333.33, 'measured 1,333,333.33 h/week');
+    assert.equal(Math.round(hours * 100) / 100, 6_666.67, 'measured 6,666.67 h/week');
     assert.deepEqual(checkEffortCeiling(callCentre), { ok: true }, 'and it is accepted');
 });
 
-test('a NATIONAL SERVICE - 10,000 occurrences of 10 minutes across 20,000 people - is ACCEPTED', () => {
-    // The scenario that refused a tighter first ceiling. Refusing a real operation is worse than
-    // allowing a large one, which is why the ceiling is set by what a process could be.
-    const national = wf(10_000, 10, 20_000);
+test('the SAME CALL CENTRE written as a TEAM TOTAL - 100,000 each - is REFUSED', () => {
+    // THE TEST THAT EARNS THE RULE ITS PLACE. This payload is the same operation with the organisation's
+    // total in a per-person field. It scores 200 times too high, which is exactly the harm: 1,333,333
+    // h/week claimed by 200 people who can work 33,600 between them.
+    const teamTotal = wf(100_000, 4, 200);
+
+    const hours = effortHoursPerWeek(teamTotal);
+    assert.equal(Math.round(hours * 100) / 100, 1_333_333.33, 'the mis-stated figure, for the record');
+    const problem = checkEffortCeiling(teamTotal);
+    assert.equal(problem.ok, false, 'refused');
+    assert.match(problem.reason, /200 people do this/, 'naming the people');
+    assert.match(problem.reason, /1,333,333/, 'and the hours they would have to work');
+    assert.match(problem.reason, /33,600/, 'and what those people can actually work');
+});
+
+test('a NATIONAL SERVICE described PER PERSON - 0.5 occurrences each, 10 minutes, 20,000 people - is ACCEPTED', () => {
+    // 10,000 occurrences a week across 20,000 people is 0.5 each. At 10 minutes that is 5 minutes per
+    // person per week, and 1,667 hours in total, far inside the 3,360,000 those people can work.
+    const national = wf(0.5, 10, 20_000);
 
     const hours = effortHoursPerWeek(national);
-    assert.equal(Math.round(hours * 100) / 100, 33_333_333.33, 'measured 3.3e7 h/week');
+    assert.equal(Math.round(hours * 100) / 100, 1_666.67, 'measured 1,666.67 h/week');
     assert.deepEqual(checkEffortCeiling(national), { ok: true }, 'and it is accepted');
+});
+
+test('the SAME NATIONAL SERVICE written as a TEAM TOTAL - 10,000 each - is REFUSED', () => {
+    const teamTotal = wf(10_000, 10, 20_000);
+    const problem = checkEffortCeiling(teamTotal);
+
+    assert.equal(problem.ok, false, 'refused');
+    assert.match(problem.reason, /20,000 people do this/, 'naming the people');
+    assert.match(problem.reason, /33,333,333/, 'and the hours they would have to work');
 });
 
 test('the national scenario is well inside the ceiling, not merely under it', () => {
@@ -327,13 +371,26 @@ test('an HONEST workflow still scores 200 - the control against "refuse everythi
 });
 
 test('the national-scale workflow is accepted by /api/score too, not only by the checker', async () => {
-    // The acceptance case through the real door: a bound that refuses this is a finding.
+    // The acceptance case through the real door: a bound that refuses this is a finding. PER PERSON, as
+    // the prompt states the field: 10,000 occurrences across 20,000 people is 0.5 each.
+    const res = await postJson('/api/score', {
+        participantToken: TOKEN,
+        audit: { workflows: [{ ...wf(0.5, 10, 20_000), title: 'A national service' }] }
+    });
+
+    assert.equal(res.status, 200, 'a national-scale operation is scored');
+});
+
+test('the TEAM-TOTAL version of the same workflow is refused by /api/score', async () => {
+    // The other half of the pair above, through the same door: the mis-stated payload that would score
+    // 20,000 times too high is refused rather than scored.
     const res = await postJson('/api/score', {
         participantToken: TOKEN,
         audit: { workflows: [{ ...wf(10_000, 10, 20_000), title: 'A national service' }] }
     });
 
-    assert.equal(res.status, 200, 'a national-scale operation is scored');
+    assert.equal(res.status, 400, 'refused');
+    assert.match(res.text, /not believable/i, 'and it says a figure is the problem');
 });
 
 // ===========================================================================
