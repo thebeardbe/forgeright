@@ -293,9 +293,11 @@ test('BOTH doors refuse the SAME impossible payload', async () => {
     assert.equal(viaScore.status, 400, '/api/score refuses it');
 });
 
-test('and both doors give the SAME REASON, because they call one function', async () => {
-    // The reason string comes from checkEffortCeiling in both cases, so the two doors cannot say
-    // different things about the same figure.
+test('and both doors NAME THE SAME FIGURE, though they speak to different readers', async () => {
+    // The two doors now give DIFFERENT sentences on purpose: /api/response explains the misreading to a
+    // participant who has just been refused, and /api/score says a figure is not believable to a caller
+    // with no participant behind it. What must not differ is the FACTS, so this pins the figure both
+    // carry rather than the wording, which is what it really meant.
     const viaResponse = await postJson('/api/response', {
         token: TOKEN, data: { task: 'Entering invoices', ...IMPOSSIBLE }
     });
@@ -309,9 +311,11 @@ test('and both doors give the SAME REASON, because they call one function', asyn
     const responseBody = JSON.parse(viaResponse.text);
     const scoreBody = JSON.parse(viaScore.text);
 
-    assert.match(responseBody.error, /100000 minutes/, '/api/response carries the figure');
+    assert.match(responseBody.error, /100,000 minutes/, '/api/response carries the figure');
     assert.match(scoreBody.error, /100000 minutes/, '/api/score carries the same figure');
     assert.match(scoreBody.error, /more than a week of work/i, 'and the same test of it');
+    assert.notEqual(responseBody.error, scoreBody.error,
+        'but the wording differs: one explains to a person, the other reports to a caller');
 });
 
 // ===========================================================================
@@ -487,16 +491,49 @@ test('an address in an OPEN organisation still mints a token and mails a link', 
 test('the impossible-figures refusal has its own wording, and does not describe a length', async () => {
     // The length wording produces "Use no more than 10080 at most", which tells a participant to shorten
     // an answer that is not long.
+    //
+    // THE SENTENCE NO LONGER SAYS "cannot be true", and that assertion was WRONG rather than merely
+    // out of date: the figures usually CAN be true, and the record is what is wrong. A team total read
+    // as a per-person figure refuses a record built from an accurate sentence. So the participant's
+    // sentence names the misreading and asks for the one number that would settle it, and this test now
+    // pins that it EXPLAINS rather than accuses.
     const res = await postJson('/api/response', {
         token: TOKEN, data: { task: 'Entering invoices', ...IMPOSSIBLE }
     });
     const body = JSON.parse(res.text);
 
     assert.equal(res.status, 400);
-    assert.match(body.error, /cannot be true/i, 'it says the figures cannot be true');
+    // IMPOSSIBLE is a per-INSTANCE case (40 occurrences of a 100,000-minute instance), so the participant
+    // sentence here is the one about a single occurrence. The consistency case - a team total read as a
+    // per-person figure - has its own sentence, asserted in its own test below.
+    assert.match(body.error, /100,000 minutes for one occurrence/i, 'it names the figure it worked out');
+    assert.match(body.error, /longer than a working week/i, 'and what it exceeds, in words');
+    assert.match(body.error, /how long one occasion takes you/i, 'and asks for what would settle it');
+    assert.equal(/cannot be true/i.test(body.error), false, 'it does not accuse the participant');
     assert.equal(/no more than/i.test(body.error), false, 'it does not say "no more than"');
     assert.equal(/is too long/i.test(body.error), false, 'nor that the answer is too long');
     assert.equal(/characters/i.test(body.error), false, 'nor talk about characters');
+});
+
+test('the CONSISTENCY refusal explains the misreading rather than accusing', async () => {
+    // The case the branch exists for: a team total read as a per-person figure. The figures CAN be true,
+    // so "cannot be true" was wrong. This sentence names the misreading and asks for the number that
+    // would settle it, which is the difference between a record they can argue with and one they cannot.
+    const res = await postJson('/api/response', {
+        token: TOKEN,
+        data: {
+            task: 'Handling supplier calls', title: 'Handling supplier calls',
+            frequencyPerWeek: 75, minutesPerInstance: 150, peopleAffected: 4
+        }
+    });
+    const body = JSON.parse(res.text);
+
+    assert.equal(res.status, 400);
+    assert.match(body.error, /750 hours a week/i, 'it names the figure it worked out');
+    assert.match(body.error, /per person/i, 'and names the reading that usually causes it');
+    assert.match(body.error, /handle yourself/i, 'and asks for the number that would settle it');
+    assert.equal(/cannot be true/i.test(body.error), false, 'it does not accuse the participant');
+    assert.equal(/too long/i.test(body.error), false, 'and it is not the length wording');
 });
 
 test('the LENGTH refusal does not talk about figures - the two wordings are distinct', async () => {

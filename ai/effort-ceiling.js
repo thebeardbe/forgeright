@@ -123,12 +123,41 @@ function checkConsistency(workflow, label) {
         capacity,
         // Both counts are formatted, so "20,000 people" and "3,360,000 hours" read the same way. A raw
         // integer beside a separated one is the kind of detail that makes a sentence look careless.
+        //
+        // THIS SENTENCE IS FOR AN OPERATOR AND FOR THE API. It is accurate but it ACCUSES: the figures
+        // can be true and the record still wrong, which is the usual case when a team total has been
+        // written into a per-person field. The participant gets `participantMessage` instead.
         reason: `${label} says ${formatHours(people)} people do this, and the figures work out to `
             + `${formatHours(hours)} hours a week. ${formatHours(people)} people cannot work more than `
             + `${formatHours(capacity)} hours between them in a week.`,
+        // THE PARTICIPANT'S SENTENCE, and it blames nobody. A person reading it has just been told their
+        // honest answer is refused, and the likeliest cause is that the number reached the record with a
+        // different reading from the one they gave. So it NAMES THE MISREADING, says what the two figures
+        // were, and asks for the one number that would settle it. No em dashes, short sentences.
+        participantMessage: participantSentence(people, hours, capacity),
         limit: capacity,
         actual: hours
     };
+}
+
+/**
+ * What the participant is told when their record contradicts itself.
+ *
+ * Separate from `reason` because the two have different readers and different jobs. `reason` logs the
+ * facts for an operator; this explains the misreading to the person who gave the answer. It must not
+ * accuse, and it must give them something to supply rather than something to feel bad about.
+ *
+ * @param {number} people
+ * @param {number} hours
+ * @param {number} capacity
+ * @returns {string}
+ */
+function participantSentence(people, hours, capacity) {
+    return 'I recorded this as figures that work out to ' + formatHours(hours) + ' hours a week, '
+        + 'which is more than ' + formatHours(people) + ' people can work between them '
+        + '(' + formatHours(capacity) + ' hours). The usual reason is that a number for the whole '
+        + 'team has been read as a number per person. If the figure was what all of you do together, '
+        + 'tell me roughly how much you handle yourself and I will correct it.';
 }
 
 /**
@@ -183,6 +212,14 @@ export function checkEffortCeiling(workflow, label = 'this process') {
             ok: false,
             reason: `${label} says one instance takes ${Math.round(minutes)} minutes, which is more than `
                 + `a week of work (${MAX_MINUTES_PER_INSTANCE} minutes).`,
+            // The participant's version names the one occurrence and asks for a realistic figure. "More
+            // than a week of work" is already a sentence they can act on; this says it without the
+            // internal ceiling number.
+            // Named, because a participant with several processes needs to know which answer to fix.
+            participantMessage: `${label} works out to ${formatHours(minutes)} minutes for one `
+                + 'occurrence, which is longer than a working week. The usual reason is that the time '
+                + 'for the whole job has been read as the time for one piece of it. Tell me roughly how '
+                + 'long one occasion takes you and I will correct it.',
             limit: MAX_MINUTES_PER_INSTANCE,
             actual: minutes
         };
@@ -199,6 +236,11 @@ export function checkEffortCeiling(workflow, label = 'this process') {
             ok: false,
             reason: `${label} works out to ${Math.round(hours)} hours a week, which is more than any `
                 + `process can cost (${MAX_EFFORT_HOURS_PER_WEEK}).`,
+            // Only reachable from /api/score, which has no participant behind it, so this is written for
+            // completeness rather than because a person will read it.
+            participantMessage: 'These figures work out to ' + formatHours(hours) + ' hours a week, '
+                + 'which is more than any one process can cost. Please check the numbers and send the '
+                + 'answer again.',
             limit: MAX_EFFORT_HOURS_PER_WEEK,
             actual: hours
         };
@@ -210,6 +252,9 @@ export function checkEffortCeiling(workflow, label = 'this process') {
         return {
             ok: false,
             reason: `${label} works out to a figure too large to compute.`,
+            participantMessage: 'These figures work out to a number too large to use. Please check the '
+                + 'frequency and the time for one occasion, and send the answer again. Your earlier '
+                + 'answers are saved.',
             limit: MAX_EFFORT_HOURS_PER_WEEK,
             actual: hours
         };
