@@ -393,8 +393,21 @@ than an internal one.
 **It is `https://` even though the app itself speaks http inside your network.** The
 scheme here is what the browser sees.
 
-If this is wrong, mail links point at a host nobody can reach, and redirects land
-somewhere unexpected. The app refuses a value it cannot parse.
+**IT IS REQUIRED FOR WRITES, NOT ONLY FOR LINKS.** Every console form posts back to
+this app, and the CSRF guard compares the browser's `Origin` header with this value. If
+`PUBLIC_BASE_URL` is unset the app assumes `http://localhost:<PORT>`, which no real
+visitor's origin matches, so **every console write is refused**:
+
+```
+This request did not come from this site, so it was not carried out.
+```
+
+The console is then read-only for everyone: you can sign in and read every page, and
+nothing you submit is saved. The app says so in its startup log, so look for
+`CONSOLE WRITES WILL BE REFUSED` before reporting that saving is broken.
+
+If this is wrong, in the other direction, mail links point at a host nobody can reach
+and redirects land somewhere unexpected. The app refuses a value it cannot parse.
 
 ### Who may run the questionnaire: an invitation, and nothing else
 
@@ -736,7 +749,7 @@ one line in `paletteVars`.
 | `PUBLIC_PATH` | derived | Path the app is **visible** at: the prefix every emitted URL and the session cookie carry. Normally derived from `PUBLIC_BASE_URL`, so it needs no value. Set it only to override, and it must then agree with that URL. |
 | `SESSION_SECRET` | none | Signs the admin session cookie. **Required**: the server refuses to start without it. |
 | `fr_theme` (cookie) | follows the system | The chosen palette, or `system`. |
-| `PUBLIC_BASE_URL` | none | Absolute address of this installation. Used for mailed sign-in links, as the HTTPS redirect target, and as the source of the public path. Include the prefix. |
+| `PUBLIC_BASE_URL` | none | Absolute address of this installation. Used for mailed sign-in links, the HTTPS redirect target, the source of the public path, **and the origin every console write is checked against. Leave it unset and every console write is REFUSED, so the console becomes read-only for everyone.** Include the prefix. |
 | `LOGIN_LINK_TTL_MINUTES` | `15` | How long a sign-in link stays valid. A link is single-use regardless. |
 | `SESSION_TTL_HOURS` | `12` | How long an admin session lasts. |
 | `MAIL_SENDER` | `console` | `console` prints to stdout; `proton` sends through `proton-cli`. An unknown value refuses to start. **Set `proton` to actually send mail.** |
