@@ -39,10 +39,17 @@
  *     100000, so consistency can at most admit 1.68e7 h/week and this ceiling could never fire. It would
  *     be dead code there.
  *
- *     BUT /api/score DOES NOT APPLY THE FIELD BOUNDS: it is a client-supplied payload, and
- *     checkAnswerSizes is only called from the store. So a client can send peopleAffected 2000000, which
- *     is perfectly consistent (3.36e8 hours allowed, 2e6 claimed) and still absurd. This ceiling is the
- *     only absolute backstop on that door, so it stays.
+ *     AND NOW IT IS UNREACHABLE FROM BOTH DOORS, which is worth recording so nobody wonders. It used to
+ *     be the only backstop on /api/score, because that door did not apply the field bounds and a client
+ *     could send peopleAffected 2000000, which is perfectly consistent and still absurd. /api/score NOW
+ *     APPLIES checkAnswerSizes, so peopleAffected is capped at 100000 there too, the largest effort a
+ *     consistent record can reach is 100000 x 168 = 1.68e7, and this ceiling sits ten times above it.
+ *
+ *     SO IT IS DEAD CODE, measured rather than suspected, and it is KEPT deliberately. Removing it would
+ *     mean the only thing bounding an effort is the consistency rule, which is a statement about the
+ *     record and not an absolute; a future change that loosens peopleAffected, or a door added later that
+ *     forgets checkAnswerSizes, would then have nothing behind it. It costs one comparison and it is the
+ *     last line. If somebody later proves it can fire, the header above is what they should correct.
  *
  *     IT IS TRIED LAST, after consistency and after the per-instance bound, because those two produce a
  *     sentence about the participant's own record and this one can only say "more than any process can
