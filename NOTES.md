@@ -316,7 +316,8 @@ The reviewer's full report is the source for these. Ordered by what matters.
   unscreened and it is reachable. The fix is to rebuild assistant turns server-side from
   stored state, which is a change to round reassembly, not a validation rule.
 
-- **S3: a participant field that is a plain string is not capped, only `{ said: ... }`
+- **S3 (FIXED on `security-s3-field-bound`; kept for the record): a participant field that is a plain
+  string is not capped, only `{ said: ... }`
   prose is.** `mergeParticipants` strips control characters from every other value and
   bounds nothing, on the stated grounds that "the document budget covers the whole
   message". Measured: a 50,000-character plain string in `task` reached the model whole at
@@ -343,7 +344,8 @@ live leak.
   sends `location.href`, and nothing stripped a path. The questionnaire and the token form
   now opt out of counting, and every other page sets `data-exclude-search`.
 
-- **S4: an EXPIRED participant token still passes `mayUseQuestionnaire`.**
+- **S4 (FIXED on `security-m3-m5-bounds`; kept for the record): an EXPIRED participant token still
+  passes `mayUseQuestionnaire`.**
   `routeForParticipantToken` queries `token_index` and does not look at `expires_at`,
   while `/api/response` goes through `invitationForToken`, which does filter. **So an
   expired link can still start an interview and spend a full provider budget.** It
@@ -438,7 +440,8 @@ live leak.
   could edit a prose field. The interview turn still refuses, and an admin's own argument and the
   admin-authored process names still refuse, because a person is present at those to rephrase.
   The patterns were narrowed at the same time: 10/10 of the false positives are allowed, 29/29 honest
-  answers are allowed, and 18/18 instruction-shaped sentences are still caught.
+  answers are allowed, and all 13 canonical entries in test/security.test.js plus the 28 per-rule
+  cases are still caught. (An earlier draft said "18/18"; nothing in the tree produces 18.)
   WHAT REMAINS, and it is not small: THE FLAG IS ONLY IN THE LOG. An admin looking at the answers view
   cannot tell a flagged turn from a quiet one. Showing it needs a column on `response`, and this schema
   applies CREATE TABLE IF NOT EXISTS on every open, so a new column needs a real migration. That is
