@@ -32,6 +32,7 @@ import { shortInstant, shortDuration, responseTitle, responseWorkflow } from './
 import { jsonForScript } from './lib/json-for-script.js';
 import { describeAddressSource, startRateLimitSweep } from './lib/auth/rate-limit.js';
 import { assertEveryShapeIsBounded } from './lib/store/field-limits.js';
+import { warnIfPublicBaseUrlUnset } from './lib/auth/public-base-url.js';
 import { computeAssetVersion, VERSIONED_SCRIPTS } from './lib/asset-version.js';
 import { FIELD_SHAPES } from './ai/field-shapes.js';
 import { applySecurityHeaders } from './lib/security-headers.js';
@@ -352,6 +353,11 @@ const server = app.listen(PORT, HOST, () => {
 
     // The trust boundary decides whether a request counts as secure and is otherwise invisible.
     console.log(`[server] trust proxy: ${TRUST_PROXY.summary}`);
+
+    // SAID AT STARTUP, not lazily on the first page that builds a link. MEASURED: with PUBLIC_BASE_URL
+    // unset every console write is refused by the CSRF guard, so the console is read-only for everyone
+    // and the operator's log would otherwise be clean. The sentence states that consequence.
+    warnIfPublicBaseUrlUnset();
     // WHICH ADDRESS THE RATE LIMITER IS KEYED ON. Behind a proxy with TRUST_PROXY unset, every visitor
     // shares one bucket and ten sign-in attempts lock out every admin. That is invisible until a user
     // reports it, so the sentence is printed at startup rather than left to be discovered.
