@@ -561,10 +561,19 @@ test('with PUBLIC_BASE_URL unset, the guard compares against http://localhost:PO
     //   PUBLIC_BASE_URL unset, POST no headers                       -> 302  ALLOWED
     //
     // SO THE ANSWER IS NOT "COMPARES AGAINST NOTHING": publicBaseUrl() falls back to
-    // `http://localhost:<PORT>`, and the guard compares Origin against THAT. A `same-origin`
-    // Sec-Fetch-Site is still accepted, and so is no header at all, so the console keeps working over
-    // a current browser. What breaks is the Origin fallback for the REAL host: a browser that sends
-    // Origin but no Sec-Fetch-Site against the public hostname is REFUSED.
+    // `http://localhost:<PORT>`, and the guard compares Origin against THAT.
+    //
+    // WHAT A CURRENT BROWSER ACTUALLY DOES, corrected: this comment used to say "the console keeps
+    // working over a current browser", WHICH IS FALSE AND WAS MEASURED TO BE FALSE. In Chromium 154 a
+    // form POST sends `Origin` and NO `Sec-Fetch-Site`, and its Origin is the host the page was served
+    // from, not the assumed localhost. MEASURED against a real server with PUBLIC_BASE_URL empty, a
+    // browser POST to /admin/organisation/name was answered 403: THE CONSOLE REFUSES EVERY WRITE, and
+    // that is why the startup warning now says so.
+    //
+    // The cases below still pass, and they are real paths rather than a browser's: `Sec-Fetch-Site:
+    // same-origin` with no Origin is what a client that sends only one header produces, and no headers
+    // at all is curl or an old browser. They are kept because the guard must not refuse them, NOT
+    // because they describe a current browser.
     const port = await freePort();
     // A working directory with no .env, so dotenv/config finds nothing and the fallback is reached.
     const emptyCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'fr-nocwd-'));
@@ -609,10 +618,10 @@ test('with PUBLIC_BASE_URL unset, the guard compares against http://localhost:PO
         assert.equal(realHost.status, 403,
             'and the real public origin is REFUSED, which is the cost of leaving the variable unset');
 
-        // The two paths that keep a current browser working, and they are why this is a caveat rather
-        // than an outage.
+        // A client that sends ONE header, and a client that sends none. NOT a current browser: a browser
+        // sends Origin on a form POST and no Sec-Fetch-Site, which is the 403 asserted above.
         const sameOrigin = await post({ 'Sec-Fetch-Site': 'same-origin' });
-        assert.equal(sameOrigin.status, 302, 'Sec-Fetch-Site: same-origin is still accepted');
+        assert.equal(sameOrigin.status, 302, 'Sec-Fetch-Site: same-origin alone is still accepted');
 
         const noHeaders = await post({});
         assert.equal(noHeaders.status, 302, 'and no headers at all is still accepted');
