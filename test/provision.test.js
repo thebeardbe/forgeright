@@ -102,7 +102,30 @@ function request({ method = 'GET', path: urlPath = '/', form, headers = {} } = {
     });
 }
 
-const postForm = (urlPath, form) => request({ method: 'POST', path: urlPath, form });
+/**
+ * A form POST, each one from a DIFFERENT forwarded address.
+ *
+ * THE FILE SAT EXACTLY ON ITS OWN RATE LIMIT: it makes 10 sign-in POSTs and IP_LIMIT is 10 per 15
+ * minutes, so it passed alone and failed under load, and THE NEXT TEST ANYONE ADDED would have broken
+ * it. A distinct address per request keeps every one inside its own bucket.
+ *
+ * `beforeEach(() => resetRateLimits())` is not an option: the limiter lives in the SERVER SUBPROCESS,
+ * so a reset in the test process cannot reach it. The server trusts 127.0.0.1 (TRUST_PROXY in
+ * spawnedEnv) and so honours x-forwarded-for.
+ *
+ * The counter is per file run, so the addresses are stable within a run and never repeat across the
+ * tests that matter.
+ */
+let forwardedAddress = 0;
+const postForm = (urlPath, form) => {
+    forwardedAddress += 1;
+    return request({
+        method: 'POST',
+        path: urlPath,
+        form,
+        headers: { 'x-forwarded-for': `198.51.100.${forwardedAddress}` }
+    });
+};
 
 let child;
 let childOutput = '';
@@ -236,8 +259,11 @@ test('redeeming a link signs in identically whether the address was known or new
     assert.equal(brandNew.status, 302);
     assert.equal(brandNew.status, known.status);
     assert.equal(brandNew.location, known.location, 'the same redirect target');
-    assert.match(brandNew.setCookie[0], /^fr_admin=/);
-    assert.match(known.setCookie[0], /^fr_admin=/);
+    // `__Host-` prefixed, because this test's server answers over a secure connection, which is when the
+    // prefix is used. The name is pinned rather than loosened to /fr_admin=/ so a silent fallback to the
+    // unprefixed cookie on a secure connection would fail here.
+    assert.match(brandNew.setCookie[0], /^__Host-fr_admin=/);
+    assert.match(known.setCookie[0], /^__Host-fr_admin=/);
 });
 
 test('a user added as `user` signs in but does not reach the console', async () => {

@@ -416,6 +416,20 @@ live leak.
      routes that actually mean "the participant opened this". One more query to keep in step
      with the liveness rule, which is the trade N5 is about.
 
+- **N6: a CSRF-guard path that exists but CANNOT BE REACHED when PUBLIC_BASE_URL is unparseable.**
+  `ownOrigin()` in `lib/auth/csrf.js` catches a throw from `new URL(publicBaseUrl())` and returns
+  null, and with a null expected origin the guard stops comparing `Origin` and falls back to
+  `Sec-Fetch-Site` alone. MEASURED: with `PUBLIC_BASE_URL=not-a-url`, `checkRequestOrigin` returns
+  `{ ok: true }` for a POST whose Origin is another site.
+  **IT IS UNREACHABLE IN A RUNNING SERVER**, and that is why it is recorded rather than fixed:
+  `assertPublicBaseUrlUsable()` runs at startup, calls the same `publicBaseUrl()`, and THROWS on a
+  value it cannot parse, so the process never serves a request. MEASURED, it throws with
+  "PUBLIC_BASE_URL produced \"not-a-url\", which is not an absolute http(s) URL".
+  Recorded so nobody later reads the null branch as a live hole and "fixes" it by closing the
+  fallback, which would change behaviour for the reachable cases: an ABSENT variable is a different
+  path that does not return null at all, it falls back to `http://localhost:<PORT>` and is compared
+  against, which is why a missing PUBLIC_BASE_URL makes every console write fail closed.
+
 ## Next up in V1
 
 - **Guardrail demonstration.** A documented injection attempt against the intake
