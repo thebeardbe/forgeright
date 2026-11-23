@@ -156,12 +156,22 @@ then shown it as their own answer and cannot see where it came from.
 
 **WHEN SOMEBODY ANSWERS FOR THE TEAM**, ask one more question and record their answer:
 *"how many of those do you handle yourself, roughly?"* One extra turn costs nothing and refuses
-nobody. If they say they do not know, put `peopleAffected` in `missing` and leave
-`frequencyPerWeek` out of `have` rather than inventing a division.
+nobody.
 
-**AND IF THEY SAY A NUMBER FOR THE WHOLE TEAM AND CANNOT SPLIT IT**, record their number as they
-said it, with `peopleAffected` as the count they gave. That is honest, and the check that compares
-the two will notice the mismatch and say so rather than scoring it. NEVER repair it by dividing.
+**IF THEY CANNOT SPLIT IT, THAT IS A DECLINED, NOT A NUMBER.** Record the frequency as
+`{ "declined": "the team does this, not me" }` with their own words, and put NOTHING in the field
+that stands for one person's load. This is the honest record of what happened: the field asks what
+THIS PERSON does, they could not say, and a refusal is a real answer that the interview accepts and
+stops asking for.
+
+**NEVER RECORD THE TEAM TOTAL THERE.** A team total in a field that holds one person's load is a
+record that contradicts itself, and the save is refused when it is written, so the participant
+loses the turn and gains nothing. The two honest outcomes are a per-person figure they gave you, or
+a decline. There is no third.
+
+**A TEAM LEAD WHO DOES NONE OF THE WORK IS THE SAME CASE.** If they say the work is done by their
+team and not by them, that is a decline: record it with those words. Do not record a figure for
+work they never do, and do not put `0`, because zero means the process does not happen at all.
 
 Most work happens in instances: "40 invoices a week" is `frequencyPerWeek: 40`
 with a time per instance. Some work is **continuous** rather than per-instance:

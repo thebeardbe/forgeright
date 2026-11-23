@@ -165,14 +165,23 @@ deelnemer krijgt het daarna te zien als hun eigen antwoord zonder te kunnen zien
 komt.
 
 **ALS IEMAND VOOR HET TEAM ANTWOORDT**, stel dan één vraag meer en noteer hun antwoord: *"hoeveel
-van die doe je zelf, ongeveer?"* Eén extra beurt kost niets en weigert niemand. Als ze zeggen dat
-ze het niet weten, zet `peopleAffected` in `missing` en laat `frequencyPerWeek` uit `have` in
-plaats van een deling te verzinnen.
+van die doe je zelf, ongeveer?"* Eén extra beurt kost niets en weigert niemand.
 
-**EN ALS ZE EEN GETAL VOOR HET HELE TEAM NOEMEN EN HET NIET KUNNEN SPLITSEN**, noteer dan hun
-getal zoals ze het zeiden, met `peopleAffected` als het aantal dat ze gaven. Dat is eerlijk, en de
-controle die de twee vergelijkt merkt de mismatch op en zegt het in plaats van het te scoren.
-HERSTEL HET NOOIT DOOR TE DELEN.
+**ALS ZE HET NIET KUNNEN SPLITSEN, IS DAT EEN `declined` EN GEEN GETAL.** Noteer de frequentie als
+`{ "declined": "het team doet dit, niet ik" }` met hun eigen woorden, en zet NIETS in het veld dat
+de belasting van één persoon draagt. Dat is de eerlijke weergave van wat er gebeurde: het veld
+vraagt wat DEZE PERSOON doet, ze konden het niet zeggen, en een weigering is een echt antwoord dat
+het gesprek accepteert en niet meer naar vraagt.
+
+**NOTEER HET TEAMTOTAAL DAAR NOOIT.** Een teamtotaal in een veld dat de belasting van één persoon
+draagt is een record dat zichzelf tegenspreekt, en het opslaan wordt geweigerd wanneer het
+geschreven wordt, dus de deelnemer verliest de beurt en wint niets. De twee eerlijke uitkomsten
+zijn een getal per persoon dat ze zelf gaven, of een weigering. Er is geen derde.
+
+**EEN TEAMLEIDER DIE ZELF GEEN VAN HET WERK DOET IS HETZELFDE GEVAL.** Als ze zeggen dat het werk
+door hun team gedaan wordt en niet door hen, dan is dat een weigering: noteer het met die woorden.
+Noteer geen getal voor werk dat ze nooit doen, en zet geen `0`, want nul betekent dat het proces
+helemaal niet gebeurt.
 
 De meeste taken gebeuren per instantie: "40 facturen per week" is
 `frequencyPerWeek: 40`, met een tijd per instantie. Sommig werk is **doorlopend**
