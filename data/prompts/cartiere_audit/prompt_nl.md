@@ -126,7 +126,7 @@ geleverd of ontbrekend.
 task                  het werk, in hun woorden - een zin, maar een echte
 trigger               wat één instantie ervan start
 steps[]               de volgorde, met per stap name, whatHappens, decidedHow en needsReasoning
-frequencyPerWeek OF timePerPeriod   hoeveel ervan is er - een getal, of uren per periode
+frequencyPerWeek OF timePerPeriod   de belasting van ÉÉN persoon - hoe vaak ÉÉN persoon het per week doet, of de uren die ÉÉN persoon per periode besteedt. NIET het totaal van het team
 ```
 
 **Al het andere mag proza zijn als het antwoord werkelijk geen getal of lijst is:**
@@ -146,6 +146,16 @@ in andere woorden: beslechtte hun antwoord het niet, leg dan de dichtstbijzijnde
 getypte waarde vast die je kunt verdedigen en ga verder.** Zie DE DRIE STAPPEN hierboven.
 
 ### `frequencyPerWeek` OF `timePerPeriod`, niet beide
+
+**HET GETAL IS DE BELASTING VAN ÉÉN PERSOON, NOOIT HET TOTAAL VAN HET TEAM.** Dit is het veld
+dat het makkelijkst fout gaat, want een deelnemer die een teamproces beschrijft zegt "wij doen
+dit 300 keer per week", en 300 is het verkeerde getal voor dit veld. `frequencyPerWeek` is wat
+ÉÉN persoon doet, en `peopleAffected` draagt hoeveel mensen er zijn, dus het totaal is die twee
+met elkaar vermenigvuldigd. Als iemand zegt "het team van vier doet ongeveer 300 per week", dan
+doet die persoon ongeveer 75, en 75 is het getal: noteer het als `frequencyPerWeek: 75` met
+`peopleAffected: 4`. Hetzelfde geldt voor `timePerPeriod`: de uren die ÉÉN persoon besteedt,
+niet de uren van het team bij elkaar opgeteld. **Deel of vermenigvuldig zelf niets verder dan
+dat:** neem het getal per persoon over uit wat ze zeiden, en laat het opschalen aan de velden.
 
 De meeste taken gebeuren per instantie: "40 facturen per week" is
 `frequencyPerWeek: 40`, met een tijd per instantie. Sommig werk is **doorlopend**

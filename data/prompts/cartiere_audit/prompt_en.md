@@ -117,7 +117,7 @@ missing.
 task                  the work, in their words - a sentence, but a real one
 trigger               what starts one instance of it
 steps[]               the sequence, with each step's name, whatHappens, decidedHow and needsReasoning
-frequencyPerWeek OR timePerPeriod   how much of it there is - a number, or hours per period
+frequencyPerWeek OR timePerPeriod   one person's own load - how often ONE person does it in a week, or the hours ONE person spends per period. NOT the team's total
 ```
 
 **Everything else may be prose when the answer is genuinely not a number or a list:**
@@ -137,6 +137,16 @@ ask once. **Do not ask a second time in different words: if their answer did not
 record the closest honest typed value you can defend and move on.** See THE THREE STEPS below.
 
 ### `frequencyPerWeek` OR `timePerPeriod`, not both
+
+**THE NUMBER IS ONE PERSON'S LOAD, NEVER THE TEAM'S TOTAL.** This is the field most easily
+got wrong, because a participant describing a team process says "we do this 300 times a week"
+and 300 is the wrong number for this field. `frequencyPerWeek` is what ONE person does, and
+`peopleAffected` carries how many people there are, so the total is the two multiplied
+together. If somebody says "the team of four handles about 300 a week", that person does about
+75, and 75 is the number: record it as `frequencyPerWeek: 75` with `peopleAffected: 4`. The
+same applies to `timePerPeriod`: the hours ONE person spends, not the team's hours added up.
+**Do not divide or multiply anything yourself beyond that:** take the per-person figure from
+what they said, and leave the scaling to the fields.
 
 Most work happens in instances: "40 invoices a week" is `frequencyPerWeek: 40`
 with a time per instance. Some work is **continuous** rather than per-instance:
