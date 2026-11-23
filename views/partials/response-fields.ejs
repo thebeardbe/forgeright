@@ -21,7 +21,10 @@
     const FIELDS = [
         { key: 'task', label: 'The work' },
         { key: 'trigger', label: 'What starts it' },
-        { key: 'frequencyPerWeek', label: 'Times per week' },
+        // PER PERSON, because that is what the field holds. The answers view exists to check the
+        // paragraph against the participant's words, and a reader who takes this as the team's total
+        // will think the model misheard when it did not.
+        { key: 'frequencyPerWeek', label: 'Times per week, per person' },
         { key: 'timePerPeriod', label: 'Time per period' },
         { key: 'peopleAffected', label: 'People involved' },
         { key: 'handoffTo', label: 'Handed to' },

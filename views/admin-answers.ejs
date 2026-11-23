@@ -256,8 +256,14 @@
                     <label for="correct-field-<%= response.id %>">A value was read wrong</label>
                     <div class="row">
                         <select id="correct-field-<%= response.id %>" name="field">
-                            <option value="frequencyPerWeek">Times per week</option>
-                            <option value="minutesPerInstance">Minutes each time</option>
+                            <%#
+                                PER PERSON, on this one especially: it is the admin's only way to fix a
+                                figure. A team total typed here is refused by the consistency check, and
+                                without the label the admin has no way to know that the field wants one
+                                person's load.
+                            %>
+                            <option value="frequencyPerWeek">Times per week, per person</option>
+                            <option value="minutesPerInstance">Minutes each time, per person</option>
                             <option value="peopleAffected">People involved</option>
                             <option value="timePerPeriod">Time for the period</option>
                         </select>
