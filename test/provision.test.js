@@ -236,8 +236,11 @@ test('redeeming a link signs in identically whether the address was known or new
     assert.equal(brandNew.status, 302);
     assert.equal(brandNew.status, known.status);
     assert.equal(brandNew.location, known.location, 'the same redirect target');
-    assert.match(brandNew.setCookie[0], /^fr_admin=/);
-    assert.match(known.setCookie[0], /^fr_admin=/);
+    // `__Host-` prefixed, because this test's server answers over a secure connection, which is when the
+    // prefix is used. The name is pinned rather than loosened to /fr_admin=/ so a silent fallback to the
+    // unprefixed cookie on a secure connection would fail here.
+    assert.match(brandNew.setCookie[0], /^__Host-fr_admin=/);
+    assert.match(known.setCookie[0], /^__Host-fr_admin=/);
 });
 
 test('a user added as `user` signs in but does not reach the console', async () => {

@@ -336,13 +336,19 @@ test('revokeSession refuses an empty or non-string id without throwing', () => {
     assert.equal(session.revokeSession(undefined), false);
 });
 
-test('sessionCookieOptions carries HttpOnly, SameSite=Lax and Path=/admin', () => {
+test('sessionCookieOptions carries HttpOnly, SameSite=Lax and the path __Host- requires', () => {
+    // ON A SECURE CONNECTION the path is `/`, because `__Host-` REQUIRES it: Path=/admin with the prefix
+    // is rejected by the browser outright. That widens where the cookie is sent, which is the price
+    // recorded on SESSION_COOKIE. On a plain-HTTP run the narrower admin path is kept.
     const opts = session.sessionCookieOptions(true);
     assert.equal(opts.httpOnly, true, 'the cookie must not be readable from JavaScript');
     assert.equal(opts.sameSite, 'lax');
-    assert.equal(opts.path, '/admin');
+    assert.equal(opts.path, '/', 'a __Host- cookie must carry Path=/');
     assert.equal(typeof opts.maxAge, 'number');
     assert.ok(opts.maxAge > 0);
+
+    assert.equal(session.sessionCookieOptions(false).path, '/admin',
+        'without the prefix, the narrow admin path is kept');
 });
 
 test('sessionCookieOptions sets Secure exactly when the connection is secure', () => {
@@ -362,12 +368,13 @@ test('the Secure flag follows isSecureRequest at the call site', () => {
     assert.equal(session.sessionCookieOptions(session.isSecureRequest(insecureReq)).secure, false);
 });
 
-test('the non-conditional cookie attributes do not depend on the Secure argument', () => {
+test('the attributes that are not about the prefix do not depend on the Secure argument', () => {
+    // `path` MOVED OUT OF THIS TEST, because it now has to differ: `__Host-` requires `/` and a plain-HTTP
+    // run keeps `/admin`. httpOnly and sameSite still must not vary, so they stay pinned here.
     const secure = session.sessionCookieOptions(true);
     const insecure = session.sessionCookieOptions(false);
     assert.equal(secure.httpOnly, insecure.httpOnly);
     assert.equal(secure.sameSite, insecure.sameSite);
-    assert.equal(secure.path, insecure.path);
 });
 
 test('sessionCookiePath is the admin prefix, used to clear the cookie identically', () => {
@@ -408,8 +415,15 @@ test('isLoopbackRequest rejects non-loopback hosts and missing parts', () => {
     assert.equal(session.isLoopbackRequest(peerOn('127.0.0.1', '::1')), false);
 });
 
-test('SESSION_COOKIE is the documented name', () => {
-    assert.equal(session.SESSION_COOKIE, 'fr_admin');
+test('SESSION_COOKIE is the documented name, and is __Host- prefixed', () => {
+    // THE PREFIX IS THE DEFENCE, so it is pinned. `__Host-` makes the browser refuse the cookie unless it
+    // was set with Secure, Path=/ and no Domain, which is what stops a sibling subdomain writing a session
+    // cookie. The unprefixed name still exists for plain-HTTP runs, where a `__Host-` cookie is dropped.
+    assert.equal(session.SESSION_COOKIE, '__Host-fr_admin');
+    assert.equal(session.SESSION_COOKIE_INSECURE, 'fr_admin');
+    assert.equal(session.sessionCookieName(true), '__Host-fr_admin');
+    assert.equal(session.sessionCookieName(false), 'fr_admin',
+        'an insecure run must not use the prefix, or the browser drops the cookie and sign-in fails');
 });
 
 function fakeRequest(address = '10.1.1.1') {
