@@ -86,7 +86,44 @@ const HOMOGLYPH_MAP = {
 };
 
 /**
- * Normalises text for pattern matching only, never for stored or displayed content.
+ * Characters that are INVISIBLE in a rendered string but break a substring match.
+ *
+ * MEASURED BEFORE THIS EXISTED: `ig\u200Bnore all previous instructions` did NOT match, while it reads
+ * as "ignore all previous instructions" to a person AND to a model. A zero-width space is not decoration
+ * to an attacker, it is the whole evasion.
+ *
+ * The ranges, and what each is:
+ *   \u200B-\u200F  zero-width space, non-joiner, joiner, and the LTR/RTL marks
+ *   \u202A-\u202E  the bidi embedding and override controls, which reorder a line's display
+ *   \u2060-\u2064  word joiner and the invisible operators
+ *   \uFEFF          zero-width no-break space, which is also a byte-order mark
+ *   \u00AD          soft hyphen: invisible unless the line breaks, and it breaks a word in two
+ *
+ * BIDI OVERRIDES ARE NOT ONLY AN EVASION. They can make a line DISPLAY in a different order from the one
+ * the model reads, so what a reviewer sees and what the filter sees are two different strings. Removing
+ * them here means the screen sees the same order a reader would.
+ */
+const INVISIBLE_CHARS = /[\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF\u00AD]/g;
+
+/**
+ * Normalises text for pattern matching only, NEVER for stored or displayed content.
+ *
+ * THE SCREEN IS THE ONLY READER. A participant's words are stored exactly as they wrote them and shown
+ * back to them unchanged, so anything this function removes stays in the record. It exists so that the
+ * MATCHER cannot be defeated by a character nobody can see, not to tidy anybody's answer.
+ *
+ * The order matters:
+ *   1. homoglyphs are folded first, because NFKC does not turn a Cyrillic 'о' into a Latin 'o';
+ *   2. NFKC, which composes characters so 'ﬁ' and 'ⅼ' become the letters they look like;
+ *   3. invisible characters are removed, so `ig\u200Bnore` reads as `ignore`;
+ *   4. combining marks are dropped, so an accent cannot split a word;
+ *   5. whitespace is collapsed and the text is lowercased.
+ *
+ * WHAT A LEGITIMATE ANSWER LOOKS LIKE AFTERWARDS, and it is unchanged for a reader: a Dutch answer with
+ * "één" reaches the matcher as "een", an answer with a soft hyphen at a line break joins back into one
+ * word, and an answer containing a zero-width space matches the same patterns it would without one. All
+ * of those are still stored and shown with their original characters, because this value is never stored.
+ *
  * @param {string} text
  * @returns {string}
  */
@@ -94,6 +131,8 @@ export function normalizeForInspection(text) {
     let folded = '';
     for (const char of String(text)) folded += HOMOGLYPH_MAP[char] || char;
     return folded
+        .normalize('NFKC')
+        .replace(INVISIBLE_CHARS, '')
         .normalize('NFKD')
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/\s+/g, ' ')
@@ -161,6 +200,49 @@ export async function checkPromptInjection(text) {
 
     if (keywords.some((keyword) => normalized.includes(keyword))) return true;
     return patterns.some((pattern) => pattern.test(normalized));
+}
+
+/**
+ * What matched, so the caller can LOG WHY rather than only that something did.
+ *
+ * A boolean is enough for a caller that refuses. It is not enough for a caller that continues and
+ * leaves a note, which is what identification and weighing now do: an operator reading "an injection
+ * shaped phrase was here" with no phrase cannot tell a real attempt from the one-letter plural that
+ * makes a Dutch or French sentence match, and that difference decides whether to act.
+ *
+ * Returns the matched substring, not the whole message: the message contains the participant's answer
+ * and a log is not the place for it.
+ *
+ * @param {string} text
+ * @param {string} [hint] an extra phrase to check separately, so the log can say which part of an
+ *   assembled message matched
+ * @returns {Promise<{matched: boolean, where: string}>}
+ */
+export async function describeInjectionMatch(text, hint) {
+    const parts = [
+        ['the message', text],
+        ['the admin reasoning', hint]
+    ];
+
+    const { keywords, patterns } = await loadRules();
+
+    for (const [label, value] of parts) {
+        if (typeof value !== 'string' || value === '') continue;
+        const normalized = normalizeForInspection(value);
+
+        const keyword = keywords.find((k) => normalized.includes(k));
+        if (keyword) return { matched: true, where: `${label} contains ${JSON.stringify(keyword)}` };
+
+        for (const pattern of patterns) {
+            const found = normalized.match(pattern);
+            if (found) {
+                // The matched text only, trimmed: enough to recognise, and not the answer.
+                return { matched: true, where: `${label} matches ${JSON.stringify(found[0].slice(0, 60))}` };
+            }
+        }
+    }
+
+    return { matched: false, where: '' };
 }
 
 /** Test helper: drop the rule cache. */

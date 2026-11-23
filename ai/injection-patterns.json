@@ -8,7 +8,7 @@
     "developer mode"
   ],
   "patterns": [
-    "\\b(reveal|show|tell|give|print|output|repeat|list|dump|leak|share)\\b(\\s+\\w+){0,2}?\\s+(me\\s+)?(your|the)\\s+(system\\s+|initial\\s+|original\\s+|underlying\\s+|hidden\\s+|full\\s+)?(prompt|instructions|rules|configuration)\\b(?!\\s*(?:\\w+\\s+){0,4}(?:to|for|with|into|at|by|on|and)\\s+(?:the|our)\\s+(?:new\\s+starters|warehouse|machine|office|customer|form|file|team|staff|starters|line|printout|folder|inbox|deck|sheet|ledger|archive|shop\\s+floor|crm|system|intranet|handbook|onboarding|colleague|manager|supplier|accountant)\\b)",
+    "\\b(reveal|show|tell|give|print|output|repeat|list|dump|leak|share)\\b(\\s+\\w+){0,2}?\\s+(me\\s+)?(your\\s+(system\\s+|initial\\s+|original\\s+|underlying\\s+|hidden\\s+|full\\s+)?(prompt|instructions|rules|configuration)|(system\\s+|initial\\s+|original\\s+|underlying\\s+|hidden\\s+|full\\s+)(prompt|instructions|rules|configuration))\\b(?!\\s*(?:\\w+\\s+){0,4}(?:to|for|with|into|at|by|on|and)\\s+(?:the|our)\\s+(?:new\\s+starters|warehouse|machine|office|customer|form|file|team|staff|starters|line|printout|folder|inbox|deck|sheet|ledger|archive|shop\\s+floor|crm|system|intranet|handbook|onboarding|colleague|manager|supplier|accountant)\\b)",
     "\\bwhat (were|are) your (initial |original |system )?(instructions|prompt|rules)\\b",
     "\\brepeat\\s+(everything|all|the text|the words|the above)\\s+(above|before|up to)\\b(?!\\s+the\\s+(line|form|field|table|invoice|drawing|section|box))",
     "\\btranslate\\s+(your|the)\\s+(configuration|instructions|prompt|rules)\\b(?![^.]{0,40}\\b(for|to|into)\\s+the\\b)",
@@ -16,11 +16,23 @@
     "\\bfrom now on\\s*,?\\s*you\\s+(are|will|must)\\s+(a|an|no longer|not)\\b",
     "\\byou are now\\s+(a|an|no longer)\\b(?!\\s+responsible)",
     "\\boverride\\s+(your|the)\\s+(rules|instructions|guardrails)\\b(?!\\s+(when|if|for))",
-    "\\bignore\\s+the\\s+(above|previous)\\b(?!\\s+(comment|note|typo|email|mail|remark|point|line item))",
+    "\\bignore\\s+the\\s+(above|previous)\\b(?!\\s+(comment|note|typo|email|mail|remark|point|line item|checklist|list|version|spreadsheet|invoice|order|form|file|table|row|column|step|procedure|method|process|supplier|customer|price|quote|delivery|batch|job|task|shift|recipe|drawing|plan))",
     "\\bnew\\s+instruction(s)?\\b\\s*[:\\-]",
-    "\\bdo not\\s+(follow|obey|respect)\\b(\\s+\\w+){0,3}?\\s+(rule|instruction|prompt|direction)s?\\b",
+    "\\bdo not\\s+(follow|obey|respect)\\b(\\s+\\w+){0,3}?\\s+(your|the)\\s+(\\w+\\s+){0,2}?(rules|instructions|prompts?|directions)\\b(?!\\s+(sheet|drawing|manual|checklist|label|card|note|sign|recipe|plan|spec|order))",
     "\\b(ignore|disregard|forget|bypass)\\b(\\s+\\w+){0,3}?\\s+(all\\s+)?(the\\s+|your\\s+|any\\s+)?(previous|prior|above|earlier|preceding|foregoing)?\\s*(instruction|prompt|rule|direction|command|message)s?\\b",
     "\\b(forget|ignore|disregard)\\b\\s+(everything|all)\\b(\\s+\\w+){0,3}?\\s*(instruction|prompt|rule|direction|command|message|told|training|context|above|before)\\b",
-    "\\b(repeat|echo|read|recite|send|show|tell|print)\\b(\\s+\\w+){0,2}?\\s+(my|your|the)\\s+(system\\s+|initial\\s+|original\\s+)?(instructions|prompt|rules|configuration)\\b(?:\\s+back)?(?!\\s*(?:\\w+\\s+){0,4}(?:to|for|with|into|at|by|on|and)\\s+(?:the|our)\\s+(?:new\\s+starters|warehouse|machine|office|customer|form|file|team|staff|starters|line|printout|folder|inbox|deck|sheet|ledger|archive|shop\\s+floor|crm|system|intranet|handbook|onboarding|colleague|manager|supplier|accountant)\\b)"
-  ]
+    "\\b(repeat|echo|read|recite|send|show|tell|print)\\b(\\s+\\w+){0,2}?\\s+(my|your|the)\\s+(system\\s+|initial\\s+|original\\s+)?(instructions|prompt|rules|configuration)\\b(?:\\s+back)?(?!\\s*(?:\\w+\\s+){0,4}(?:(?:to|for|with|into|at|by|on|and)\\s+(?:the|our)\\s+(?:new\\s+starters|warehouse|machine|office|customer|form|file|team|staff|starters|line|printout|folder|inbox|deck|sheet|ledger|archive|shop\\s+floor|crm|system|intranet|handbook|onboarding|colleague|manager|supplier|accountant)|(?:on|in|from|about|regarding)\\s+(?:the|a|an)\\s+(?:box|pack|package|parcel|label|page|screen|board|notice|wall|door|product|item|carton|envelope|binder|manual|delivery))\\b)",
+    "\\b(negeer|negeren|negeert|vergeet|vergeten|genegeerd)\\b(\\s+\\w+){0,3}?\\s+(alle\\s+|al\\s+de\\s+|de\\s+|je\\s+|jouw\\s+|uw\\s+)?(vorige|voorgaande|bovenstaande|eerdere)\\s+(instructies|instructie|opdrachten|opdracht|richtlijnen|richtlijn|commando's|commando)\\b|\\b(negeer|vergeet)\\s+(alle|al\\s+de)\\s+(vorige|voorgaande)\\b|\\b(negeer|vergeet|vergeten)\\s+(je|jouw|uw)\\s+(instructies|opdrachten|regels|richtlijnen)\\b",
+    "\\b(volg|volgen|volgt)\\s+(de|je|jouw|uw|deze|die)\\s+(\\w+\\s+){0,2}?(instructie|opdracht|regel|richtlijn)s?\\s+niet\\b",
+    "\\b(gedraag\\s+je\\s+als|doe\\s+alsof\\s+je)\\s+(een\\s+)?(assistent|model|ai|taalmodel|computer|machine|robot|systeem)\\b|\\bje\\s+bent\\s+nu\\b",
+    "\\bnieuwe\\s+(systeem)?instructies?\\s+voor\\s+(jou|het\\s+systeem|de\\s+assistent)\\b|\\bnieuwe\\s+instructies\\s*:\\s*(\\w+\\s+){0,3}?(geef|antwoord|schrijf|zeg|noteer|reken|zet)\\b",
+    "\\b(onthul|toon|laat\\s+zien|geef|print|herhaal|noem)\\b(\\s+\\w+){0,3}?\\s+(je|jouw|uw)\\s+(systeem\\s*)?(prompt|instructies|regels|configuratie)\\b|\\b(systeem\\s*prompt|systeeminstructies)\\b",
+    "\\b(ignore|ignorez|ignorer|ignorent|oublie|oubliez|oublier)\\b(\\s+\\w+){0,3}?\\s+(toutes\\s+les|tous\\s+les|les|vos|tes|mes|des)?\\s*(instructions?|consignes?|r[eè]gles?|directives?|commandes?)\\b",
+    "\\bne\\s+(suivez|suis|suivent)\\s+pas\\s+(tes|vos)\\s+(instructions?|consignes?|r[eè]gles?)\\b|\\bne\\s+(suivez|suis|suivent)\\s+pas\\s+les\\s+(instructions?|consignes?|r[eè]gles?)\\s+(du|de\\s+la)\\s+syst[eè]me\\b|\\bne\\s+(suivez|suis|suivent)\\s+pas\\s+les\\s+(instructions?|consignes?)\\s+(pr[eé]c[eé]dentes?|anciennes?)\\b",
+    "\\b(agis|agissez|comporte-toi|comportez-vous)\\s+comme\\b",
+    "\\b(r[eé]p[eè]te|r[eé]p[eé]tez|donne|donnez|montre|montrez|affiche|affichez|divulgue|r[eé]v[eè]le)\\b(\\s+\\w+){0,2}?\\s+(ton|tes|votre|vos)\\s+(invite\\s+)?(system\\s+|initial\\s+|original\\s+)?(prompt|instructions?|consignes?|r[eè]gles?|configuration)\\b(?!\\s*(?:\\w+\\s+){0,4}(?:a|au|aux)\\s+(?:l|le|la|les|un|une)\\b)(?!\\s*(?:\\w+\\s+){0,3}(?:a|au|aux)\\s+(?:l|le|la|les|un|une|nouvel|nouveau)\\b)",
+    "\\b(instructions?|consignes?)\\s+suppl[eé]mentaires?\\s+(pour\\s+(toi|vous|l'assistant)|du\\s+syst[eè]me)\\b|\\b(instructions?|consignes?)\\s+suppl[eé]mentaires?\\s*:\\s*(\\w+\\s+){0,3}?(note|r[eé]ponds|r[eé]ponds|ecris|dis|calcule|mets)\\b",
+    "\\b(prompt\\s+syst[eè]me|instructions?\\s+syst[eè]me)\\b"
+  ],
+  "_language_note": "The Dutch and French entries are the FORMS THAT CARRY AN INSTRUCTION, not translations of the English list. Written from the imperative morphology of each language: Dutch puts the verb first and separable verbs split ('volg ... niet'), French has tu and vous imperative forms. Each requires a VERB OF INSTRUCTION plus a reference to the system's own rules, prompt or instructions, so a participant describing work that involves instructions cannot match: 'Ik zeg tegen de nieuwe medewerkers dat ze de oude checklist moeten negeren' names a checklist, not the system's instructions."
 }

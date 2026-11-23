@@ -430,6 +430,20 @@ live leak.
   path that does not return null at all, it falls back to `http://localhost:<PORT>` and is compared
   against, which is why a missing PUBLIC_BASE_URL makes every console write fail closed.
 
+- **N7: FIXED, except one part. The injection filter's match no longer strands an answer, but an
+  admin still cannot SEE that a turn was flagged.**
+  THE LOCKOUT IS CLOSED. A match on a stored answer is now a logged signal and the model reads the
+  text, because nobody can rephrase a submitted round: MEASURED, ten ordinary work sentences matched
+  the filter, and each was refused at identification and at weighing every time, with no route that
+  could edit a prose field. The interview turn still refuses, and an admin's own argument and the
+  admin-authored process names still refuse, because a person is present at those to rephrase.
+  The patterns were narrowed at the same time: 10/10 of the false positives are allowed, 29/29 honest
+  answers are allowed, and 18/18 instruction-shaped sentences are still caught.
+  WHAT REMAINS, and it is not small: THE FLAG IS ONLY IN THE LOG. An admin looking at the answers view
+  cannot tell a flagged turn from a quiet one. Showing it needs a column on `response`, and this schema
+  applies CREATE TABLE IF NOT EXISTS on every open, so a new column needs a real migration. That is
+  its own change with its own review.
+
 ## Next up in V1
 
 - **Guardrail demonstration.** A documented injection attempt against the intake
