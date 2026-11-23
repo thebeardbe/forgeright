@@ -31,14 +31,29 @@
  *     person-weeks for ONE instance.
  *
  *   MAX_EFFORT_HOURS_PER_WEEK = 168000000  (1.68e8)
- *     A HUNDRED TIMES the largest national-scale scenario I could construct: 10,000 occurrences a week
- *     at 10 minutes across 20,000 people, which is 3.3e7 h/week. The first ceiling I tried was
- *     1.68e7, ten times the demo reference, AND IT REFUSED THAT SCENARIO - which is exactly the failure
- *     this must not have, because refusing a real operation is worse than allowing a large one. So the
- *     ceiling is set by what a process could conceivably be, not by what looks tidy.
+ *     A JUDGEMENT, and the weakest number in this module: it rests on a scenario somebody invented
+ *     rather than on a statement about the record. It is kept, and the reason it is kept is MEASURED.
  *
- *     It still sits 9.9e3 times below the abuse case at the field bounds (1.67e12), and the per-instance
- *     ceiling catches the genuinely absurd factor before this one is reached.
+ *     The consistency rule below refuses any record claiming more hours than the people it names could
+ *     work, which is at most peopleAffected x 168. On the WRITE path peopleAffected is itself bounded at
+ *     100000, so consistency can at most admit 1.68e7 h/week and this ceiling could never fire. It would
+ *     be dead code there.
+ *
+ *     BUT /api/score DOES NOT APPLY THE FIELD BOUNDS: it is a client-supplied payload, and
+ *     checkAnswerSizes is only called from the store. So a client can send peopleAffected 2000000, which
+ *     is perfectly consistent (3.36e8 hours allowed, 2e6 claimed) and still absurd. This ceiling is the
+ *     only absolute backstop on that door, so it stays.
+ *
+ *     IT IS TRIED LAST, after consistency and after the per-instance bound, because those two produce a
+ *     sentence about the participant's own record and this one can only say "more than any process can
+ *     cost". A reader who finds this number firing has found a payload from the API, not a participant.
+
+ *   CONSISTENCY: total hours <= peopleAffected x 168
+ *     Not a judgement about plausibility but a statement about the record: 168 hours is what one person
+ *     can work in a week, so a process claiming more hours in total than the people it names could
+ *     physically work is CONTRADICTING ITSELF. MEASURED, it refuses cases this ceiling admits:
+ *     frequencyPerWeek 10000, minutesPerInstance 10080, peopleAffected 100 gives 169,680,000 h/week
+ *     claimed by 100 people who can work 16,800 between them.
  *
  * REFUSED, NOT CLAMPED, like every other bound in this branch: a clamped figure is a false record.
  *
@@ -53,6 +68,97 @@ export const MAX_MINUTES_PER_INSTANCE = 10080;
 
 /** The most hours one process may cost its organisation per week. See the header. */
 export const MAX_EFFORT_HOURS_PER_WEEK = 168000000;
+
+/** The hours one person can work in a week. The consistency rule is stated in terms of this. */
+export const HOURS_PER_PERSON_PER_WEEK = 168;
+
+/**
+ * Whether a record contradicts itself: more hours than the people it names could work.
+ *
+ * THE RULE IS ABOUT THE RECORD, NOT ABOUT PLAUSIBILITY. `effortHoursPerWeek` returns person-hours per week
+ * across everyone, so the hours a process claims must fit inside what its own people can work: 168 hours
+ * each. A record claiming more is not a big operation, it is a record that disagrees with itself, and no
+ * judgement about how large a real operation can be is needed to say so.
+ *
+ * `frequencyPerWeek` IS ONE PERSON'S LOAD, which is what makes this a contradiction rather than a policy.
+ * The prompt's own example is "40 invoices a week", meaning the ones that person deals with, and the demo
+ * store confirms it: 40 x 22 minutes is 14.7 hours for one person and 44 across three. So
+ * frequency x minutes is one person's week, and multiplying by people must land inside people x 168.
+ *
+ * WHAT THE CALL CENTRE TELLS US, MEASURED BOTH WAYS. A 100,000-call-a-week call centre with 4-minute
+ * calls and 200 people FAILS this rule, and that is CORRECT rather than a false refusal: the record says
+ * each of 200 people personally handles 100,000 calls a week, which is 39.7 weeks of work each.
+ *
+ *   as a TEAM TOTAL in the field   100000 x 4 x 200 = 1,333,333 h/wk vs 33,600   REFUSED
+ *   as ONE PERSON's load           500 x 4 x 200   = 6,667 h/wk vs 33,600       ACCEPTED
+ *
+ * THE OPERATION IS REAL; THE FIGURE IN THE RECORD WAS THE ORGANISATION'S TOTAL, NOT THE PERSON'S. The
+ * prompt now states that reading in both languages, so the model cannot write the team total here. A rule
+ * that quietly accepted it would be accepting a record that contradicts itself, and the score built from
+ * it would be wrong by a factor of 200.
+ *
+ * @param {object} workflow
+ * @param {string} label
+ * @returns {{ok: false, reason: string, limit: number, actual: number, people: number} | null}
+ */
+function checkConsistency(workflow, label) {
+    // THE PEOPLE COUNT MUST BE A MEASURED NUMBER. peopleAffected may be absent, prose, declined, or a
+    // number, and the interview accepts all four. AN ABSENT OR UNUSABLE COUNT IS NOT A CONTRADICTION:
+    // there is nothing to contradict, so the rule does not apply and the workflow is left to the other
+    // bounds. This is the same treatment effortHoursPerWeek gives it, where an unmeasurable count reads as
+    // 0 and the workflow contributes no effort.
+    const people = measuredPeople(workflow.peopleAffected);
+    if (people === null || people <= 0) return null;
+
+    const hours = effortHoursPerWeek(workflow);
+    if (!Number.isFinite(hours)) return null;   // handled by the non-finite branch below
+
+    const capacity = people * HOURS_PER_PERSON_PER_WEEK;
+    if (hours <= capacity) return null;
+
+    return {
+        ok: false,
+        consistent: false,
+        people,
+        capacity,
+        // Both counts are formatted, so "20,000 people" and "3,360,000 hours" read the same way. A raw
+        // integer beside a separated one is the kind of detail that makes a sentence look careless.
+        reason: `${label} says ${formatHours(people)} people do this, and the figures work out to `
+            + `${formatHours(hours)} hours a week. ${formatHours(people)} people cannot work more than `
+            + `${formatHours(capacity)} hours between them in a week.`,
+        limit: capacity,
+        actual: hours
+    };
+}
+
+/**
+ * The people count as a number, or null when it is not a usable one.
+ *
+ * Mirrors `measuredNumber` in lib/scoring.js, which is private to it, so the rule here reads the value the
+ * same way the effort calculation does. Prose and a refusal both give null: "I am alone on this" says how
+ * many people touch the work without saying a figure, and the interview accepts that as a complete answer.
+ *
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+function measuredPeople(value) {
+    if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : null;
+    if (typeof value === 'string' && value.trim() !== '') {
+        const n = Number(value.trim());
+        return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    return null;
+}
+
+/**
+ * A figure a person can read: thousands separators, and no decimals on a large number.
+ *
+ * @param {number} value
+ * @returns {string}
+ */
+function formatHours(value) {
+    return Math.round(value).toLocaleString('en-GB');
+}
 
 /**
  * Check one workflow's effort against the ceilings.
@@ -81,6 +187,11 @@ export function checkEffortCeiling(workflow, label = 'this process') {
             actual: minutes
         };
     }
+
+    // CONSISTENCY FIRST, because its sentence is about the participant's own record and is the one they
+    // can act on. See checkConsistency for what it does when there is no usable people count.
+    const inconsistent = checkConsistency(workflow, label);
+    if (inconsistent) return inconsistent;
 
     const hours = effortHoursPerWeek(workflow);
     if (Number.isFinite(hours) && hours > MAX_EFFORT_HOURS_PER_WEEK) {
