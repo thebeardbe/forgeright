@@ -202,6 +202,49 @@ export async function checkPromptInjection(text) {
     return patterns.some((pattern) => pattern.test(normalized));
 }
 
+/**
+ * What matched, so the caller can LOG WHY rather than only that something did.
+ *
+ * A boolean is enough for a caller that refuses. It is not enough for a caller that continues and
+ * leaves a note, which is what identification and weighing now do: an operator reading "an injection
+ * shaped phrase was here" with no phrase cannot tell a real attempt from the one-letter plural that
+ * makes a Dutch or French sentence match, and that difference decides whether to act.
+ *
+ * Returns the matched substring, not the whole message: the message contains the participant's answer
+ * and a log is not the place for it.
+ *
+ * @param {string} text
+ * @param {string} [hint] an extra phrase to check separately, so the log can say which part of an
+ *   assembled message matched
+ * @returns {Promise<{matched: boolean, where: string}>}
+ */
+export async function describeInjectionMatch(text, hint) {
+    const parts = [
+        ['the message', text],
+        ['the admin reasoning', hint]
+    ];
+
+    const { keywords, patterns } = await loadRules();
+
+    for (const [label, value] of parts) {
+        if (typeof value !== 'string' || value === '') continue;
+        const normalized = normalizeForInspection(value);
+
+        const keyword = keywords.find((k) => normalized.includes(k));
+        if (keyword) return { matched: true, where: `${label} contains ${JSON.stringify(keyword)}` };
+
+        for (const pattern of patterns) {
+            const found = normalized.match(pattern);
+            if (found) {
+                // The matched text only, trimmed: enough to recognise, and not the answer.
+                return { matched: true, where: `${label} matches ${JSON.stringify(found[0].slice(0, 60))}` };
+            }
+        }
+    }
+
+    return { matched: false, where: '' };
+}
+
 /** Test helper: drop the rule cache. */
 export function resetPatternCache() {
     cachedRules = null;

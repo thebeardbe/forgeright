@@ -481,7 +481,7 @@ test('N7 part 2: CORRECTABLE_FIELDS is four NUMERIC fields, so no route can edit
     }
 });
 
-test('N7 part 3: a rejudge runs the SAME function on the SAME answer, so it is refused identically', async () => {
+test('N7 part 3 FIXED: a rejudge no longer refuses a stored answer, because the screen is a signal there', async () => {
     // The claim the log sentence gets wrong. `rejudgeFromResponse` calls `runIdentification`, which
     // screens the whole comparison message including `response.data`. Read from the source: both paths
     // reach the same `checkPromptInjection(cleaned)`.
@@ -501,22 +501,29 @@ test('N7 part 3: a rejudge runs the SAME function on the SAME answer, so it is r
     // And no call site passes a MODIFIED response, which would screen a different string.
     assert.equal(/runIdentification\(\{ response:/.test(rejudgeSource), false,
         'no rejudge path passes a copy of the response instead of the response');
-    assert.match(identifySource, /if \(await checkPromptInjection\(cleaned\)\)/,
-        'and runIdentification screens the assembled message');
-    assert.match(identifySource, /buildComparisonMessage\(response/,
-        'which is built from the response itself, so the stored phrase is in it');
+    // THE DEFECT THIS RECORDED IS FIXED: screening the assembled message no longer returns `rejected`.
+    // The stored answer is a SIGNAL, logged and passed to the model, because nobody can rephrase it.
+    // An ADMIN argument still refuses, because an admin is present and a rejudge with rephrased wording
+    // clears it, which is what makes the log sentence true.
+    assert.match(identifySource, /describeInjectionMatch\(cleaned\)/,
+        'the assembled message is still screened, so a match is still noticed and logged');
+    assert.equal(/checkPromptInjection\(cleaned\)/.test(identifySource), false,
+        'but the stored answer no longer refuses the round');
+    assert.match(identifySource, /describeInjectionMatch\(adminText\)/,
+        'the admin-authored text still refuses');
 });
 
-test('N7 part 4: the log sentence says "an admin can rejudge it", which parts 2 and 3 show is false', () => {
-    // The sentence is not merely optimistic: it is wrong, and it is what an operator acts on.
+test('N7 part 4 FIXED: the log says what actually unblocks each case, and no longer promises a rejudge', () => {
+    // The old sentence said "an admin can rejudge it" for both cases and was FALSE for one of them.
     const source = fs.readFileSync(path.join(PROJECT_ROOT, 'lib', 'auth', 'identify-response.js'), 'utf8');
 
-    assert.match(source, /an admin can rejudge it/,
-        'the log promises a way out');
-    // And the same sentence is emitted for BOTH the rejected case and the thrown-error case, so a
-    // stranded answer is indistinguishable in the log from a transient model failure.
-    const promises = source.match(/an admin can rejudge it/g) || [];
-    assert.equal(promises.length, 2, 'it is said on the rejected path and the error path alike');
+    assert.equal(/an admin can rejudge it/.test(source), false,
+        'the false promise is gone');
+
+    // It now distinguishes the two cases instead of saying one thing for both: a rejected ADMIN argument
+    // is fixed by rephrasing it, a model failure is fixed by running again.
+    assert.match(source, /rephrase it as an argument/, 'the rejected case says to rephrase');
+    assert.match(source, /A rejudge runs identification again/, 'the error case says to rejudge');
 });
 
 test('N7 part 5: a COMPLETE round cannot be overwritten, so the participant cannot fix it here either', async () => {

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
 import { checkPromptInjection, stripControlCharsDeep } from './security.js';
+import { describeInjectionMatch } from './security.js';
 import { capMessage, capAdminReasoning, capParticipantString } from './prompt-budget.js';
 import { extractJsonObject } from './json-extract.js';
 import { withFormatCommitment } from './format-commitment.js';
@@ -160,17 +161,57 @@ export async function runIdentification({
         'identify'
     );
 
-    // THE SCREENING IS UNCHANGED AND STILL COVERS THE WHOLE MESSAGE. The admin's reasoning is
-    // deliberately included in it, because it is an authorised instruction, and screened so a
-    // compromised admin account is not also an instruction to the model. Truncation and screening
-    // are different concerns and this keeps both.
-    const cleaned = message;
-    if (await checkPromptInjection(cleaned)) {
-        console.warn('[identify] blocked an input that matched an injection pattern');
+    // A MATCH IS A SIGNAL, NOT A REFUSAL. THE MODEL STILL GETS THE TEXT.
+    //
+    // This used to return `rejected`, and that made every false positive PERMANENT. MEASURED, ten
+    // ordinary work sentences match the filter, including "Ik negeer de vorige regel als de klant
+    // belt." and "I do not follow the instruction sheet if the drawing contradicts it." Each was
+    // refused at identification and at weighing, every time, and the round stayed "not yet read"
+    // forever.
+    //
+    // NOBODY IS HERE TO REPHRASE IT. Identification runs after the round has been submitted. There is
+    // no participant on the other end to ask, no route that can edit a prose field
+    // (CORRECTABLE_FIELDS is four numeric ones), and a rejudge screens the same stored text and was
+    // refused identically. The filter is a speed bump, not a wall: what contains a successful
+    // injection is the strict schema validation of the reply, the absence of tool access, and one
+    // tenant's data per database. The interview turn still refuses, because THERE a person can
+    // rephrase and nothing is lost. See ai/audit-core.js.
+    //
+    // LOGGED LOUDLY, with what matched, because a live signal that nobody sees is worse than none.
+    // THE STORED ANSWER IS A SIGNAL: nobody can rephrase it, so the model reads it.
+    //
+    // THE ADMIN'S REASONING IS DIFFERENT AND STILL REFUSES. An admin is a person at a form, typing a
+    // sentence they can change, exactly like a participant mid-interview. Refusing costs them one
+    // rephrase; continuing would let a compromised admin account instruct the model through text it
+    // chose, which is the case the screen exists for. So the two are decided separately.
+    // The known processes are ADMIN-AUTHORED too: their names and reasons come from the console, not
+    // from a participant. A compromised admin account must not instruct the model through either, and
+    // an admin is present to rephrase. Checked together with the reasoning, so the two cannot drift.
+    const adminText = [
+        adminReasoning ?? '',
+        ...knownProcesses.map((process) => `${process.name ?? ''}\n${process.reasoning ?? ''}`)
+    ].join('\n');
+
+    const adminMatch = await describeInjectionMatch(adminText);
+    if (adminMatch.matched) {
+        console.warn(
+            `[identify] refused an admin rejudge argument that matched an injection pattern: ${adminMatch.where}`
+        );
         return {
             status: 'rejected',
-            content: 'That text looks like an instruction to the system rather than a description of the work.'
+            content: 'That text looks like an instruction to the system rather than a reason for the '
+                + 'rejudge. Please rephrase it as an argument about how this work should be read.'
         };
+    }
+
+    const cleaned = message;
+    const match = await describeInjectionMatch(cleaned);
+    if (match.matched) {
+        console.warn(
+            `[identify] an injection-shaped phrase is in the stored answer for response `
+            + `${response?.id ?? 'unknown'} and the model was given it anyway: ${match.where}. `
+            + 'The answer cannot be edited, and the reply is still validated against the strict schema.'
+        );
     }
 
     const raw = await generateText({

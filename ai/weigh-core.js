@@ -10,7 +10,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateText } from './provider.js';
-import { checkPromptInjection, stripControlCharsDeep } from './security.js';
+import { describeInjectionMatch, stripControlCharsDeep } from './security.js';
 import { capMessage, capAdminReasoning, capParticipantString } from './prompt-budget.js';
 import { proseSaidIn, declinedIn } from './field-shapes.js';
 import { extractJsonObject } from './json-extract.js';
@@ -257,22 +257,40 @@ export async function runWeighing({
 
     // The admin's argument is capped as a string here, so one paragraph cannot spend the whole
     // document budget, and the message is then capped as a document.
+    const cappedReasoning = capAdminReasoning(adminReasoning, 'weigh');
     const message = capMessage(
-        buildWeighingMessage({ process, grouping, adminReasoning: capAdminReasoning(adminReasoning, 'weigh') }),
+        buildWeighingMessage({ process, grouping, adminReasoning: cappedReasoning }),
         'weigh'
     );
 
-    // THE SCREENING IS UNCHANGED AND STILL COVERS THE WHOLE MESSAGE. Truncation and injection
-    // detection are different concerns: the admin's reasoning is screened deliberately, so a
-    // compromised admin account is not also an instruction. It is screened AFTER the cap, so what is
-    // screened is exactly what the model receives.
-    const cleaned = message;
-    if (await checkPromptInjection(cleaned)) {
-        console.warn('[weigh] blocked an input that matched an injection pattern');
+    // A MATCH IS A SIGNAL, NOT A REFUSAL, for the same reason as identification: nobody is here to
+    // rephrase. Weighing runs on a round that has already been submitted, the text is stored, and no
+    // route can edit a prose field. MEASURED, ten ordinary work sentences match the filter, so refusing
+    // meant a participant whose answer contained one of them could never be scored at all.
+    // Screened AFTER the cap, so what is described is exactly what the model receives.
+    // THE ADMIN'S REASONING STILL REFUSES, the stored answers are a signal. Same reasoning as
+    // identification: an admin is present and can rephrase, whereas the answers are stored and nobody
+    // can edit them.
+    const adminMatch = await describeInjectionMatch(cappedReasoning ?? '');
+    if (adminMatch.matched) {
+        console.warn(
+            `[weigh] refused an admin rejudge argument that matched an injection pattern: ${adminMatch.where}`
+        );
         return {
             status: 'rejected',
-            content: 'That text looks like an instruction to the system rather than a description of the work.'
+            content: 'That text looks like an instruction to the system rather than a reason for the '
+                + 'rejudge. Please rephrase it as an argument about how this work should be read.'
         };
+    }
+
+    const cleaned = message;
+    const match = await describeInjectionMatch(cleaned);
+    if (match.matched) {
+        console.warn(
+            `[weigh] an injection-shaped phrase is in the stored answers for process `
+            + `${process?.id ?? 'unknown'} and the model was given it anyway: ${match.where}. `
+            + 'Those answers cannot be edited, and the reply is still validated against the strict schema.'
+        );
     }
 
     const raw = await generateText({
