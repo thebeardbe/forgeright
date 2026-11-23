@@ -897,8 +897,16 @@
                 '<span class="wf-score">' + scoreText + '</span>' +
                 '</div>' +
                 '<div class="wf-meta">' +
-                metaPart(wf.frequencyPerWeek, '/wk') + ' · ' +
-                metaPart(wf.minutesPerInstance, ' min') + ' · ' +
+                // PER PERSON, LABELLED. The figure is one person's load, and shown bare beside "200
+                // people" it reads as the team's total: somebody who said "about 100,000 a week" sees
+                // "500/wk" and concludes the tool misheard them. The label turns that into "the tool
+                // reads my answer per person", which they can dispute.
+                //
+                // minutesPerInstance gets the same treatment because it is the same quantity: minutes
+                // for one occurrence of ONE PERSON's work. Labelling one and not the other would say
+                // that the frequency is per person and the time is not.
+                metaPart(wf.frequencyPerWeek, '/wk per person') + ' · ' +
+                metaPart(wf.minutesPerInstance, ' min per instance') + ' · ' +
                 metaPart(timePerPeriodText(wf.timePerPeriod) ?? wf.timePerPeriod, '') + ' · ' +
                 metaPart(wf.peopleAffected, ' people') + ' · ' +
                 'judgement ' + escapeHtml(String(wf.judgementScore)) + '/5' +
@@ -956,8 +964,9 @@
                     : value + unit;
                 lines.push(
                     '### ' + wf.title + ' - ' + scoreLabel, '',
-                    '- How often: ' + markdownValue(wf.frequencyPerWeek, ' per week'),
-                    '- Time for one instance: ' + markdownValue(wf.minutesPerInstance, ' minutes'),
+                    '- How often, per person: ' + markdownValue(wf.frequencyPerWeek, ' per week'),
+                    '- Time for one instance, per person: '
+                        + markdownValue(wf.minutesPerInstance, ' minutes'),
                     // The either/or partner of the line above, through the same helper as the card.
                     '- Time per period: ' +
                         markdownValue(timePerPeriodText(wf.timePerPeriod) ?? wf.timePerPeriod, ''),
